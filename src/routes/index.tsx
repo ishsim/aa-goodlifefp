@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import App from "@/App.jsx";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -13,5 +14,5 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  return <div className="min-h-screen bg-background" />;
+  return <App />;
 }
