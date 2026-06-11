@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "GoodLife FHR Generator" },
+      { name: "description", content: "Blank Canvas React provides a clean React project setup with Tailwind CSS and recharts." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "GoodLife FHR Generator" },
+      { property: "og:description", content: "Blank Canvas React provides a clean React project setup with Tailwind CSS and recharts." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "GoodLife FHR Generator" },
+      { name: "twitter:description", content: "Blank Canvas React provides a clean React project setup with Tailwind CSS and recharts." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/8d2cc549-2ca2-4bb0-98d7-9eb17bd34837/id-preview-313d26cd--1c817a2a-d2fd-4862-bff2-6093ba5074a8.lovable.app-1781185839951.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/8d2cc549-2ca2-4bb0-98d7-9eb17bd34837/id-preview-313d26cd--1c817a2a-d2fd-4862-bff2-6093ba5074a8.lovable.app-1781185839951.png" },
     ],
     links: [
       {
