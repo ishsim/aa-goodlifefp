@@ -1,8 +1,8 @@
-import logoImg from "./assets/goodlife-logo.png";
 import React, { useState, useEffect, useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
+import logoAsset from "./assets/goodlife-logo.png.asset.json";
 
-const LOGO = logoImg;
+const LOGO = logoAsset.url;
 
 // GoodLife brand palette
 const BRAND = { deep: "#3a1955", primary: "#51037c", mid: "#66229d", bright: "#7613ad", seal: "#d62828" };
