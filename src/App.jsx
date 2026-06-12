@@ -1469,6 +1469,10 @@ ${styleText}
               {drafting ? "Drafting…" : (client.narrative.exec ? "Re-draft with Claude" : "Draft with Claude")}
             </button>}>
             <p className="text-sm text-slate-500 mb-4">Claude drafts from the client's numbers, your priorities list, your concern notes, and the selected plans — in a warm, non-salesy tone. Review and edit everything before previewing; this is your professional advice, the draft is just a head start.</p>
+            <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
+              <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
+              <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
+            </div>
             <Field label="1. Executive summary"><TextArea rows={9} value={client.narrative.exec} onChange={e => updateDeep("narrative", { exec: e.target.value })} /></Field>
             <div className="h-4" />
             <Field label="4. Recommendation narrative"><TextArea rows={10} value={client.narrative.recoIntro} onChange={e => updateDeep("narrative", { recoIntro: e.target.value })} /></Field>
