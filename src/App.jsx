@@ -672,6 +672,17 @@ export default function App() {
     setDrafting(false);
   };
 
+  const copyPrompt = async () => {
+    if (!client || !d) return;
+    const prompt = buildClaudePrompt(client, d);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("Prompt copied! Paste it into Claude.ai");
+    } catch (e) {
+      toast.error("Could not copy to clipboard");
+    }
+  };
+
   const [showPrintModal, setShowPrintModal] = useState(false);
   const doPrint = () => { setShowPrintModal(true); };
 
