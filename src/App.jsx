@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
+import { generateDocx } from "@/lib/generateDocx";
 
 const LOGO = logoAsset.url;
 
@@ -656,6 +657,15 @@ ${styleText}
     URL.revokeObjectURL(a.href);
   };
 
+  const doDownloadDocx = async () => {
+    try {
+      await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
+    } catch (e) {
+      console.error(e);
+      alert("Could not generate the Word document.\n\n" + (e?.message || e));
+    }
+  };
+
   if (!loaded) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
 
   // ----- client list -----
@@ -816,6 +826,7 @@ ${styleText}
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
             <button onClick={doDownloadHTML} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download Report</button>
+            <button onClick={doDownloadDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download as Word (.docx)</button>
             <button onClick={doPrint} className="text-sm px-3 py-1.5 rounded-lg border border-white/40 text-white hover:bg-white/10">🖨 Print tips</button>
           </div>
         </div>
