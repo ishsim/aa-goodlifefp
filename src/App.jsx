@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
+import { toast } from "sonner";
 
 const LOGO = logoAsset.url;
 
@@ -344,6 +345,55 @@ Respond ONLY with valid JSON, no markdown fences, no preamble: {"exec": "...", "
   }
 }
 
+function buildClaudePrompt(c, d) {
+  const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
+  const lines = [
+    `You are drafting sections of a financial planning recommendation report for a Certified Financial Planner in Brunei working under GoodLife Financial Planning (in association with AIA Brunei), with an advisory approach built on stewardship, trust, and reducing financial anxiety. Tone: warm, professional, plain-spoken, client-centred, never salesy or alarmist. Address the client as "you". Use the data below. Amounts are in BND ($).`,
+    ``,
+    `CLIENT DATA:`,
+    `- Name: ${c.name || "Client"}`,
+    `- Age: ${calcAge(c.dob) || "Not provided"}`,
+    `- Occupation: ${c.occupation || "Not provided"}${c.occDetails ? " (" + c.occDetails + ")" : ""}`,
+    `- Risk profile: ${c.riskProfile || "Not provided"}`,
+    `- Meeting date: ${c.meetingDate || "Not provided"}`,
+    `- Monthly net income: ${money(d.net, 0)}`,
+    `- Monthly expenses: ${money(d.totalExpenses, 0)}`,
+    `- Monthly surplus: ${money(d.surplus, 0)}`,
+    `- Net worth: ${money(d.netWorth, 0)}`,
+    `- Cash & equivalents: ${money(d.cash, 0)}`,
+    `- Invested assets: ${money(d.invested, 0)}`,
+    `- Total liabilities: ${money(d.totalLiab, 0)}`,
+    `- Emergency fund target (3 months): ${money(d.ef3, 0)}`,
+    `- Emergency fund current: ${money(d.cash, 0)}`,
+    `- Ratios below benchmark: ${failing.length ? failing.join(", ") : "None"}`,
+    `- Protection shortfalls:`,
+    ...d.irRows.map(r => `  • ${r.name}: benchmark ${money(r.bench, 0)}, current ${money(r.current, 0)}, shortfall ${money(r.shortfall, 0)}`),
+    `- Retirement:`,
+    `  • Required (inflation-adjusted): ${money(Math.round(d.rtAdjusted), 0)}`,
+    `  • Projected: ${money(d.rtProjected, 0)}`,
+    `  • Shortfall: ${money(Math.round(d.rtShortfall), 0)}`,
+    `  • Expected monthly annuity: ${money(Math.round(d.rtMonthlyAnnuity), 0)}`,
+    `- Recommended plans:`,
+    ...d.selected.map(p => `  • ${p.label} — coverage: ${p.coverage}, monthly premium: ${money(p.monthly, 0)}`),
+    `- Other objectives:`,
+    ...(c.otherObjectives || []).filter(o => o.name).length
+      ? (c.otherObjectives || []).filter(o => o.name).map(o => `  • ${o.name}: target ${money(num(o.target), 0)}, ${num(o.years)} years — ${o.note || ""}`)
+      : [`  None`],
+    `- Advisor concern notes: ${c.concernsNote || "None"}`,
+    `- Priorities: ${c.priorities.filter(Boolean).join("; ") || "None"}`,
+    `- Monthly budget indicated: ${c.budgetNote || "Not specified"}`,
+    ``,
+    `Write three sections:`,
+    `1. "exec" — Executive Summary (3-4 short paragraphs): reference the meeting date if given, summarise the client's situation, priorities and key vulnerabilities identified, and close with a sentence framing financial planning as meeting life goals through proper management of finances.`,
+    `2. "recoIntro" — Recommendation narrative (3-5 paragraphs): cover budgeting/financial standing, emergency funds (state whether current funds are sufficient against the 3-month target), risk management gaps, and long-term/retirement planning. Be specific with the numbers provided.`,
+    `3. "actionPlan" — A numbered action plan (3-5 items) as a single string, each item starting "1. ", "2. " etc. on its own paragraph, each with a bold-worthy title followed by a colon then 2-3 sentences, prioritised to the client's situation and the recommended plans.`,
+    ``,
+    `Respond ONLY with a valid JSON object (no markdown fences, no preamble) in this exact shape:`,
+    `{"exec": "...", "recoIntro": "...", "actionPlan": "..."}`
+  ];
+  return lines.join("\n");
+}
+
 // ---------- small UI atoms ----------
 const Field = ({ label, children, hint }) => (
   <label className="block">
@@ -620,6 +670,17 @@ export default function App() {
       alert("Drafting didn't complete.\n\n" + msg + "\n\nTip: open the app in full screen (tap the expand icon), then try again. The drafting feature needs an internet connection.");
     }
     setDrafting(false);
+  };
+
+  const copyPrompt = async () => {
+    if (!client || !d) return;
+    const prompt = buildClaudePrompt(client, d);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("Prompt copied! Paste it into Claude.ai");
+    } catch (e) {
+      toast.error("Could not copy to clipboard");
+    }
   };
 
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -1408,6 +1469,10 @@ ${styleText}
               {drafting ? "Drafting…" : (client.narrative.exec ? "Re-draft with Claude" : "Draft with Claude")}
             </button>}>
             <p className="text-sm text-slate-500 mb-4">Claude drafts from the client's numbers, your priorities list, your concern notes, and the selected plans — in a warm, non-salesy tone. Review and edit everything before previewing; this is your professional advice, the draft is just a head start.</p>
+            <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
+              <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
+              <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
+            </div>
             <Field label="1. Executive summary"><TextArea rows={9} value={client.narrative.exec} onChange={e => updateDeep("narrative", { exec: e.target.value })} /></Field>
             <div className="h-4" />
             <Field label="4. Recommendation narrative"><TextArea rows={10} value={client.narrative.recoIntro} onChange={e => updateDeep("narrative", { recoIntro: e.target.value })} /></Field>
