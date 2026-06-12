@@ -327,7 +327,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }
   });
   if (d.selected.length) {
     children.push(buildTable([], [
-      [{ text: "Total of plans shown", bold: true }, { text: money(d.premMonthly, 2) + " / month · " + money(d.premAnnual, 2) / 1 + " / year", bold: true, align: AlignmentType.RIGHT }],
+      [{ text: "Total of plans shown", bold: true }, { text: money(d.premMonthly, 2) + " / month · " + money(d.premAnnual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
     ], [5400, 3600]));
   }
 
