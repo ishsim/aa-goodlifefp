@@ -182,11 +182,14 @@ async function loadClients() {
   return (data || []).map(row => migrate(row.data));
 }
 async function saveClient(c) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { console.error("save failed: no user"); return false; }
   const { error } = await supabase
     .from("clients")
     .upsert({
       id: c.id,
       data: c,
+      user_id: user.id,
       updated_at: new Date(c.updated || Date.now()).toISOString(),
     }, { onConflict: "id" });
   if (error) { console.error("save failed", error); return false; }
