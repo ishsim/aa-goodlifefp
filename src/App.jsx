@@ -827,6 +827,9 @@ ${styleText}
             <button onClick={togglePrivacy} title={privacy ? "Showing initials only — tap to show full names" : "Showing full names — tap to show initials only"} className={"text-sm px-3 py-2 rounded-lg border " + (privacy ? "bg-purple-900 text-white border-purple-900" : "border-slate-300 text-slate-600 hover:bg-slate-50 bg-white")}>
               {privacy ? "🔒 Initials only" : "👁 Full names"}
             </button>
+            <button onClick={exportAll} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬇ Export all</button>
+            <button onClick={() => fileInputRef.current?.click()} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬆ Import clients</button>
+            <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleImportFile} className="hidden" />
             <button onClick={newClient} className="bg-purple-700 hover:bg-purple-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">+ New client</button>
           </div>
         </div>
@@ -845,6 +848,7 @@ ${styleText}
               <div className="flex gap-2">
                 <button onClick={() => { setActiveId(c.id); setView("edit"); setStep(0); }} className="text-sm px-3 py-1.5 rounded-lg border border-purple-700 text-purple-800 hover:bg-purple-50">Open</button>
                 <button onClick={() => { setActiveId(c.id); setView("report"); }} className="text-sm px-3 py-1.5 rounded-lg bg-purple-700 text-white hover:bg-purple-800">Report</button>
+                <button onClick={() => exportOne(c)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">Export</button>
                 <button onClick={() => { if (confirm("Delete " + displayName(c.name, "this client") + "?")) removeClient(c.id); }} className="text-sm px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50">Delete</button>
               </div>
             </div>
