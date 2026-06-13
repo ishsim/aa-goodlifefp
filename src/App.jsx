@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Ba
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const LOGO = logoAsset.url;
 
@@ -171,15 +172,29 @@ function migrate(c) {
   return m;
 }
 
-// ---------- storage ----------
-const STORE_KEY = "arkan-clients-v1";
-function loadClients() {
-  try { const r = localStorage.getItem(STORE_KEY); const list = r ? JSON.parse(r) : []; return list.map(migrate); }
-  catch { return []; }
+// ---------- storage (Supabase) ----------
+async function loadClients() {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) { console.error("load failed", error); throw error; }
+  return (data || []).map(row => migrate(row.data));
 }
-function saveClients(list) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); return true; }
-  catch (e) { console.error("save failed", e); return false; }
+async function saveClient(c) {
+  const { error } = await supabase
+    .from("clients")
+    .upsert({
+      id: c.id,
+      data: c,
+      updated_at: new Date(c.updated || Date.now()).toISOString(),
+    }, { onConflict: "id" });
+  if (error) { console.error("save failed", error); return false; }
+  return true;
+}
+async function deleteClientRow(id) {
+  const { error } = await supabase.from("clients").delete().eq("id", id);
+  if (error) { console.error("delete failed", error); throw error; }
 }
 
 // ---------- derived figures ----------
