@@ -760,7 +760,12 @@ ${styleText}
     }
   };
 
-  if (!loaded) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
+  if (!loaded) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-100 text-slate-500">
+      <div className="h-10 w-10 rounded-full border-4 border-purple-200 border-t-purple-700 animate-spin" />
+      <div className="text-sm">Loading clients…</div>
+    </div>
+  );
 
   // ----- client list -----
   if (view === "list" || !client) return (
