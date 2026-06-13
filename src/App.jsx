@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
@@ -692,6 +692,47 @@ export default function App() {
     if (activeId === id) { setActiveId(null); setView("list"); }
   };
 
+  const downloadJSON = (data, filename) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const safeFilenamePart = (s) => (s || "unnamed").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "unnamed";
+  const exportAll = () => {
+    if (!clients.length) { toast.error("No clients to export."); return; }
+    downloadJSON(clients, "goodlife-clients-backup.json");
+  };
+  const exportOne = (c) => {
+    downloadJSON(c, `goodlife-client-${safeFilenamePart(c.name)}.json`);
+  };
+  const fileInputRef = useRef(null);
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      const imported = [];
+      for (const raw of list) {
+        if (!raw || typeof raw !== "object") continue;
+        const c = migrate({ ...raw, id: uid(), updated: Date.now() });
+        const ok = await saveClient(c);
+        if (ok) imported.push(c);
+      }
+      const fresh = await loadClients();
+      setClients(fresh);
+      toast.success(`${imported.length} client(s) imported successfully`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Import failed: " + (err?.message || err));
+    }
+  };
+
   const runDraft = async () => {
     setDrafting(true);
     try {
@@ -786,6 +827,9 @@ ${styleText}
             <button onClick={togglePrivacy} title={privacy ? "Showing initials only — tap to show full names" : "Showing full names — tap to show initials only"} className={"text-sm px-3 py-2 rounded-lg border " + (privacy ? "bg-purple-900 text-white border-purple-900" : "border-slate-300 text-slate-600 hover:bg-slate-50 bg-white")}>
               {privacy ? "🔒 Initials only" : "👁 Full names"}
             </button>
+            <button onClick={exportAll} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬇ Export all</button>
+            <button onClick={() => fileInputRef.current?.click()} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬆ Import clients</button>
+            <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleImportFile} className="hidden" />
             <button onClick={newClient} className="bg-purple-700 hover:bg-purple-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">+ New client</button>
           </div>
         </div>
@@ -804,6 +848,7 @@ ${styleText}
               <div className="flex gap-2">
                 <button onClick={() => { setActiveId(c.id); setView("edit"); setStep(0); }} className="text-sm px-3 py-1.5 rounded-lg border border-purple-700 text-purple-800 hover:bg-purple-50">Open</button>
                 <button onClick={() => { setActiveId(c.id); setView("report"); }} className="text-sm px-3 py-1.5 rounded-lg bg-purple-700 text-white hover:bg-purple-800">Report</button>
+                <button onClick={() => exportOne(c)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">Export</button>
                 <button onClick={() => { if (confirm("Delete " + displayName(c.name, "this client") + "?")) removeClient(c.id); }} className="text-sm px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50">Delete</button>
               </div>
             </div>
