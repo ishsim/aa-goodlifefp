@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Ba
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const LOGO = logoAsset.url;
 
@@ -171,15 +172,29 @@ function migrate(c) {
   return m;
 }
 
-// ---------- storage ----------
-const STORE_KEY = "arkan-clients-v1";
-function loadClients() {
-  try { const r = localStorage.getItem(STORE_KEY); const list = r ? JSON.parse(r) : []; return list.map(migrate); }
-  catch { return []; }
+// ---------- storage (Supabase) ----------
+async function loadClients() {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) { console.error("load failed", error); throw error; }
+  return (data || []).map(row => migrate(row.data));
 }
-function saveClients(list) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(list)); return true; }
-  catch (e) { console.error("save failed", e); return false; }
+async function saveClient(c) {
+  const { error } = await supabase
+    .from("clients")
+    .upsert({
+      id: c.id,
+      data: c,
+      updated_at: new Date(c.updated || Date.now()).toISOString(),
+    }, { onConflict: "id" });
+  if (error) { console.error("save failed", error); return false; }
+  return true;
+}
+async function deleteClientRow(id) {
+  const { error } = await supabase.from("clients").delete().eq("id", id);
+  if (error) { console.error("delete failed", error); throw error; }
 }
 
 // ---------- derived figures ----------
@@ -617,8 +632,19 @@ export default function App() {
   const [privacy, setPrivacy] = useState(true);
 
   useEffect(() => {
-    try { setClients(loadClients()); } catch(_){} setLoaded(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await loadClients();
+        if (!cancelled) setClients(list);
+      } catch (e) {
+        if (!cancelled) toast.error("Could not load clients: " + (e?.message || e));
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
     try { const r = localStorage.getItem(PRIV_KEY); if (r !== null) setPrivacy(r !== "0"); } catch(_) {}
+    return () => { cancelled = true; };
   }, []);
 
   const togglePrivacy = () => {
@@ -633,29 +659,36 @@ export default function App() {
   const update = (patch) => {
     setClients(prev => {
       const next = prev.map(c => c.id === activeId ? { ...c, ...patch, updated: Date.now() } : c);
-      saveClients(next);
+      const updated = next.find(c => c.id === activeId);
+      if (updated) saveClient(updated).catch(e => toast.error("Save failed: " + (e?.message || e)));
       return next;
     });
   };
   const updateDeep = (key, patch) => update({ [key]: { ...client[key], ...patch } });
 
-  const persist = () => {
+  const persist = async () => {
+    if (!client) return;
     setSaveState("saving");
-    const ok = saveClients(clients);
+    const ok = await saveClient(client);
     setSaveState(ok ? "saved" : "error");
     setTimeout(() => setSaveState(""), 2000);
   };
 
-  const newClient = () => {
+  const newClient = async () => {
     const c = blankClient();
-    setClients(prev => {
-      const next = [c, ...prev]; saveClients(next); return next;
-    });
+    setClients(prev => [c, ...prev]);
     setActiveId(c.id); setView("edit"); setStep(0);
+    const ok = await saveClient(c);
+    if (!ok) toast.error("Could not create client in the cloud.");
   };
-  const removeClient = (id) => {
-    const next = clients.filter(c => c.id !== id);
-    setClients(next); saveClients(next);
+  const removeClient = async (id) => {
+    try {
+      await deleteClientRow(id);
+    } catch (e) {
+      toast.error("Delete failed: " + (e?.message || e));
+      return;
+    }
+    setClients(prev => prev.filter(c => c.id !== id));
     if (activeId === id) { setActiveId(null); setView("list"); }
   };
 
@@ -727,7 +760,12 @@ ${styleText}
     }
   };
 
-  if (!loaded) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
+  if (!loaded) return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-100 text-slate-500">
+      <div className="h-10 w-10 rounded-full border-4 border-purple-200 border-t-purple-700 animate-spin" />
+      <div className="text-sm">Loading clients…</div>
+    </div>
+  );
 
   // ----- client list -----
   if (view === "list" || !client) return (
