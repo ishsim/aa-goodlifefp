@@ -692,6 +692,47 @@ export default function App() {
     if (activeId === id) { setActiveId(null); setView("list"); }
   };
 
+  const downloadJSON = (data, filename) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const safeFilenamePart = (s) => (s || "unnamed").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "unnamed";
+  const exportAll = () => {
+    if (!clients.length) { toast.error("No clients to export."); return; }
+    downloadJSON(clients, "goodlife-clients-backup.json");
+  };
+  const exportOne = (c) => {
+    downloadJSON(c, `goodlife-client-${safeFilenamePart(c.name)}.json`);
+  };
+  const fileInputRef = useRef(null);
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      const imported = [];
+      for (const raw of list) {
+        if (!raw || typeof raw !== "object") continue;
+        const c = migrate({ ...raw, id: uid(), updated: Date.now() });
+        const ok = await saveClient(c);
+        if (ok) imported.push(c);
+      }
+      const fresh = await loadClients();
+      setClients(fresh);
+      toast.success(`${imported.length} client(s) imported successfully`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Import failed: " + (err?.message || err));
+    }
+  };
+
   const runDraft = async () => {
     setDrafting(true);
     try {
