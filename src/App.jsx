@@ -182,11 +182,14 @@ async function loadClients() {
   return (data || []).map(row => migrate(row.data));
 }
 async function saveClient(c) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { console.error("save failed: no user"); return false; }
   const { error } = await supabase
     .from("clients")
     .upsert({
       id: c.id,
       data: c,
+      user_id: user.id,
       updated_at: new Date(c.updated || Date.now()).toISOString(),
     }, { onConflict: "id" });
   if (error) { console.error("save failed", error); return false; }
@@ -831,6 +834,7 @@ ${styleText}
             <button onClick={() => fileInputRef.current?.click()} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬆ Import clients</button>
             <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleImportFile} className="hidden" />
             <button onClick={newClient} className="bg-purple-700 hover:bg-purple-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">+ New client</button>
+            <button onClick={async () => { await supabase.auth.signOut(); window.location.href = "/auth"; }} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 bg-white">Sign out</button>
           </div>
         </div>
         {clients.length === 0 && (
