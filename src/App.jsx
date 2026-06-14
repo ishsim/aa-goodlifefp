@@ -735,19 +735,6 @@ export default function App() {
     }
   };
 
-  const runDraft = async () => {
-    setDrafting(true);
-    try {
-      const out = await draftNarrative(client, d);
-      updateDeep("narrative", { exec: out.exec || "", recoIntro: out.recoIntro || "", actionPlan: out.actionPlan || "" });
-    } catch (e) {
-      console.error(e);
-      const msg = (e && e.message) ? e.message : String(e);
-      alert("Drafting didn't complete.\n\n" + msg + "\n\nTip: open the app in full screen (tap the expand icon), then try again. The drafting feature needs an internet connection.");
-    }
-    setDrafting(false);
-  };
-
   const copyPrompt = async () => {
     if (!client || !d) return;
     const prompt = buildClaudePrompt(client, d);
