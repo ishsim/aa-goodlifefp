@@ -760,41 +760,6 @@ export default function App() {
     }
   };
 
-  const [showPrintModal, setShowPrintModal] = useState(false);
-  const doPrint = () => { setShowPrintModal(true); };
-
-  const doDownloadHTML = () => {
-    const reportEl = document.getElementById("report-content");
-    if (!reportEl) { alert("Preview the report first, then download."); return; }
-    const styleText = Array.from(document.querySelectorAll("style")).map(s => s.innerHTML).join("\n");
-    const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>GoodLife Report</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-body{margin:0;background:#f1f5f9;font-family:'Source Sans 3',system-ui,sans-serif}
-${styleText}
-@media print{
-  body{background:#fff!important}
-  @page{size:A4;margin:0}
-  .no-print{display:none!important}
-  .sheet{box-shadow:none!important;margin:0!important;max-width:100%!important;padding:14mm 16mm!important}
-  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-}
-</style></head><body>
-<div class="no-print" style="background:linear-gradient(120deg,#3a1955,#51037c);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;font-family:inherit;position:sticky;top:0;z-index:10">
-  <span style="font-size:14px;opacity:.85">Open in browser &#8594; press &#8984;+P or Ctrl+P &#8594; Save as PDF</span>
-  <button onclick="window.print()" style="background:#fff;color:#51037c;border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;font-size:14px">&#x1F5A8; Print / Save as PDF</button>
-</div>
-<div style="background:#f1f5f9;min-height:100vh">\${reportEl.outerHTML}</div>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "GoodLife-Report.html";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
   const doDownloadDocx = async () => {
     try {
       await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
