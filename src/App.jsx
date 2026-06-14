@@ -305,64 +305,6 @@ function compute(c) {
     potentialIncome, irRows, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, premMonthly, premAnnual };
 }
 
-// ---------- AI drafting ----------
-async function draftNarrative(c, d) {
-  const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
-  const payload = {
-    clientFirstName: (c.name || "the client").split(" ")[0],
-    age: calcAge(c.dob) || null,
-    occupation: c.occupation, occupationDetails: c.occDetails,
-    meetingDate: c.meetingDate, riskProfile: c.riskProfile,
-    priorities: c.priorities.filter(Boolean),
-    advisorNotesOnConcerns: c.concernsNote,
-    monthlyNetIncome: d.net, monthlyExpenses: d.totalExpenses, monthlySurplus: d.surplus,
-    netWorth: d.netWorth, cashAndEquivalents: d.cash, investedAssets: d.invested, totalLiabilities: d.totalLiab,
-    emergencyFundTarget3mo: d.ef3, emergencyFundCurrent: d.cash,
-    ratiosBelowBenchmark: failing,
-    protectionShortfalls: d.irRows.map(r => ({ need: r.name, benchmark: r.bench, current: r.current, shortfall: r.shortfall })),
-    retirement: { requiredInflationAdjusted: Math.round(d.rtAdjusted), projected: d.rtProjected, shortfall: Math.round(d.rtShortfall), expectedMonthlyAnnuity: Math.round(d.rtMonthlyAnnuity) },
-    recommendedPlans: d.selected.map(p => ({ plan: p.label, tier: p.tier, coverage: p.coverage, monthlyPremium: p.monthly })),
-    otherObjectives: (c.otherObjectives || []).filter(o => o.name).map(o => ({ objective: o.name, target: num(o.target), years: num(o.years), note: o.note })),
-    monthlyBudgetIndicated: c.budgetNote,
-  };
-  const prompt = `You are drafting sections of a financial planning recommendation report for a Certified Financial Planner in Brunei working under GoodLife Financial Planning (in association with AIA Brunei), with an advisory approach built on stewardship, trust, and reducing financial anxiety. Tone: warm, professional, plain-spoken, client-centred, never salesy or alarmist. Address the client as "you". Use the data below. Amounts are in BND ($).
-
-CLIENT DATA:
-${JSON.stringify(payload, null, 1)}
-
-Write three sections:
-1. "exec" — Executive Summary (3-4 short paragraphs): reference the meeting date if given, summarise the client's situation, priorities and key vulnerabilities identified, and close with a sentence framing financial planning as meeting life goals through proper management of finances.
-2. "recoIntro" — Recommendation narrative (3-5 paragraphs): cover budgeting/financial standing, emergency funds (state whether current funds are sufficient against the 3-month target), risk management gaps, and long-term/retirement planning. Be specific with the numbers provided.
-3. "actionPlan" — A numbered action plan (3-5 items) as a single string, each item starting "1. ", "2. " etc. on its own paragraph, each with a bold-worthy title followed by a colon then 2-3 sentences, prioritised to the client's situation and the recommended plans.
-
-Respond ONLY with valid JSON, no markdown fences, no preamble: {"exec": "...", "recoIntro": "...", "actionPlan": "..."}`;
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
-  if (!apiKey) throw new Error("Add VITE_ANTHROPIC_API_KEY to your Lovable project environment variables to enable AI drafting.");
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-iab": "allow" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 3000, messages: [{ role: "user", content: prompt }] }),
-  });
-  if (!response.ok) {
-    let detail = "";
-    try { detail = JSON.stringify(await response.json()); } catch (_) { detail = await response.text().catch(() => ""); }
-    throw new Error("The drafting service returned an error (HTTP " + response.status + "). " + detail);
-  }
-  const data = await response.json();
-  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-  if (!text.trim()) throw new Error("The drafting service returned an empty response. Please try again.");
-  // robust JSON extraction: strip fences, then grab the outermost {...}
-  let clean = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-  const first = clean.indexOf("{"), last = clean.lastIndexOf("}");
-  if (first !== -1 && last !== -1) clean = clean.slice(first, last + 1);
-  try {
-    const parsed = JSON.parse(clean);
-    return { exec: parsed.exec || "", recoIntro: parsed.recoIntro || "", actionPlan: parsed.actionPlan || "" };
-  } catch (_) {
-    throw new Error("Couldn't read the drafted text (the response may have been cut off). Please try again.");
-  }
-}
-
 function buildClaudePrompt(c, d) {
   const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
   const lines = [
@@ -630,7 +572,6 @@ export default function App() {
   const [activeId, setActiveId] = useState(null);
   const [view, setView] = useState("list"); // list | edit | report
   const [step, setStep] = useState(0);
-  const [drafting, setDrafting] = useState(false);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
 
@@ -736,19 +677,6 @@ export default function App() {
     }
   };
 
-  const runDraft = async () => {
-    setDrafting(true);
-    try {
-      const out = await draftNarrative(client, d);
-      updateDeep("narrative", { exec: out.exec || "", recoIntro: out.recoIntro || "", actionPlan: out.actionPlan || "" });
-    } catch (e) {
-      console.error(e);
-      const msg = (e && e.message) ? e.message : String(e);
-      alert("Drafting didn't complete.\n\n" + msg + "\n\nTip: open the app in full screen (tap the expand icon), then try again. The drafting feature needs an internet connection.");
-    }
-    setDrafting(false);
-  };
-
   const copyPrompt = async () => {
     if (!client || !d) return;
     const prompt = buildClaudePrompt(client, d);
@@ -758,41 +686,6 @@ export default function App() {
     } catch (e) {
       toast.error("Could not copy to clipboard");
     }
-  };
-
-  const [showPrintModal, setShowPrintModal] = useState(false);
-  const doPrint = () => { setShowPrintModal(true); };
-
-  const doDownloadHTML = () => {
-    const reportEl = document.getElementById("report-content");
-    if (!reportEl) { alert("Preview the report first, then download."); return; }
-    const styleText = Array.from(document.querySelectorAll("style")).map(s => s.innerHTML).join("\n");
-    const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>GoodLife Report</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-body{margin:0;background:#f1f5f9;font-family:'Source Sans 3',system-ui,sans-serif}
-${styleText}
-@media print{
-  body{background:#fff!important}
-  @page{size:A4;margin:0}
-  .no-print{display:none!important}
-  .sheet{box-shadow:none!important;margin:0!important;max-width:100%!important;padding:14mm 16mm!important}
-  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-}
-</style></head><body>
-<div class="no-print" style="background:linear-gradient(120deg,#3a1955,#51037c);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;font-family:inherit;position:sticky;top:0;z-index:10">
-  <span style="font-size:14px;opacity:.85">Open in browser &#8594; press &#8984;+P or Ctrl+P &#8594; Save as PDF</span>
-  <button onclick="window.print()" style="background:#fff;color:#51037c;border:none;border-radius:8px;padding:8px 18px;font-weight:700;cursor:pointer;font-size:14px">&#x1F5A8; Print / Save as PDF</button>
-</div>
-<div style="background:#f1f5f9;min-height:100vh">\${reportEl.outerHTML}</div>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "GoodLife-Report.html";
-    a.click();
-    URL.revokeObjectURL(a.href);
   };
 
   const doDownloadDocx = async () => {
@@ -868,16 +761,18 @@ ${styleText}
     const n = client.narrative;
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{textAlign:"justify",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{p}</p>);
 
-  // Smart plan body renderer — justified, highlighted, structured
+  // Smart plan body renderer — returns { main, limitations } so callers can
+  // interleave images between the main content and the limitations block.
   const renderPlanBody = (body) => {
-    if (!body) return null;
+    if (!body) return { main: null, limitations: null };
     const lines = body.split("\n").filter(l => l.trim());
-    const elements = [];
+    const mainEls = [];
+    let limitationsEl = null;
     let bulletGroup = [], limitGroup = [];
     const flushBullets = () => {
       if (!bulletGroup.length) return;
-      elements.push(
-        <ul key={"ul" + elements.length} className="mb-4 space-y-2">
+      mainEls.push(
+        <ul key={"ul" + mainEls.length} className="mb-4 space-y-2">
           {bulletGroup.map((line, i) => {
             const text = line.replace(/^•\s*/, "");
             // Feature name is text before " — " or ":"
@@ -906,10 +801,28 @@ ${styleText}
       );
       bulletGroup = [];
     };
-    const flushLimits = () => {
-      if (!limitGroup.length) return;
-      elements.push(
-        <div key={"lim" + elements.length} className="mt-3 mb-3 rounded-lg border border-red-100 bg-red-50 p-3">
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("∴")) {
+        flushBullets();
+        if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") return; // header row, skip
+        limitGroup.push(trimmed);
+      } else if (trimmed.startsWith("•")) {
+        bulletGroup.push(trimmed);
+      } else if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") {
+        flushBullets();
+        // skip header, next lines will be ∴
+      } else {
+        flushBullets();
+        mainEls.push(
+          <p key={"p" + i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, fontSize: 13.5, color: "#1f2937" }}>{trimmed}</p>
+        );
+      }
+    });
+    flushBullets();
+    if (limitGroup.length) {
+      limitationsEl = (
+        <div className="mt-3 mb-3 rounded-lg border border-red-100 bg-red-50 p-3">
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#991b1b", marginBottom: 6 }}>Plan Limitations</div>
           <ul className="space-y-1">
             {limitGroup.map((line, i) => (
@@ -921,29 +834,8 @@ ${styleText}
           </ul>
         </div>
       );
-      limitGroup = [];
-    };
-    lines.forEach((line, i) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("∴")) {
-        flushBullets();
-        if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") return; // header row, skip
-        limitGroup.push(trimmed);
-      } else if (trimmed.startsWith("•")) {
-        flushLimits();
-        bulletGroup.push(trimmed);
-      } else if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") {
-        flushBullets();
-        // skip header, next lines will be ∴
-      } else {
-        flushBullets(); flushLimits();
-        elements.push(
-          <p key={"p" + i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, fontSize: 13.5, color: "#1f2937" }}>{trimmed}</p>
-        );
-      }
-    });
-    flushBullets(); flushLimits();
-    return <div>{elements}</div>;
+    }
+    return { main: <div>{mainEls}</div>, limitations: limitationsEl };
   };
     const grouped = ["Risk Management", "Goal Planning", "Retirement Planning"].map(cat => ({ cat, items: d.selected.filter(p => p.category === cat) })).filter(g => g.items.length);
     return (
@@ -973,30 +865,9 @@ ${styleText}
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
-            <button onClick={doDownloadHTML} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download Report</button>
             <button onClick={doDownloadDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download as Word (.docx)</button>
-            <button onClick={doPrint} className="text-sm px-3 py-1.5 rounded-lg border border-white/40 text-white hover:bg-white/10">🖨 Print tips</button>
           </div>
         </div>
-        {showPrintModal && (
-            <div className="no-print fixed inset-0 z-50 flex items-center justify-center" style={{background:"rgba(0,0,0,0.6)"}} onClick={() => setShowPrintModal(false)}>
-              <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4" onClick={e => e.stopPropagation()}>
-                <h2 className="font-serif text-2xl text-purple-900 mb-4">Print / Save as PDF</h2>
-                <p className="text-slate-600 mb-4 text-sm leading-relaxed">The print dialog can't be triggered automatically from inside the Claude artifact — the browser blocks it. Use your keyboard shortcut instead:</p>
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
-                  <div className="font-semibold text-purple-900 mb-2 text-sm">Desktop:</div>
-                  <div className="text-sm text-slate-700">Press <kbd className="bg-white border border-slate-300 rounded px-2 py-0.5 font-mono text-xs">Ctrl+P</kbd> (Windows) or <kbd className="bg-white border border-slate-300 rounded px-2 py-0.5 font-mono text-xs">⌘+P</kbd> (Mac)</div>
-                  <div className="text-xs text-slate-500 mt-2">In the dialog: set Destination to "Save as PDF", enable Background graphics, set paper to A4.</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
-                  <div className="font-semibold text-slate-700 mb-1 text-sm">Mobile:</div>
-                  <div className="text-sm text-slate-600">Browser Share button → Print → AirPrint / Save to Files.</div>
-                </div>
-                <p className="text-xs text-slate-400 mb-5">For the most reliable printing, use the <b>offline HTML file</b> on your device — its Print button works directly without these steps.</p>
-                <button onClick={() => setShowPrintModal(false)} className="w-full bg-purple-700 text-white font-semibold py-2.5 rounded-xl hover:bg-purple-800">Got it</button>
-              </div>
-            </div>
-          )}
         <div id="report-content" className="rpt sheet bg-white max-w-[210mm] mx-auto my-6 shadow-xl" style={{ padding: "18mm 18mm" }}>
           {/* cover */}
           <div className="text-center pt-16 pb-10">
@@ -1166,22 +1037,26 @@ ${styleText}
           <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
-            {d.selected.map((p, i) => (
-              <div key={p.key + i}>
-                <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
-                {PLAN_LIBRARY[p.key] && renderPlanBody(PLAN_LIBRARY[p.key].body)}
-                {(p.planImages||[]).length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    {p.planImages.map(img => (
-                      <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16 }}>
-                        <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6 }} />
-                        {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}</>)}
+            {d.selected.map((p, i) => {
+              const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
+              return (
+                <div key={p.key + i}>
+                  <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
+                  {parts.main}
+                  {(p.planImages||[]).length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      {p.planImages.map(img => (
+                        <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16 }}>
+                          <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6 }} />
+                          {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {parts.limitations}
+                </div>
+              );
+            })}</>)}
 
           <div className="pagebreak" />
           <h2>{d.selected.length > 0 ? "6" : "5"}. Conclusion</h2>
@@ -1551,11 +1426,7 @@ ${styleText}
         </>)}
 
         {step === 5 && (<>
-          <SectionCard title="AI-drafted narrative" right={
-            <button onClick={runDraft} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-              {drafting ? "Drafting…" : (client.narrative.exec ? "Re-draft with Claude" : "Draft with Claude")}
-            </button>}>
-            <p className="text-sm text-slate-500 mb-4">Claude drafts from the client's numbers, your priorities list, your concern notes, and the selected plans — in a warm, non-salesy tone. Review and edit everything before previewing; this is your professional advice, the draft is just a head start.</p>
+          <SectionCard title="Narrative">
             <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
               <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
               <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
