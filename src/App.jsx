@@ -1109,22 +1109,26 @@ export default function App() {
           <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
-            {d.selected.map((p, i) => (
-              <div key={p.key + i}>
-                <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
-                {PLAN_LIBRARY[p.key] && renderPlanBody(PLAN_LIBRARY[p.key].body)}
-                {(p.planImages||[]).length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    {p.planImages.map(img => (
-                      <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16 }}>
-                        <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6 }} />
-                        {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}</>)}
+            {d.selected.map((p, i) => {
+              const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
+              return (
+                <div key={p.key + i}>
+                  <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
+                  {parts.main}
+                  {(p.planImages||[]).length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      {p.planImages.map(img => (
+                        <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16 }}>
+                          <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6 }} />
+                          {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {parts.limitations}
+                </div>
+              );
+            })}</>)}
 
           <div className="pagebreak" />
           <h2>{d.selected.length > 0 ? "6" : "5"}. Conclusion</h2>
