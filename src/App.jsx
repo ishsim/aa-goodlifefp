@@ -833,16 +833,18 @@ export default function App() {
     const n = client.narrative;
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{textAlign:"justify",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{p}</p>);
 
-  // Smart plan body renderer — justified, highlighted, structured
+  // Smart plan body renderer — returns { main, limitations } so callers can
+  // interleave images between the main content and the limitations block.
   const renderPlanBody = (body) => {
-    if (!body) return null;
+    if (!body) return { main: null, limitations: null };
     const lines = body.split("\n").filter(l => l.trim());
-    const elements = [];
+    const mainEls = [];
+    let limitationsEl = null;
     let bulletGroup = [], limitGroup = [];
     const flushBullets = () => {
       if (!bulletGroup.length) return;
-      elements.push(
-        <ul key={"ul" + elements.length} className="mb-4 space-y-2">
+      mainEls.push(
+        <ul key={"ul" + mainEls.length} className="mb-4 space-y-2">
           {bulletGroup.map((line, i) => {
             const text = line.replace(/^•\s*/, "");
             // Feature name is text before " — " or ":"
@@ -871,10 +873,28 @@ export default function App() {
       );
       bulletGroup = [];
     };
-    const flushLimits = () => {
-      if (!limitGroup.length) return;
-      elements.push(
-        <div key={"lim" + elements.length} className="mt-3 mb-3 rounded-lg border border-red-100 bg-red-50 p-3">
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("∴")) {
+        flushBullets();
+        if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") return; // header row, skip
+        limitGroup.push(trimmed);
+      } else if (trimmed.startsWith("•")) {
+        bulletGroup.push(trimmed);
+      } else if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") {
+        flushBullets();
+        // skip header, next lines will be ∴
+      } else {
+        flushBullets();
+        mainEls.push(
+          <p key={"p" + i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, fontSize: 13.5, color: "#1f2937" }}>{trimmed}</p>
+        );
+      }
+    });
+    flushBullets();
+    if (limitGroup.length) {
+      limitationsEl = (
+        <div className="mt-3 mb-3 rounded-lg border border-red-100 bg-red-50 p-3">
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#991b1b", marginBottom: 6 }}>Plan Limitations</div>
           <ul className="space-y-1">
             {limitGroup.map((line, i) => (
@@ -886,29 +906,8 @@ export default function App() {
           </ul>
         </div>
       );
-      limitGroup = [];
-    };
-    lines.forEach((line, i) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("∴")) {
-        flushBullets();
-        if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") return; // header row, skip
-        limitGroup.push(trimmed);
-      } else if (trimmed.startsWith("•")) {
-        flushLimits();
-        bulletGroup.push(trimmed);
-      } else if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") {
-        flushBullets();
-        // skip header, next lines will be ∴
-      } else {
-        flushBullets(); flushLimits();
-        elements.push(
-          <p key={"p" + i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, fontSize: 13.5, color: "#1f2937" }}>{trimmed}</p>
-        );
-      }
-    });
-    flushBullets(); flushLimits();
-    return <div>{elements}</div>;
+    }
+    return { main: <div>{mainEls}</div>, limitations: limitationsEl };
   };
     const grouped = ["Risk Management", "Goal Planning", "Retirement Planning"].map(cat => ({ cat, items: d.selected.filter(p => p.category === cat) })).filter(g => g.items.length);
     return (
