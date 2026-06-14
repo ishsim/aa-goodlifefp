@@ -305,64 +305,6 @@ function compute(c) {
     potentialIncome, irRows, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, premMonthly, premAnnual };
 }
 
-// ---------- AI drafting ----------
-async function draftNarrative(c, d) {
-  const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
-  const payload = {
-    clientFirstName: (c.name || "the client").split(" ")[0],
-    age: calcAge(c.dob) || null,
-    occupation: c.occupation, occupationDetails: c.occDetails,
-    meetingDate: c.meetingDate, riskProfile: c.riskProfile,
-    priorities: c.priorities.filter(Boolean),
-    advisorNotesOnConcerns: c.concernsNote,
-    monthlyNetIncome: d.net, monthlyExpenses: d.totalExpenses, monthlySurplus: d.surplus,
-    netWorth: d.netWorth, cashAndEquivalents: d.cash, investedAssets: d.invested, totalLiabilities: d.totalLiab,
-    emergencyFundTarget3mo: d.ef3, emergencyFundCurrent: d.cash,
-    ratiosBelowBenchmark: failing,
-    protectionShortfalls: d.irRows.map(r => ({ need: r.name, benchmark: r.bench, current: r.current, shortfall: r.shortfall })),
-    retirement: { requiredInflationAdjusted: Math.round(d.rtAdjusted), projected: d.rtProjected, shortfall: Math.round(d.rtShortfall), expectedMonthlyAnnuity: Math.round(d.rtMonthlyAnnuity) },
-    recommendedPlans: d.selected.map(p => ({ plan: p.label, tier: p.tier, coverage: p.coverage, monthlyPremium: p.monthly })),
-    otherObjectives: (c.otherObjectives || []).filter(o => o.name).map(o => ({ objective: o.name, target: num(o.target), years: num(o.years), note: o.note })),
-    monthlyBudgetIndicated: c.budgetNote,
-  };
-  const prompt = `You are drafting sections of a financial planning recommendation report for a Certified Financial Planner in Brunei working under GoodLife Financial Planning (in association with AIA Brunei), with an advisory approach built on stewardship, trust, and reducing financial anxiety. Tone: warm, professional, plain-spoken, client-centred, never salesy or alarmist. Address the client as "you". Use the data below. Amounts are in BND ($).
-
-CLIENT DATA:
-${JSON.stringify(payload, null, 1)}
-
-Write three sections:
-1. "exec" — Executive Summary (3-4 short paragraphs): reference the meeting date if given, summarise the client's situation, priorities and key vulnerabilities identified, and close with a sentence framing financial planning as meeting life goals through proper management of finances.
-2. "recoIntro" — Recommendation narrative (3-5 paragraphs): cover budgeting/financial standing, emergency funds (state whether current funds are sufficient against the 3-month target), risk management gaps, and long-term/retirement planning. Be specific with the numbers provided.
-3. "actionPlan" — A numbered action plan (3-5 items) as a single string, each item starting "1. ", "2. " etc. on its own paragraph, each with a bold-worthy title followed by a colon then 2-3 sentences, prioritised to the client's situation and the recommended plans.
-
-Respond ONLY with valid JSON, no markdown fences, no preamble: {"exec": "...", "recoIntro": "...", "actionPlan": "..."}`;
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
-  if (!apiKey) throw new Error("Add VITE_ANTHROPIC_API_KEY to your Lovable project environment variables to enable AI drafting.");
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-iab": "allow" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 3000, messages: [{ role: "user", content: prompt }] }),
-  });
-  if (!response.ok) {
-    let detail = "";
-    try { detail = JSON.stringify(await response.json()); } catch (_) { detail = await response.text().catch(() => ""); }
-    throw new Error("The drafting service returned an error (HTTP " + response.status + "). " + detail);
-  }
-  const data = await response.json();
-  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-  if (!text.trim()) throw new Error("The drafting service returned an empty response. Please try again.");
-  // robust JSON extraction: strip fences, then grab the outermost {...}
-  let clean = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-  const first = clean.indexOf("{"), last = clean.lastIndexOf("}");
-  if (first !== -1 && last !== -1) clean = clean.slice(first, last + 1);
-  try {
-    const parsed = JSON.parse(clean);
-    return { exec: parsed.exec || "", recoIntro: parsed.recoIntro || "", actionPlan: parsed.actionPlan || "" };
-  } catch (_) {
-    throw new Error("Couldn't read the drafted text (the response may have been cut off). Please try again.");
-  }
-}
-
 function buildClaudePrompt(c, d) {
   const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
   const lines = [
