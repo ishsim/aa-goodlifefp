@@ -630,7 +630,6 @@ export default function App() {
   const [activeId, setActiveId] = useState(null);
   const [view, setView] = useState("list"); // list | edit | report
   const [step, setStep] = useState(0);
-  const [drafting, setDrafting] = useState(false);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
 
