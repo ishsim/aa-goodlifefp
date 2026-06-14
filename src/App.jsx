@@ -1498,11 +1498,7 @@ export default function App() {
         </>)}
 
         {step === 5 && (<>
-          <SectionCard title="AI-drafted narrative" right={
-            <button onClick={runDraft} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg">
-              {drafting ? "Drafting…" : (client.narrative.exec ? "Re-draft with Claude" : "Draft with Claude")}
-            </button>}>
-            <p className="text-sm text-slate-500 mb-4">Claude drafts from the client's numbers, your priorities list, your concern notes, and the selected plans — in a warm, non-salesy tone. Review and edit everything before previewing; this is your professional advice, the draft is just a head start.</p>
+          <SectionCard title="Narrative">
             <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
               <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
               <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
