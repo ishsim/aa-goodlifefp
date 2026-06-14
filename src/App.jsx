@@ -938,30 +938,9 @@ export default function App() {
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
-            <button onClick={doDownloadHTML} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download Report</button>
             <button onClick={doDownloadDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download as Word (.docx)</button>
-            <button onClick={doPrint} className="text-sm px-3 py-1.5 rounded-lg border border-white/40 text-white hover:bg-white/10">🖨 Print tips</button>
           </div>
         </div>
-        {showPrintModal && (
-            <div className="no-print fixed inset-0 z-50 flex items-center justify-center" style={{background:"rgba(0,0,0,0.6)"}} onClick={() => setShowPrintModal(false)}>
-              <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4" onClick={e => e.stopPropagation()}>
-                <h2 className="font-serif text-2xl text-purple-900 mb-4">Print / Save as PDF</h2>
-                <p className="text-slate-600 mb-4 text-sm leading-relaxed">The print dialog can't be triggered automatically from inside the Claude artifact — the browser blocks it. Use your keyboard shortcut instead:</p>
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
-                  <div className="font-semibold text-purple-900 mb-2 text-sm">Desktop:</div>
-                  <div className="text-sm text-slate-700">Press <kbd className="bg-white border border-slate-300 rounded px-2 py-0.5 font-mono text-xs">Ctrl+P</kbd> (Windows) or <kbd className="bg-white border border-slate-300 rounded px-2 py-0.5 font-mono text-xs">⌘+P</kbd> (Mac)</div>
-                  <div className="text-xs text-slate-500 mt-2">In the dialog: set Destination to "Save as PDF", enable Background graphics, set paper to A4.</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
-                  <div className="font-semibold text-slate-700 mb-1 text-sm">Mobile:</div>
-                  <div className="text-sm text-slate-600">Browser Share button → Print → AirPrint / Save to Files.</div>
-                </div>
-                <p className="text-xs text-slate-400 mb-5">For the most reliable printing, use the <b>offline HTML file</b> on your device — its Print button works directly without these steps.</p>
-                <button onClick={() => setShowPrintModal(false)} className="w-full bg-purple-700 text-white font-semibold py-2.5 rounded-xl hover:bg-purple-800">Got it</button>
-              </div>
-            </div>
-          )}
         <div id="report-content" className="rpt sheet bg-white max-w-[210mm] mx-auto my-6 shadow-xl" style={{ padding: "18mm 18mm" }}>
           {/* cover */}
           <div className="text-center pt-16 pb-10">
