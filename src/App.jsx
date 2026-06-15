@@ -1455,9 +1455,11 @@ export default function App() {
 
         {step === 5 && (<>
           <SectionCard title="Narrative">
-            <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
-              <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
-              <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
+            <div className="mb-4">
+              <button onClick={draftWithAI} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
+                {drafting ? "Drafting…" : "✦ Draft with AI"}
+              </button>
+              {draftError && <p className="mt-2 text-sm text-red-600">{draftError}</p>}
             </div>
             <Field label="1. Executive summary"><TextArea rows={9} value={client.narrative.exec} onChange={e => updateDeep("narrative", { exec: e.target.value })} /></Field>
             <div className="h-4" />
