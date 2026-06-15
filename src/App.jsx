@@ -688,6 +688,34 @@ export default function App() {
     }
   };
 
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState("");
+
+  const draftWithAI = async () => {
+    if (!client || !d) return;
+    setDrafting(true);
+    setDraftError("");
+    try {
+      const prompt = buildClaudePrompt(client, d);
+      const { data: res, error } = await supabase.functions.invoke("draft-narrative", { body: { prompt } });
+      if (error) throw error;
+      if (!res || (res.error && !res.exec && !res.recoIntro && !res.actionPlan)) {
+        throw new Error(res?.error || "No content returned");
+      }
+      updateDeep("narrative", {
+        exec: res.exec || "",
+        recoIntro: res.recoIntro || "",
+        actionPlan: res.actionPlan || "",
+      });
+      toast.success("Draft generated");
+    } catch (e) {
+      console.error(e);
+      setDraftError(e?.message || String(e));
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const doDownloadDocx = async () => {
     try {
       await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
