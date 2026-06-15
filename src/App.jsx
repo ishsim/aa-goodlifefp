@@ -696,9 +696,23 @@ export default function App() {
     setDrafting(true);
     setDraftError("");
     try {
-      const prompt = buildClaudePrompt(client, d);
-      const { data: res, error } = await supabase.functions.invoke("draft-narrative", { body: { prompt } });
-      if (error) throw error;
+      const promptText = buildClaudePrompt(client, d);
+      const { data: res, error } = await supabase.functions.invoke('draft-narrative', {
+        body: { prompt: promptText }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        let message = error.message;
+        try {
+          const details = await error.context?.json?.();
+          if (details?.details) message = `${message}: ${details.details}`;
+          else if (details?.error) message = `${message}: ${details.error}`;
+        } catch (_detailsError) {
+          // Keep the original SDK error message if the response body cannot be read.
+        }
+        throw new Error(message);
+      }
       if (!res || (res.error && !res.exec && !res.recoIntro && !res.actionPlan)) {
         throw new Error(res?.error || "No content returned");
       }
@@ -710,7 +724,7 @@ export default function App() {
       toast.success("Draft generated");
     } catch (e) {
       console.error(e);
-      setDraftError(e?.message || String(e));
+      setDraftError(e instanceof Error ? e.message : String(e));
     } finally {
       setDrafting(false);
     }
