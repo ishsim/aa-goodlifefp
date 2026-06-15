@@ -697,7 +697,7 @@ export default function App() {
     setDraftError("");
     try {
       const promptText = buildClaudePrompt(client, d);
-      const { data: res, error } = await supabase.functions.invoke('draft-narrative', {
+      const { data, error } = await supabase.functions.invoke('draft-narrative', {
         body: { prompt: promptText }
       });
 
@@ -713,13 +713,13 @@ export default function App() {
         }
         throw new Error(message);
       }
-      if (!res || (res.error && !res.exec && !res.recoIntro && !res.actionPlan)) {
-        throw new Error(res?.error || "No content returned");
+      if (!data || (data.error && !data.exec && !data.recoIntro && !data.actionPlan)) {
+        throw new Error(data?.error || "No content returned");
       }
       updateDeep("narrative", {
-        exec: res.exec || "",
-        recoIntro: res.recoIntro || "",
-        actionPlan: res.actionPlan || "",
+        exec: data.exec || "",
+        recoIntro: data.recoIntro || "",
+        actionPlan: data.actionPlan || "",
       });
       toast.success("Draft generated");
     } catch (e) {
