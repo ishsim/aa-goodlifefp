@@ -688,6 +688,34 @@ export default function App() {
     }
   };
 
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState("");
+
+  const draftWithAI = async () => {
+    if (!client || !d) return;
+    setDrafting(true);
+    setDraftError("");
+    try {
+      const prompt = buildClaudePrompt(client, d);
+      const { data: res, error } = await supabase.functions.invoke("draft-narrative", { body: { prompt } });
+      if (error) throw error;
+      if (!res || (res.error && !res.exec && !res.recoIntro && !res.actionPlan)) {
+        throw new Error(res?.error || "No content returned");
+      }
+      updateDeep("narrative", {
+        exec: res.exec || "",
+        recoIntro: res.recoIntro || "",
+        actionPlan: res.actionPlan || "",
+      });
+      toast.success("Draft generated");
+    } catch (e) {
+      console.error(e);
+      setDraftError(e?.message || String(e));
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const doDownloadDocx = async () => {
     try {
       await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
@@ -1427,9 +1455,11 @@ export default function App() {
 
         {step === 5 && (<>
           <SectionCard title="Narrative">
-            <div className="mb-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
-              <p className="text-sm text-slate-600 mb-2">No AI connected? Copy a ready-made prompt, paste it into Claude.ai, then paste the 3 sections back here.</p>
-              <button onClick={copyPrompt} className="bg-white border border-slate-300 hover:border-purple-400 hover:text-purple-700 text-slate-700 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors">📋 Copy prompt for Claude</button>
+            <div className="mb-4">
+              <button onClick={draftWithAI} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
+                {drafting ? "Drafting…" : "✦ Draft with AI"}
+              </button>
+              {draftError && <p className="mt-2 text-sm text-red-600">{draftError}</p>}
             </div>
             <Field label="1. Executive summary"><TextArea rows={9} value={client.narrative.exec} onChange={e => updateDeep("narrative", { exec: e.target.value })} /></Field>
             <div className="h-4" />
