@@ -502,7 +502,7 @@ const StaticRatioBars = ({ data }) => {
         const yoursH = Math.max(2, chartH - yScale(yoursVal));
         const benchY = yScale(benchVal) + 4;
         const yoursY = yScale(yoursVal) + 4;
-        const barColor = d.pass ? "#7613ad" : "#dc2626";
+        const barColor = d.pass ? "#16a34a" : "#dc2626";
         const labelY = chartH + labelH + 4;
         return (
           <g key={i}>
