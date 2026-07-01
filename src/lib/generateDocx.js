@@ -171,7 +171,7 @@ function capturedImage(cap, maxWidth = 600) {
   });
 }
 
-export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }) {
+export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, captures = {} }) {
   const children = [];
 
   // ---- Cover ----
@@ -233,6 +233,8 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }
     ["Total Liabilities", { text: "(" + money(d.totalLiab) + ")", align: AlignmentType.RIGHT }],
     [{ text: "NET WORTH", bold: true, color: PURPLE }, { text: money(d.netWorth), bold: true, color: PURPLE, align: AlignmentType.RIGHT }],
   ], [5400, 3600]));
+  const assetPieImg = capturedImage(captures.assetPie);
+  if (assetPieImg) children.push(assetPieImg);
 
   children.push(H2("2.1 Cash Flow Summary"));
   children.push(buildTable([], [
@@ -253,6 +255,8 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }
     ]),
     [3000, 1500, 1500, 1500, 1500],
   ));
+  const allocPieImg = capturedImage(captures.allocationPie);
+  if (allocPieImg) children.push(allocPieImg);
 
   children.push(H2("2.2 Financial Ratio Analysis"));
   children.push(buildTable(
@@ -265,6 +269,10 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }
     ]),
     [3600, 1800, 1600, 2000],
   ));
+  const efImg = capturedImage(captures.emergencyFund);
+  if (efImg) children.push(efImg);
+  const ratioImg = capturedImage(captures.ratioBars);
+  if (ratioImg) children.push(ratioImg);
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   // ---- 3. Objectives ----
@@ -284,17 +292,21 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }
 
   children.push(H2("3.2 Retirement Planning"));
   children.push(P("To provide a minimum of " + money(num(client.retirement.monthly)) + " per month for " + client.retirement.years + " years after retirement."));
-  children.push(buildTable([], [
-    ["Amount required (" + client.retirement.years + " years)", { text: money(d.rtRequired), align: AlignmentType.RIGHT }],
-    ["Inflation-adjusted (" + client.retirement.inflation + "% over " + client.retirement.yearsToRetire + " years)", { text: money(d.rtAdjusted), align: AlignmentType.RIGHT }],
-    ["SPK (Member Account, projected)", { text: money(num(client.retirement.spkProj)), align: AlignmentType.RIGHT }],
-    ["SPK Annuity (Employer)", { text: money(d.spkAnnuityTotal), align: AlignmentType.RIGHT }],
-    ["Old Age Pension", { text: money(num(client.retirement.pension)), align: AlignmentType.RIGHT }],
-    ["Other: Annuities (projected)", { text: money(d.annTotal), align: AlignmentType.RIGHT }],
-    ["Other: Investments (projected)", { text: money(d.invTotal), align: AlignmentType.RIGHT }],
-    [{ text: "Total projected arrangement", bold: true }, { text: money(d.rtProjected), bold: true, align: AlignmentType.RIGHT }],
-    [{ text: "Projected shortfall", bold: true }, { text: money(d.rtShortfall), bold: true, color: d.rtShortfall > 0 ? RED : PURPLE, align: AlignmentType.RIGHT }],
-  ], [5400, 3600]));
+  children.push(buildTable(
+    ["Item", "Projected Arrangement", "Amount"],
+    [
+      ["Amount required for " + client.retirement.years + " years", "Required", { text: money(d.rtRequired), align: AlignmentType.RIGHT }],
+      ["Inflation-adjusted (" + client.retirement.inflation + "% over " + client.retirement.yearsToRetire + " years)", "Required", { text: money(d.rtAdjusted), align: AlignmentType.RIGHT }],
+      ["SPK — Member Account", "Projected", { text: money(num(client.retirement.spkProj)), align: AlignmentType.RIGHT }],
+      ["SPK Annuity — Employer", "Projected", { text: money(d.spkAnnuityTotal), align: AlignmentType.RIGHT }],
+      ["Old Age Pension", "Projected", { text: money(num(client.retirement.pension)), align: AlignmentType.RIGHT }],
+      ["Other Annuities", "Projected", { text: money(d.annTotal), align: AlignmentType.RIGHT }],
+      ["Other Investments", "Projected", { text: money(d.invTotal), align: AlignmentType.RIGHT }],
+      [{ text: "Total projected arrangement", bold: true }, { text: "", bold: true }, { text: money(d.rtProjected), bold: true, align: AlignmentType.RIGHT }],
+      [{ text: "Projected shortfall", bold: true, color: d.rtShortfall > 0 ? RED : PURPLE }, { text: "", bold: true }, { text: d.rtShortfall > 0 ? "-" + money(d.rtShortfall) : money(0), bold: true, color: d.rtShortfall > 0 ? RED : PURPLE, align: AlignmentType.RIGHT }],
+    ],
+    [4200, 2400, 2400],
+  ));
 
   const otherObj = (client.otherObjectives || []).filter(o => o.name || num(o.target) > 0);
   if (otherObj.length) {
