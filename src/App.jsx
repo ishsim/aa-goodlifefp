@@ -419,14 +419,17 @@ const AssetPie = ({ data, height = 280 }) => (
 const RatioBars = ({ data, height = 320 }) => (
   <div style={{ width: "100%", height }}>
     <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 18, right: 16, left: 0, bottom: 4 }}>
-        <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={56} />
-        <YAxis tick={{ fontSize: 10 }} />
+      <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 4 }}>
+        <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={64} />
+        <YAxis tick={{ fontSize: 10 }} domain={[0, 110]} />
         <Tooltip formatter={(v, n) => [fmt(v, 1) + (data[0] && data[0].unit === "mo" ? "" : ""), n]} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
-        <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]} />
+        <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]}>
+          <LabelList dataKey="displayTarget" position="top" style={{ fontSize: 9, fill: "#64748b" }} formatter={(v) => fmt(v, 0) + "%"} />
+        </Bar>
         <Bar dataKey="displayYours" name="Yours" radius={[3,3,0,0]}>
-          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#7613ad" : "#dc2626"} />)}
+          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#16a34a" : "#dc2626"} />)}
+          <LabelList dataKey="yoursLabel" position="top" style={{ fontSize: 9, fontWeight: 600 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -499,7 +502,7 @@ const StaticRatioBars = ({ data }) => {
         const yoursH = Math.max(2, chartH - yScale(yoursVal));
         const benchY = yScale(benchVal) + 4;
         const yoursY = yScale(yoursVal) + 4;
-        const barColor = d.pass ? "#7613ad" : "#dc2626";
+        const barColor = d.pass ? "#16a34a" : "#dc2626";
         const labelY = chartH + labelH + 4;
         return (
           <g key={i}>
@@ -1025,17 +1028,66 @@ export default function App() {
           <p className="text-xs text-slate-500 mb-4">Without adequate coverage for death, disability and sickness: (i) your SPK and other income might not be sufficient to support family expenses; (ii) you might have to downgrade to a less desired lifestyle.</p>
           <h3>3.2 Retirement Planning</h3>
           <p className="mb-2">To provide a minimum of {money(num(client.retirement.monthly))} per month for {client.retirement.years} years after retirement (assuming post-retirement savings follow the rate of inflation).</p>
-          <table><tbody>
-            <tr><td>Amount required ({client.retirement.years} years)</td><td className="tnum">{money(d.rtRequired)}</td></tr>
-            <tr><td>Inflation-adjusted ({client.retirement.inflation}% over {client.retirement.yearsToRetire} years)</td><td className="tnum">{money(d.rtAdjusted)}</td></tr>
-            <tr><td>SPK (Member Account, projected)</td><td className="tnum">{money(num(client.retirement.spkProj))}</td></tr>
-            <tr><td>SPK Annuity (Employer){num(client.retirement.spkAnnuityMonthly) > 0 ? " — " + money(num(client.retirement.spkAnnuityMonthly)) + "/mo for " + client.retirement.spkAnnuityYears + " yrs" : ""}</td><td className="tnum">{money(d.spkAnnuityTotal)}</td></tr>
-            <tr><td>Old Age Pension</td><td className="tnum">{money(num(client.retirement.pension))}</td></tr>
-            <tr><td>Other: Annuities (projected)</td><td className="tnum">{money(d.annTotal)}</td></tr>
-            <tr><td>Other: Investments (projected)</td><td className="tnum">{money(d.invTotal)}</td></tr>
-            <tr><td className="font-semibold">Total projected arrangement</td><td className="tnum font-semibold">{money(d.rtProjected)}</td></tr>
-            <tr><td className="font-bold">Projected shortfall</td><td className={"tnum font-bold " + (d.rtShortfall > 0 ? "text-red-700" : "text-purple-900")}>{money(d.rtShortfall)}</td></tr>
-          </tbody></table>
+          <table>
+            <thead>
+              <tr style={{ background: "#51037c", color: "#fff" }}>
+                <th style={{ color: "#fff" }}>Item</th>
+                <th className="tnum" style={{ color: "#fff" }}>Amount Required</th>
+                <th className="tnum" style={{ color: "#fff" }}>Current Projected Arrangement</th>
+                <th className="tnum" style={{ color: "#fff" }}>Projected Shortfall</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Amount required for {client.retirement.years} years</td>
+                <td className="tnum">{money(d.rtRequired)}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Inflation-adjusted ({client.retirement.inflation}% over {client.retirement.yearsToRetire} years)</td>
+                <td className="tnum">{money(d.rtAdjusted)}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>SPK — Member Account (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(num(client.retirement.spkProj))}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>SPK Annuity — Employer{num(client.retirement.spkAnnuityMonthly) > 0 ? " (" + money(num(client.retirement.spkAnnuityMonthly)) + "/mo × " + client.retirement.spkAnnuityYears + " yrs)" : ""}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.spkAnnuityTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Old Age Pension</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(num(client.retirement.pension))}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Other Annuities (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.annTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Other Investments (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.invTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr style={{ background: "#f5f0fa" }}>
+                <td className="font-bold">Total</td>
+                <td className="tnum font-bold">{money(d.rtAdjusted)}</td>
+                <td className="tnum font-bold">{money(d.rtProjected)}</td>
+                <td className={"tnum font-bold " + (d.rtShortfall > 0 ? "text-red-700" : "text-purple-900")}>{d.rtShortfall > 0 ? "-" + money(d.rtShortfall) : money(0)}</td>
+              </tr>
+            </tbody>
+          </table>
           <p className="text-xs text-slate-500">With the current projection you can expect a monthly retirement annuity of approximately <b>{money(d.rtMonthlyAnnuity)}</b>.</p>
           {(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0 && (<>
             <h3>3.3 Other Objectives</h3>
