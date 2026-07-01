@@ -4,6 +4,7 @@ import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import html2canvas from "html2canvas";
 
 const LOGO = logoAsset.url;
 
@@ -734,12 +735,36 @@ export default function App() {
   };
 
   const doDownloadDocx = async () => {
+    setDownloadingDocx(true);
     try {
-      await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
+      const captures = await captureChartsForDocx();
+      await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO, captures });
     } catch (e) {
       console.error(e);
       alert("Could not generate the Word document.\n\n" + (e?.message || e));
+    } finally {
+      setDownloadingDocx(false);
     }
+  };
+
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
+
+  const captureChartsForDocx = async () => {
+    const root = document.getElementById("report-content");
+    if (!root) return {};
+    const nodes = root.querySelectorAll("[data-docx-capture]");
+    const map = {};
+    for (const el of nodes) {
+      const key = el.getAttribute("data-docx-capture");
+      try {
+        const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2, logging: false, useCORS: true });
+        const dataUrl = canvas.toDataURL("image/png");
+        map[key] = { base64: dataUrl.split(",")[1], w: canvas.width, h: canvas.height };
+      } catch (err) {
+        console.warn("html2canvas capture failed for", key, err);
+      }
+    }
+    return map;
   };
 
   if (!loaded) return (
