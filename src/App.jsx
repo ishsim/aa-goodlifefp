@@ -419,14 +419,17 @@ const AssetPie = ({ data, height = 280 }) => (
 const RatioBars = ({ data, height = 320 }) => (
   <div style={{ width: "100%", height }}>
     <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 18, right: 16, left: 0, bottom: 4 }}>
-        <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={56} />
-        <YAxis tick={{ fontSize: 10 }} />
+      <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 4 }}>
+        <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={64} />
+        <YAxis tick={{ fontSize: 10 }} domain={[0, 110]} />
         <Tooltip formatter={(v, n) => [fmt(v, 1) + (data[0] && data[0].unit === "mo" ? "" : ""), n]} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
-        <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]} />
+        <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]}>
+          <LabelList dataKey="displayTarget" position="top" style={{ fontSize: 9, fill: "#64748b" }} formatter={(v) => fmt(v, 0) + "%"} />
+        </Bar>
         <Bar dataKey="displayYours" name="Yours" radius={[3,3,0,0]}>
-          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#7613ad" : "#dc2626"} />)}
+          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#16a34a" : "#dc2626"} />)}
+          <LabelList dataKey="yoursLabel" position="top" style={{ fontSize: 9, fontWeight: 600 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
