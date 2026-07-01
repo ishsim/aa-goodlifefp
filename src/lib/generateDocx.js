@@ -149,6 +149,28 @@ function imageType(url) {
   return "png";
 }
 
+function base64ToUint8(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+function capturedImage(cap, maxWidth = 600) {
+  if (!cap || !cap.base64) return null;
+  const w = Math.min(maxWidth, cap.w || maxWidth);
+  const h = cap.w ? Math.round((cap.h || maxWidth) * (w / cap.w)) : Math.round(maxWidth * 0.5);
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 120, after: 160 },
+    children: [new ImageRun({
+      type: "png",
+      data: base64ToUint8(cap.base64),
+      transformation: { width: w, height: h },
+    })],
+  });
+}
+
 export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl }) {
   const children = [];
 
