@@ -4,6 +4,7 @@ import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import html2canvas from "html2canvas";
 
 const LOGO = logoAsset.url;
 
@@ -734,12 +735,36 @@ export default function App() {
   };
 
   const doDownloadDocx = async () => {
+    setDownloadingDocx(true);
     try {
-      await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO });
+      const captures = await captureChartsForDocx();
+      await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO, captures });
     } catch (e) {
       console.error(e);
       alert("Could not generate the Word document.\n\n" + (e?.message || e));
+    } finally {
+      setDownloadingDocx(false);
     }
+  };
+
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
+
+  const captureChartsForDocx = async () => {
+    const root = document.getElementById("report-content");
+    if (!root) return {};
+    const nodes = root.querySelectorAll("[data-docx-capture]");
+    const map = {};
+    for (const el of nodes) {
+      const key = el.getAttribute("data-docx-capture");
+      try {
+        const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2, logging: false, useCORS: true });
+        const dataUrl = canvas.toDataURL("image/png");
+        map[key] = { base64: dataUrl.split(",")[1], w: canvas.width, h: canvas.height };
+      } catch (err) {
+        console.warn("html2canvas capture failed for", key, err);
+      }
+    }
+    return map;
   };
 
   if (!loaded) return (
@@ -910,7 +935,7 @@ export default function App() {
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
-            <button onClick={doDownloadDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Download as Word (.docx)</button>
+            <button onClick={doDownloadDocx} disabled={downloadingDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100 disabled:opacity-60 disabled:cursor-wait">{downloadingDocx ? "Capturing charts…" : "⬇ Download as Word (.docx)"}</button>
           </div>
         </div>
         <div id="report-content" className="rpt sheet bg-white max-w-[210mm] mx-auto my-6 shadow-xl" style={{ padding: "18mm 18mm" }}>
@@ -956,7 +981,7 @@ export default function App() {
             <tr><td>Total Liabilities</td><td className="tnum">({money(d.totalLiab)})</td></tr>
             <tr><td className="font-bold text-purple-900">NET WORTH</td><td className="tnum font-bold text-purple-900">{money(d.netWorth)}</td></tr>
           </tbody></table>
-          {d.assetPie.length > 0 && (<div className="my-3"><StaticDonut data={d.assetPie} colorMap={ASSET_COLORS} /></div>)}
+          {d.assetPie.length > 0 && (<div className="my-3" data-docx-capture="assetPie"><StaticDonut data={d.assetPie} colorMap={ASSET_COLORS} /></div>)}
           <p className="text-xs text-slate-500 mb-4">Personal-use assets (houses, vehicles) form part of your standard of living and are normally not drawn upon at death or retirement. Invested assets are held to produce income or capital growth and are available to you or your dependants. Cash and equivalents can normally be liquidated within 12 months and form part of your Emergency Fund.</p>
           <h3>2.1 Your Cash Flow Summary</h3>
           <table><tbody>
@@ -973,7 +998,7 @@ export default function App() {
                 <tr key={a.label}><td>{a.label}</td><td className="tnum">{a.pct * 100}%</td><td className="tnum">{money(a.optimal)}</td><td className="tnum">{money(a.current)}</td><td className="tnum">{fmt(a.curPct * 100, 0)}%</td></tr>
               ))}</tbody>
             </table>
-            {d.pie.length > 0 && (<div className="my-3"><StaticDonut data={d.pie} colorMap={PIE_COLORS} /></div>)}
+            {d.pie.length > 0 && (<div className="my-3" data-docx-capture="allocationPie"><StaticDonut data={d.pie} colorMap={PIE_COLORS} /></div>)}
           </>)}
           {client.sections.ratios && (<>
             <h3>2.2 Financial Ratio Analysis</h3>
@@ -996,7 +1021,7 @@ export default function App() {
               const pct3 = Math.min(100, (d.cash / d.ef3) * 100);
               const pct6 = Math.min(100, (d.cash / d.ef6) * 100);
               return (
-                <div className="my-4 border border-slate-200 rounded-xl p-4">
+                <div className="my-4 border border-slate-200 rounded-xl p-4" data-docx-capture="emergencyFund">
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Emergency Fund — {fmt(months,1)} months of expenses</div>
                   {[["3-Month Target", d.ef3, pct3, pass3], ["6-Month Target", d.ef6, pct6, pass6]].map(([label, target, pct, pass]) => (
                     <div key={label} className="mb-3">
@@ -1012,7 +1037,7 @@ export default function App() {
                 </div>
               );
             })()}
-            {d.ratioBars.length > 0 && (<div className="my-3"><div className="text-xs text-slate-500 mb-1">Financial ratios vs. benchmark — capped at 100% (green = healthy, red = needs attention).</div><StaticRatioBars data={d.ratioBars} /></div>)}
+            {d.ratioBars.length > 0 && (<div className="my-3" data-docx-capture="ratioBars"><div className="text-xs text-slate-500 mb-1">Financial ratios vs. benchmark — capped at 100% (green = healthy, red = needs attention).</div><StaticRatioBars data={d.ratioBars} /></div>)}
           </>)}
 
           <div className="pagebreak" />
