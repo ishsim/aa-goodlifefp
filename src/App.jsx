@@ -428,20 +428,38 @@ const AssetPie = ({ data, height = 280 }) => (
   </div>
 );
 
-const RatioBars = ({ data, height = 320 }) => (
-  <div style={{ width: "100%", height }}>
+const RatioBars = ({ data, height = 340 }) => (
+  <div style={{ width: "100%", height, paddingTop: 40 }}>
     <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 4 }}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 0, bottom: 4 }}>
         <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={64} />
-        <YAxis tick={{ fontSize: 10 }} domain={[0, 110]} />
-        <Tooltip formatter={(v, n) => [fmt(v, 1) + (data[0] && data[0].unit === "mo" ? "" : ""), n]} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 10 }} domain={[0, 105]} ticks={[0,25,50,75,100]} tickFormatter={(v) => v + "%"} />
+        <Tooltip formatter={(v, n, p) => {
+          if (n === "Yours") {
+            const item = p && p.payload;
+            return [item ? item.yoursLabel : fmt(v, 1) + "%", "Yours"];
+          }
+          return [fmt(v, 0) + "%", n];
+        }} />
+        <Legend wrapperStyle={{ fontSize: 11, width: "100%" }} />
         <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]}>
           <LabelList dataKey="displayTarget" position="top" style={{ fontSize: 9, fill: "#64748b" }} formatter={(v) => fmt(v, 0) + "%"} />
         </Bar>
-        <Bar dataKey="displayYours" name="Yours" radius={[3,3,0,0]}>
-          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#16a34a" : "#dc2626"} />)}
-          <LabelList dataKey="yoursLabel" position="top" style={{ fontSize: 9, fontWeight: 600 }} />
+        <Bar dataKey="displayYours" name="Yours (healthy)" fill="#16a34a" radius={[3,3,0,0]}>
+          {data.map((e, i) => <Cell key={i} fill={e.na ? "#94a3b8" : (e.pass ? "#16a34a" : "#dc2626")} />)}
+          <LabelList dataKey="displayYours" content={(props) => {
+            const { x, y, width, index } = props;
+            const item = data[index];
+            if (!item) return null;
+            const inside = item.actualYours >= 100;
+            const cx = Number(x) + Number(width) / 2;
+            const cy = inside ? Number(y) + 12 : Number(y) - 4;
+            return (
+              <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={600} fill={inside ? "#ffffff" : (item.na ? "#64748b" : (item.pass ? "#166534" : "#b91c1c"))}>
+                {item.yoursLabel}
+              </text>
+            );
+          }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
