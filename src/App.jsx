@@ -1617,12 +1617,19 @@ export default function App() {
           </div>
           <SectionCard title="Financial health ratios (detail)">
             <div className="grid md:grid-cols-2 gap-3">
-              {d.ratios.map(r => (
-                <div key={r.id} className={"rounded-lg border px-3 py-2 text-sm " + (r.pass == null ? "border-slate-200 bg-slate-50" : r.pass ? "border-purple-300 bg-purple-50" : "border-red-300 bg-red-50")}>
-                  <div className="flex justify-between"><b>{r.name}</b><span className="tabular-nums">{r.value == null ? "—" : r.fmtV(r.value)}</span></div>
-                  <div className="text-xs text-slate-500">Benchmark {r.dir === ">=" ? "≥" : "≤"} {r.id === "liquidity" ? r.target + " months" : fmt(r.target * 100, 0) + "%"} · {r.pass == null ? "n/a" : r.pass ? "Healthy" : "Needs attention"}</div>
-                </div>
-              ))}
+              {d.ratios.filter(r => r.id !== "liquidity").map(r => {
+                const isNegNW = r.negNW && r.value == null;
+                const tone = isNegNW
+                  ? "border-slate-200 bg-slate-50"
+                  : (r.pass == null ? "border-slate-200 bg-slate-50" : r.pass ? "border-purple-300 bg-purple-50" : "border-red-300 bg-red-50");
+                return (
+                  <div key={r.id} className={"rounded-lg border px-3 py-2 text-sm " + tone}>
+                    <div className="flex justify-between"><b>{r.name}</b><span className="tabular-nums">{r.value == null ? "—" : r.fmtV(r.value)}</span></div>
+                    <div className="text-xs text-slate-500">Benchmark {r.dir === ">=" ? "≥" : "≤"} {fmt(r.target * 100, 0) + "%"} · {isNegNW ? "n/a" : (r.pass == null ? "n/a" : r.pass ? "Healthy" : "Needs attention")}</div>
+                    {isNegNW && <div className="text-xs text-slate-500 italic mt-0.5">Net worth is negative — ratio not applicable.</div>}
+                  </div>
+                );
+              })}
             </div>
           </SectionCard>
         </>)}
