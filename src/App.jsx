@@ -135,6 +135,8 @@ function migrate(c) {
   if (typeof m.retirement.annuities !== "object" || m.retirement.annuities == null) m.retirement.annuities = { current: String(rt0.annuities || ""), contrib: "", rate: "", years: "" };
   if (typeof m.retirement.investments !== "object" || m.retirement.investments == null) m.retirement.investments = { current: String(rt0.investments || ""), contrib: "", rate: "", years: "" };
   if (!Array.isArray(m.otherObjectives)) m.otherObjectives = [];
+  if (!Array.isArray(m.existingPlans)) m.existingPlans = [];
+  if (!Array.isArray(m.existingInvestments)) m.existingInvestments = [];
   // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
   const existingProds = Array.isArray(c.products) ? c.products : [];
   const mergedProds = DEFAULT_PRODUCTS.map(def => {
