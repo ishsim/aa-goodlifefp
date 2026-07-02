@@ -528,15 +528,16 @@ const StaticRatioBars = ({ data }) => {
       ))}
       {/* Groups */}
       {data.map((d, i) => {
-        const benchVal = d.id === "liquidity" ? Math.min(CAP, (d.target / 12) * 100) : Math.min(CAP, d.target * 100);
-        const yoursRaw = d.id === "liquidity" ? (d.value / 12) * 100 : d.value * 100;
-        const yoursVal = Math.min(CAP, Math.max(0, yoursRaw));
+        const benchVal = d.displayTarget;
+        const yoursRaw = d.actualYours;
+        const yoursVal = d.displayYours;
+        const inside = yoursRaw >= 100;
         const x0 = axisW + gutter + i * (groupW + gutter);
         const benchH = chartH - yScale(benchVal);
         const yoursH = Math.max(2, chartH - yScale(yoursVal));
         const benchY = yScale(benchVal) + 4;
         const yoursY = yScale(yoursVal) + 4;
-        const barColor = d.pass ? "#16a34a" : "#dc2626";
+        const barColor = d.na ? "#94a3b8" : (d.pass ? "#16a34a" : "#dc2626");
         const labelY = chartH + labelH + 4;
         return (
           <g key={i}>
@@ -545,11 +546,11 @@ const StaticRatioBars = ({ data }) => {
             {/* Yours bar */}
             <rect x={x0 + barW + gap} y={yoursY} width={barW} height={yoursH} fill={barColor} rx="2" />
             {/* Value label above yours bar */}
-            <text x={x0 + barW + gap + barW / 2} y={yoursY - 3} fontSize="8" textAnchor="middle" fill={barColor} fontWeight="600">{d.yoursLabel}</text>
+            <text x={x0 + barW + gap + barW / 2} y={inside ? yoursY + 10 : yoursY - 3} fontSize="8" textAnchor="middle" fill={inside ? "#ffffff" : barColor} fontWeight="600">{d.yoursLabel}</text>
             {/* Group label */}
             <foreignObject x={x0 - 4} y={chartH + 10} width={groupW + 8} height={labelH - 6}>
-              <div xmlns="http://www.w3.org/1999/xhtml" style={{fontSize:8.5,textAlign:"center",color: d.pass ? "#475569" : "#b91c1c",lineHeight:1.3,wordBreak:"break-word"}}>
-                {d.shortName} {d.pass ? "✓" : "⚠"}
+              <div xmlns="http://www.w3.org/1999/xhtml" style={{fontSize:8.5,textAlign:"center",color: d.na ? "#64748b" : (d.pass ? "#475569" : "#b91c1c"),lineHeight:1.3,wordBreak:"break-word"}}>
+                {d.shortName} {d.na ? "" : (d.pass ? "✓" : "⚠")}
               </div>
             </foreignObject>
           </g>
@@ -558,7 +559,7 @@ const StaticRatioBars = ({ data }) => {
       {/* Legend */}
       <rect x={axisW} y={totalH - legendH + 4} width={12} height={10} fill="#cbd5e1" rx="2" />
       <text x={axisW + 16} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Benchmark</text>
-      <rect x={axisW + 100} y={totalH - legendH + 4} width={12} height={10} fill="#7613ad" rx="2" />
+      <rect x={axisW + 100} y={totalH - legendH + 4} width={12} height={10} fill="#16a34a" rx="2" />
       <text x={axisW + 116} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Yours (healthy)</text>
       <rect x={axisW + 230} y={totalH - legendH + 4} width={12} height={10} fill="#dc2626" rx="2" />
       <text x={axisW + 246} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Needs attention</text>
