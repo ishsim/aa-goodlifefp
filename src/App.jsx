@@ -756,6 +756,14 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.innerWidth < 1024) return false;
+    return window.localStorage.getItem("gl-sidebar-expanded") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("gl-sidebar-expanded", sidebarExpanded ? "1" : "0");
+  }, [sidebarExpanded]);
 
   useEffect(() => {
     let cancelled = false;
