@@ -240,7 +240,7 @@ function compute(c) {
   const ratios = [
     { id: "liquidity", name: "Basic Liquidity (months)", value: totalExpenses > 0 ? cash / totalExpenses : null, target: 6, dir: ">=", fmtV: v => fmt(v, 1) + " mo",
       desc: "Cash & cash equivalents ÷ monthly expenses — the number of months you can sustain expenses if income is lost. Recommended: at least 6 months." },
-    { id: "liqNW", name: "Liquid Assets to Net Worth", value: netWorth > 0 ? cash / netWorth : null, target: 0.15, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
+    { id: "liqNW", name: "Liquid Assets to Net Worth", value: netWorth > 0 ? cash / netWorth : null, negNW: netWorth <= 0, target: 0.15, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Cash & cash equivalents ÷ net worth — how accessible your net worth is for short-term cash needs. Recommended: at least 15%." },
     { id: "savings", name: "Savings Ratio", value: net > 0 ? groupTotals.savings / net : null, target: 0.2, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Savings ÷ monthly take-home income. Recommended: save at least 20% of income toward future financial needs." },
@@ -248,7 +248,7 @@ function compute(c) {
       desc: "Total liabilities ÷ total assets — how much of your assets remain mortgaged to financial institutions. Recommended: below 50%." },
     { id: "debtService", name: "Debt Service Ratio", value: net > 0 ? monthlyDebt / net : null, target: 0.35, dir: "<=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Monthly debt repayments ÷ take-home income — your ability to service debt. Recommended: below 35%." },
-    { id: "investNW", name: "Invested Assets to Net Worth", value: netWorth > 0 ? invested / netWorth : null, target: 0.5, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
+    { id: "investNW", name: "Invested Assets to Net Worth", value: netWorth > 0 ? invested / netWorth : null, negNW: netWorth <= 0, target: 0.5, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Invested assets ÷ net worth — how much of your assets are working for you. Ideally 50% or above." },
   ].map(r => ({ ...r, pass: r.value == null ? null : (r.dir === ">=" ? r.value >= r.target : r.value <= r.target) }));
   // 4-3-2-1
@@ -290,15 +290,21 @@ function compute(c) {
     { name: "Cash & equivalents", value: cash },
     { name: "Personal items", value: personal },
   ].filter(x => x.value > 0);
-  const ratioBars = ratios.filter(r => r.value != null && r.id !== "liquidity").map(r => ({
-    name: r.name, shortName: r.name.replace(/ \(.*\)/, "").replace("Invested Assets to Net Worth", "Invested/NW").replace("Liquid Assets to Net Worth", "Liquid/NW").replace("Basic ", ""),
-    yours: r.value, value: r.value, target: r.target, pct: r.id === "liquidity" ? null : true,
-    pass: r.pass, dir: r.dir,
-    displayYours: r.id === "liquidity" ? r.value : r.value * 100,
-    displayTarget: r.id === "liquidity" ? r.target : r.target * 100,
-    unit: r.id === "liquidity" ? "mo" : "%",
-    yoursLabel: r.fmtV(r.value),
-  }));
+  const ratioBars = ratios.filter(r => r.id !== "liquidity").map(r => {
+    const na = r.value == null;
+    const actualPct = na ? 0 : r.value * 100;
+    const displayYours = Math.min(100, Math.max(0, actualPct));
+    return {
+      id: r.id,
+      name: r.name,
+      shortName: r.name.replace(/ \(.*\)/, "").replace("Invested Assets to Net Worth", "Invested/NW").replace("Liquid Assets to Net Worth", "Liquid/NW"),
+      pass: r.pass, dir: r.dir, na, negNW: !!r.negNW,
+      actualYours: actualPct,
+      displayYours,
+      displayTarget: Math.min(100, r.target * 100),
+      yoursLabel: na ? (r.negNW ? "n/a" : "n/a") : fmt(actualPct, 1) + "%",
+    };
+  });
   const pie = [
     { name: "Loans / big purchases", value: groupTotals.loans },
     { name: "Expenditures", value: groupTotals.expenditures },
@@ -422,20 +428,42 @@ const AssetPie = ({ data, height = 280 }) => (
   </div>
 );
 
-const RatioBars = ({ data, height = 320 }) => (
-  <div style={{ width: "100%", height }}>
+const RatioBars = ({ data, height = 340 }) => (
+  <div style={{ width: "100%", height, paddingTop: 40 }}>
     <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 4 }}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 0, bottom: 4 }}>
         <XAxis dataKey="shortName" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={64} />
-        <YAxis tick={{ fontSize: 10 }} domain={[0, 110]} />
-        <Tooltip formatter={(v, n) => [fmt(v, 1) + (data[0] && data[0].unit === "mo" ? "" : ""), n]} />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 10 }} domain={[0, 105]} ticks={[0,25,50,75,100]} tickFormatter={(v) => v + "%"} />
+        <Tooltip formatter={(v, n, p) => {
+          if (n === "Yours") {
+            const item = p && p.payload;
+            return [item ? item.yoursLabel : fmt(v, 1) + "%", "Yours"];
+          }
+          return [fmt(v, 0) + "%", n];
+        }} />
+        <Legend wrapperStyle={{ fontSize: 11, width: "100%", paddingTop: 4 }} payload={[
+          { value: "Benchmark", type: "square", color: "#cbd5e1" },
+          { value: "Yours (healthy)", type: "square", color: "#16a34a" },
+          { value: "Needs attention", type: "square", color: "#dc2626" },
+        ]} />
         <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]}>
           <LabelList dataKey="displayTarget" position="top" style={{ fontSize: 9, fill: "#64748b" }} formatter={(v) => fmt(v, 0) + "%"} />
         </Bar>
-        <Bar dataKey="displayYours" name="Yours" radius={[3,3,0,0]}>
-          {data.map((e, i) => <Cell key={i} fill={e.pass ? "#16a34a" : "#dc2626"} />)}
-          <LabelList dataKey="yoursLabel" position="top" style={{ fontSize: 9, fontWeight: 600 }} />
+        <Bar dataKey="displayYours" name="Yours (healthy)" fill="#16a34a" radius={[3,3,0,0]}>
+          {data.map((e, i) => <Cell key={i} fill={e.na ? "#94a3b8" : (e.pass ? "#16a34a" : "#dc2626")} />)}
+          <LabelList dataKey="displayYours" content={(props) => {
+            const { x, y, width, index } = props;
+            const item = data[index];
+            if (!item) return null;
+            const inside = item.actualYours >= 100;
+            const cx = Number(x) + Number(width) / 2;
+            const cy = inside ? Number(y) + 12 : Number(y) - 4;
+            return (
+              <text x={cx} y={cy} textAnchor="middle" fontSize={10} fontWeight={600} fill={inside ? "#ffffff" : (item.na ? "#64748b" : (item.pass ? "#166534" : "#b91c1c"))}>
+                {item.yoursLabel}
+              </text>
+            );
+          }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -500,15 +528,16 @@ const StaticRatioBars = ({ data }) => {
       ))}
       {/* Groups */}
       {data.map((d, i) => {
-        const benchVal = d.id === "liquidity" ? Math.min(CAP, (d.target / 12) * 100) : Math.min(CAP, d.target * 100);
-        const yoursRaw = d.id === "liquidity" ? (d.value / 12) * 100 : d.value * 100;
-        const yoursVal = Math.min(CAP, Math.max(0, yoursRaw));
+        const benchVal = d.displayTarget;
+        const yoursRaw = d.actualYours;
+        const yoursVal = d.displayYours;
+        const inside = yoursRaw >= 100;
         const x0 = axisW + gutter + i * (groupW + gutter);
         const benchH = chartH - yScale(benchVal);
         const yoursH = Math.max(2, chartH - yScale(yoursVal));
         const benchY = yScale(benchVal) + 4;
         const yoursY = yScale(yoursVal) + 4;
-        const barColor = d.pass ? "#16a34a" : "#dc2626";
+        const barColor = d.na ? "#94a3b8" : (d.pass ? "#16a34a" : "#dc2626");
         const labelY = chartH + labelH + 4;
         return (
           <g key={i}>
@@ -517,11 +546,11 @@ const StaticRatioBars = ({ data }) => {
             {/* Yours bar */}
             <rect x={x0 + barW + gap} y={yoursY} width={barW} height={yoursH} fill={barColor} rx="2" />
             {/* Value label above yours bar */}
-            <text x={x0 + barW + gap + barW / 2} y={yoursY - 3} fontSize="8" textAnchor="middle" fill={barColor} fontWeight="600">{d.yoursLabel}</text>
+            <text x={x0 + barW + gap + barW / 2} y={inside ? yoursY + 10 : yoursY - 3} fontSize="8" textAnchor="middle" fill={inside ? "#ffffff" : barColor} fontWeight="600">{d.yoursLabel}</text>
             {/* Group label */}
             <foreignObject x={x0 - 4} y={chartH + 10} width={groupW + 8} height={labelH - 6}>
-              <div xmlns="http://www.w3.org/1999/xhtml" style={{fontSize:8.5,textAlign:"center",color: d.pass ? "#475569" : "#b91c1c",lineHeight:1.3,wordBreak:"break-word"}}>
-                {d.shortName} {d.pass ? "✓" : "⚠"}
+              <div xmlns="http://www.w3.org/1999/xhtml" style={{fontSize:8.5,textAlign:"center",color: d.na ? "#64748b" : (d.pass ? "#475569" : "#b91c1c"),lineHeight:1.3,wordBreak:"break-word"}}>
+                {d.shortName} {d.na ? "" : (d.pass ? "✓" : "⚠")}
               </div>
             </foreignObject>
           </g>
@@ -530,7 +559,7 @@ const StaticRatioBars = ({ data }) => {
       {/* Legend */}
       <rect x={axisW} y={totalH - legendH + 4} width={12} height={10} fill="#cbd5e1" rx="2" />
       <text x={axisW + 16} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Benchmark</text>
-      <rect x={axisW + 100} y={totalH - legendH + 4} width={12} height={10} fill="#7613ad" rx="2" />
+      <rect x={axisW + 100} y={totalH - legendH + 4} width={12} height={10} fill="#16a34a" rx="2" />
       <text x={axisW + 116} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Yours (healthy)</text>
       <rect x={axisW + 230} y={totalH - legendH + 4} width={12} height={10} fill="#dc2626" rx="2" />
       <text x={axisW + 246} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Needs attention</text>
@@ -1588,12 +1617,19 @@ export default function App() {
           </div>
           <SectionCard title="Financial health ratios (detail)">
             <div className="grid md:grid-cols-2 gap-3">
-              {d.ratios.map(r => (
-                <div key={r.id} className={"rounded-lg border px-3 py-2 text-sm " + (r.pass == null ? "border-slate-200 bg-slate-50" : r.pass ? "border-purple-300 bg-purple-50" : "border-red-300 bg-red-50")}>
-                  <div className="flex justify-between"><b>{r.name}</b><span className="tabular-nums">{r.value == null ? "—" : r.fmtV(r.value)}</span></div>
-                  <div className="text-xs text-slate-500">Benchmark {r.dir === ">=" ? "≥" : "≤"} {r.id === "liquidity" ? r.target + " months" : fmt(r.target * 100, 0) + "%"} · {r.pass == null ? "n/a" : r.pass ? "Healthy" : "Needs attention"}</div>
-                </div>
-              ))}
+              {d.ratios.filter(r => r.id !== "liquidity").map(r => {
+                const isNegNW = r.negNW && r.value == null;
+                const tone = isNegNW
+                  ? "border-slate-200 bg-slate-50"
+                  : (r.pass == null ? "border-slate-200 bg-slate-50" : r.pass ? "border-purple-300 bg-purple-50" : "border-red-300 bg-red-50");
+                return (
+                  <div key={r.id} className={"rounded-lg border px-3 py-2 text-sm " + tone}>
+                    <div className="flex justify-between"><b>{r.name}</b><span className="tabular-nums">{r.value == null ? "—" : r.fmtV(r.value)}</span></div>
+                    <div className="text-xs text-slate-500">Benchmark {r.dir === ">=" ? "≥" : "≤"} {fmt(r.target * 100, 0) + "%"} · {isNegNW ? "n/a" : (r.pass == null ? "n/a" : r.pass ? "Healthy" : "Needs attention")}</div>
+                    {isNegNW && <div className="text-xs text-slate-500 italic mt-0.5">Net worth is negative — ratio not applicable.</div>}
+                  </div>
+                );
+              })}
             </div>
           </SectionCard>
         </>)}
