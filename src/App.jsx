@@ -1482,6 +1482,10 @@ export default function App() {
         </>)}
 
         {step === 4 && (<>
+          <CurrentCoverageSection client={client} update={update} />
+        </>)}
+
+        {step === 5 && (<>
           <SectionCard title="Plan quotation table" right={<span className="text-sm text-slate-500">Selected: {money(d.premMonthly, 2)}/mo · {money(d.premAnnual, 2)}/yr</span>}>
             <Field label="Client's indicated monthly budget (appears in the report legend)">
               <Input value={client.budgetNote} onChange={e => update({ budgetNote: e.target.value })} />
