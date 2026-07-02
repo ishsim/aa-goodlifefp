@@ -1793,7 +1793,8 @@ export default function App() {
             <button onClick={() => { persist(); setView("report"); }} className="bg-purple-900 hover:bg-purple-950 text-white font-semibold px-6 py-3 rounded-xl">Preview &amp; print report →</button>
           </div>
         </>)}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
