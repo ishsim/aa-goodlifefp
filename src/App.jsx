@@ -441,7 +441,11 @@ const RatioBars = ({ data, height = 340 }) => (
           }
           return [fmt(v, 0) + "%", n];
         }} />
-        <Legend wrapperStyle={{ fontSize: 11, width: "100%" }} />
+        <Legend wrapperStyle={{ fontSize: 11, width: "100%", paddingTop: 4 }} payload={[
+          { value: "Benchmark", type: "square", color: "#cbd5e1" },
+          { value: "Yours (healthy)", type: "square", color: "#16a34a" },
+          { value: "Needs attention", type: "square", color: "#dc2626" },
+        ]} />
         <Bar dataKey="displayTarget" name="Benchmark" fill="#cbd5e1" radius={[3,3,0,0]}>
           <LabelList dataKey="displayTarget" position="top" style={{ fontSize: 9, fill: "#64748b" }} formatter={(v) => fmt(v, 0) + "%"} />
         </Bar>
