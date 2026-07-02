@@ -106,6 +106,8 @@ const blankClient = () => ({
   incomeReplacement: { monthly: "5000", years: "20", covDeath: "", covMCI: "", covECI: "", covAccident: "" },
   retirement: { monthly: "5000", years: "20", yearsToRetire: "25", inflation: "2.5", spkProj: "", spkAnnuityMonthly: "", spkAnnuityYears: "15", pension: "", annuities: { current: "", contrib: "", rate: "", years: "" }, investments: { current: "", contrib: "", rate: "", years: "" } },
   otherObjectives: [],
+  existingPlans: [],
+  existingInvestments: [],
   products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
