@@ -5,6 +5,7 @@ import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import html2canvas from "html2canvas";
+import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight } from "lucide-react";
 
 const LOGO = logoAsset.url;
 
