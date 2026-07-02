@@ -240,7 +240,7 @@ function compute(c) {
   const ratios = [
     { id: "liquidity", name: "Basic Liquidity (months)", value: totalExpenses > 0 ? cash / totalExpenses : null, target: 6, dir: ">=", fmtV: v => fmt(v, 1) + " mo",
       desc: "Cash & cash equivalents ÷ monthly expenses — the number of months you can sustain expenses if income is lost. Recommended: at least 6 months." },
-    { id: "liqNW", name: "Liquid Assets to Net Worth", value: netWorth > 0 ? cash / netWorth : null, target: 0.15, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
+    { id: "liqNW", name: "Liquid Assets to Net Worth", value: netWorth > 0 ? cash / netWorth : null, negNW: netWorth <= 0, target: 0.15, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Cash & cash equivalents ÷ net worth — how accessible your net worth is for short-term cash needs. Recommended: at least 15%." },
     { id: "savings", name: "Savings Ratio", value: net > 0 ? groupTotals.savings / net : null, target: 0.2, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Savings ÷ monthly take-home income. Recommended: save at least 20% of income toward future financial needs." },
@@ -248,7 +248,7 @@ function compute(c) {
       desc: "Total liabilities ÷ total assets — how much of your assets remain mortgaged to financial institutions. Recommended: below 50%." },
     { id: "debtService", name: "Debt Service Ratio", value: net > 0 ? monthlyDebt / net : null, target: 0.35, dir: "<=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Monthly debt repayments ÷ take-home income — your ability to service debt. Recommended: below 35%." },
-    { id: "investNW", name: "Invested Assets to Net Worth", value: netWorth > 0 ? invested / netWorth : null, target: 0.5, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
+    { id: "investNW", name: "Invested Assets to Net Worth", value: netWorth > 0 ? invested / netWorth : null, negNW: netWorth <= 0, target: 0.5, dir: ">=", fmtV: v => fmt(v * 100, 1) + "%",
       desc: "Invested assets ÷ net worth — how much of your assets are working for you. Ideally 50% or above." },
   ].map(r => ({ ...r, pass: r.value == null ? null : (r.dir === ">=" ? r.value >= r.target : r.value <= r.target) }));
   // 4-3-2-1
@@ -290,15 +290,21 @@ function compute(c) {
     { name: "Cash & equivalents", value: cash },
     { name: "Personal items", value: personal },
   ].filter(x => x.value > 0);
-  const ratioBars = ratios.filter(r => r.value != null && r.id !== "liquidity").map(r => ({
-    name: r.name, shortName: r.name.replace(/ \(.*\)/, "").replace("Invested Assets to Net Worth", "Invested/NW").replace("Liquid Assets to Net Worth", "Liquid/NW").replace("Basic ", ""),
-    yours: r.value, value: r.value, target: r.target, pct: r.id === "liquidity" ? null : true,
-    pass: r.pass, dir: r.dir,
-    displayYours: r.id === "liquidity" ? r.value : r.value * 100,
-    displayTarget: r.id === "liquidity" ? r.target : r.target * 100,
-    unit: r.id === "liquidity" ? "mo" : "%",
-    yoursLabel: r.fmtV(r.value),
-  }));
+  const ratioBars = ratios.filter(r => r.id !== "liquidity").map(r => {
+    const na = r.value == null;
+    const actualPct = na ? 0 : r.value * 100;
+    const displayYours = Math.min(100, Math.max(0, actualPct));
+    return {
+      id: r.id,
+      name: r.name,
+      shortName: r.name.replace(/ \(.*\)/, "").replace("Invested Assets to Net Worth", "Invested/NW").replace("Liquid Assets to Net Worth", "Liquid/NW"),
+      pass: r.pass, dir: r.dir, na, negNW: !!r.negNW,
+      actualYours: actualPct,
+      displayYours,
+      displayTarget: Math.min(100, r.target * 100),
+      yoursLabel: na ? (r.negNW ? "n/a" : "n/a") : fmt(actualPct, 1) + "%",
+    };
+  });
   const pie = [
     { name: "Loans / big purchases", value: groupTotals.loans },
     { name: "Expenditures", value: groupTotals.expenditures },
