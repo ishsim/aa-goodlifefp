@@ -1385,15 +1385,6 @@ export default function App() {
   }
 
   // ----- edit view -----
-  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
-    if (typeof window === "undefined") return false;
-    if (window.innerWidth < 1024) return false;
-    const v = window.localStorage.getItem("gl-sidebar-expanded");
-    return v === "1";
-  });
-  useEffect(() => {
-    if (typeof window !== "undefined") window.localStorage.setItem("gl-sidebar-expanded", sidebarExpanded ? "1" : "0");
-  }, [sidebarExpanded]);
   const sidebarWidth = sidebarExpanded ? 220 : 64;
   const navRow = (Icon, label, active, onClick, extra = {}) => (
     <button
