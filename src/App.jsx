@@ -565,6 +565,170 @@ const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
 
 const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase", "Education fund", "Travel", "Wedding"];
 
+// ---------- Current Coverage editor ----------
+const EXISTING_PLAN_TYPES = ["Insurance Plan", "GPP (steps down)", "Retirement Annuity", "SPK", "Investment", "Solitaire PA"];
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Investment", "Child Savings", "Others"];
+const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+
+function Collapsible({ title, defaultOpen = true, right, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-4">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-slate-800 font-semibold">
+          <span className="text-slate-400">{open ? "▾" : "▸"}</span>{title}
+        </button>
+        {right}
+      </div>
+      {open && <div className="p-5">{children}</div>}
+    </div>
+  );
+}
+
+function ExistingPlanRow({ row, onChange, onRemove }) {
+  const [adv, setAdv] = useState(false);
+  const set = (k, v) => onChange({ ...row, [k]: v });
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div className="grid grid-cols-12 gap-2">
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Plan type</label>
+          <select value={row.planType || ""} onChange={e => set("planType", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {EXISTING_PLAN_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Plan name</label>
+          <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Category</label>
+          <select value={row.category || ""} onChange={e => set("category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {EXISTING_PLAN_CATEGORIES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Coverage $</label>
+          <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
+        </div>
+        <div className="col-span-1 flex items-end justify-end">
+          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">From age</label>
+          <NumInput value={row.fromAge || ""} onChange={e => set("fromAge", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">To age</label>
+          <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Allocation $/mo</label>
+          <NumInput value={row.monthly || ""} onChange={e => set("monthly", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Premium ends age</label>
+          <NumInput value={row.premiumEndsAge || ""} onChange={e => set("premiumEndsAge", e.target.value)} />
+        </div>
+        <div className="col-span-3 flex items-end">
+          <button onClick={() => setAdv(a => !a)} className="text-xs text-purple-700 hover:underline">{adv ? "− Hide advanced" : "+ Advanced"}</button>
+        </div>
+        {adv && <>
+          <div className="col-span-3">
+            <label className="text-xs text-slate-500">Step-down age</label>
+            <NumInput value={row.stepDownAge || ""} onChange={e => set("stepDownAge", e.target.value)} />
+          </div>
+          <div className="col-span-3">
+            <label className="text-xs text-slate-500">Step-down amount $</label>
+            <NumInput value={row.stepDownAmount || ""} onChange={e => set("stepDownAmount", e.target.value)} />
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+function ExistingInvestmentRow({ row, onChange, onRemove }) {
+  const set = (k, v) => onChange({ ...row, [k]: v });
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div className="grid grid-cols-12 gap-2">
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Type</label>
+          <select value={row.type || ""} onChange={e => set("type", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {INVESTMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-4">
+          <label className="text-xs text-slate-500">Description</label>
+          <Input value={row.description || ""} onChange={e => set("description", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Current value $</label>
+          <NumInput value={row.currentValue || ""} onChange={e => set("currentValue", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Monthly $</label>
+          <NumInput value={row.monthlyContribution || ""} onChange={e => set("monthlyContribution", e.target.value)} />
+        </div>
+        <div className="col-span-1 flex items-end justify-end">
+          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        </div>
+        <div className="col-span-12">
+          <label className="text-xs text-slate-500">Notes</label>
+          <Input value={row.notes || ""} onChange={e => set("notes", e.target.value)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CurrentCoverageSection({ client, update }) {
+  const plans = client.existingPlans || [];
+  const invs = client.existingInvestments || [];
+  return (
+    <>
+      <Collapsible
+        title="Existing Insurance Plans"
+        defaultOpen={true}
+        right={<button onClick={() => update({ existingPlans: [...plans, { id: uid() }] })} className="text-sm text-purple-800 hover:underline">+ Add existing plan</button>}
+      >
+        {plans.length === 0 && <div className="text-sm text-slate-400">No existing plans added yet.</div>}
+        <div className="space-y-3">
+          {plans.map((row, i) => (
+            <ExistingPlanRow
+              key={row.id || i}
+              row={row}
+              onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
+              onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
+            />
+          ))}
+        </div>
+      </Collapsible>
+      <Collapsible
+        title="Existing Investment Portfolio"
+        defaultOpen={false}
+        right={<button onClick={() => update({ existingInvestments: [...invs, { id: uid() }] })} className="text-sm text-purple-800 hover:underline">+ Add investment</button>}
+      >
+        {invs.length === 0 && <div className="text-sm text-slate-400">No investments added yet.</div>}
+        <div className="space-y-3">
+          {invs.map((row, i) => (
+            <ExistingInvestmentRow
+              key={row.id || i}
+              row={row}
+              onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
+              onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
+            />
+          ))}
+        </div>
+      </Collapsible>
+    </>
+  );
+}
+
 const Stat = ({ label, value, accent, gold }) => (
   <div className={"rounded-lg px-4 py-3 " + (accent ? "bg-purple-900 text-white" : gold ? "bg-amber-100 border border-amber-400" : "bg-slate-50 border border-slate-200")}>
     <div className={"text-xs uppercase tracking-wide " + (accent ? "text-purple-200" : gold ? "text-amber-700" : "text-slate-500")}>{label}</div>
