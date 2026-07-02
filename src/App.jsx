@@ -1562,7 +1562,13 @@ export default function App() {
           </SectionCard>
         </>)}
 
-        {step === 5 && (<>
+        {step === 6 && (<>
+          <SectionCard title="Overview">
+            <div className="p-8 text-center text-gray-400 text-sm">Coverage timeline will appear here.</div>
+          </SectionCard>
+        </>)}
+
+        {step === 7 && (<>
           <SectionCard title="Narrative">
             <div className="mb-4">
               <button onClick={draftWithAI} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
