@@ -1377,28 +1377,64 @@ export default function App() {
   }
 
   // ----- edit view -----
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.innerWidth < 1024) return false;
+    const v = window.localStorage.getItem("gl-sidebar-expanded");
+    return v === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("gl-sidebar-expanded", sidebarExpanded ? "1" : "0");
+  }, [sidebarExpanded]);
+  const sidebarWidth = sidebarExpanded ? 220 : 64;
+  const navRow = (Icon, label, active, onClick, extra = {}) => (
+    <button
+      onClick={onClick}
+      title={sidebarExpanded ? "" : label}
+      className={"w-full flex items-center transition-colors rounded-md " + (active ? "bg-white text-[#3a1955]" : "text-white hover:bg-white/10")}
+      style={{ padding: "10px 12px", opacity: active ? 1 : 0.85, ...extra.style }}
+    >
+      <Icon size={extra.iconSize || 18} style={{ opacity: active ? 1 : 0.9, flexShrink: 0 }} />
+      {sidebarExpanded && <span className="ml-3 truncate" style={{ fontSize: extra.fontSize || 13, fontWeight: 500 }}>{label}</span>}
+    </button>
+  );
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-slate-100 flex">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap'); .font-serif{font-family:'Cormorant Garamond',Georgia,serif} body{font-family:'Source Sans 3',system-ui,sans-serif}`}</style>
-      <header className="text-white sticky top-0 z-10" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+      <aside
+        className="sticky top-0 h-screen flex flex-col shrink-0 transition-all duration-200"
+        style={{ width: sidebarWidth, background: "#3a1955", borderRight: "1px solid rgba(255,255,255,0.1)" }}
+      >
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {STEPS.map((s, i) => navRow(s.icon, `${i + 1}. ${s.label}`, step === i, () => setStep(i)))}
+        </div>
+        <div className="p-2 border-t border-white/10 space-y-1">
+          <button
+            onClick={() => setSidebarExpanded(v => !v)}
+            title={sidebarExpanded ? "Collapse" : "Expand"}
+            className="w-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 rounded-md"
+            style={{ padding: "8px" }}
+          >
+            {sidebarExpanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {navRow(Save, "Save", false, persist, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+          {navRow(Eye, "Preview Report", false, () => { persist(); setView("report"); }, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+          {navRow(Download, downloadingDocx ? "Capturing…" : "Download DOCX", false, doDownloadDocx, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+        </div>
+      </aside>
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="text-white flex items-center justify-between px-6 shrink-0" style={{ height: 48, background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => { persist(); setView("list"); }} className="text-sm text-purple-300 hover:text-white">← Clients</button>
-            <span className="font-serif text-lg">{displayName(client.name, "New client")}</span>
+            <button onClick={() => { persist(); setView("list"); }} className="text-xs text-purple-200 hover:text-white">← Clients</button>
+            <span className="font-serif text-lg">GoodLife</span>
           </div>
-          <div className="flex items-center gap-2">
-            {saveState && <span className="text-xs text-purple-300">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
-            <button onClick={persist} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">Save</button>
-            <button onClick={() => { persist(); setView("report"); }} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">Preview report →</button>
+          <div className="flex items-center gap-3">
+            {saveState && <span className="text-xs text-purple-200">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
+            <span className="font-serif text-base">{displayName(client.name, "New client")}</span>
           </div>
-        </div>
-        <div className="max-w-5xl mx-auto px-6 flex gap-1 overflow-x-auto">
-          {STEPS.map((s, i) => (
-            <button key={s} onClick={() => setStep(i)} className={"text-sm px-4 py-2 rounded-t-lg whitespace-nowrap " + (step === i ? "bg-slate-100 text-purple-900 font-semibold" : "text-purple-300 hover:text-white")}>{i + 1}. {s}</button>
-          ))}
-        </div>
-      </header>
-      <main className="max-w-5xl mx-auto px-6 py-6">
+        </header>
+        <main className="flex-1 overflow-auto" style={{ padding: 24, background: "#f8fafc" }}>
+          <h2 className="text-xl font-serif text-[#3a1955] mb-4">{step + 1}. {STEPS[step].label}</h2>
         {/* live summary strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <Stat label="Net income /mo" value={money(d.net)} />
