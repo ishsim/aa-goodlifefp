@@ -5,6 +5,7 @@ import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import html2canvas from "html2canvas";
+import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight } from "lucide-react";
 
 const LOGO = logoAsset.url;
 
@@ -105,6 +106,8 @@ const blankClient = () => ({
   incomeReplacement: { monthly: "5000", years: "20", covDeath: "", covMCI: "", covECI: "", covAccident: "" },
   retirement: { monthly: "5000", years: "20", yearsToRetire: "25", inflation: "2.5", spkProj: "", spkAnnuityMonthly: "", spkAnnuityYears: "15", pension: "", annuities: { current: "", contrib: "", rate: "", years: "" }, investments: { current: "", contrib: "", rate: "", years: "" } },
   otherObjectives: [],
+  existingPlans: [],
+  existingInvestments: [],
   products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
@@ -132,6 +135,8 @@ function migrate(c) {
   if (typeof m.retirement.annuities !== "object" || m.retirement.annuities == null) m.retirement.annuities = { current: String(rt0.annuities || ""), contrib: "", rate: "", years: "" };
   if (typeof m.retirement.investments !== "object" || m.retirement.investments == null) m.retirement.investments = { current: String(rt0.investments || ""), contrib: "", rate: "", years: "" };
   if (!Array.isArray(m.otherObjectives)) m.otherObjectives = [];
+  if (!Array.isArray(m.existingPlans)) m.existingPlans = [];
+  if (!Array.isArray(m.existingInvestments)) m.existingInvestments = [];
   // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
   const existingProds = Array.isArray(c.products) ? c.products : [];
   const mergedProds = DEFAULT_PRODUCTS.map(def => {
@@ -560,6 +565,170 @@ const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
 
 const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase", "Education fund", "Travel", "Wedding"];
 
+// ---------- Current Coverage editor ----------
+const EXISTING_PLAN_TYPES = ["Insurance Plan", "GPP (steps down)", "Retirement Annuity", "SPK", "Investment", "Solitaire PA"];
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Investment", "Child Savings", "Others"];
+const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+
+function Collapsible({ title, defaultOpen = true, right, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-4">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-slate-800 font-semibold">
+          <span className="text-slate-400">{open ? "▾" : "▸"}</span>{title}
+        </button>
+        {right}
+      </div>
+      {open && <div className="p-5">{children}</div>}
+    </div>
+  );
+}
+
+function ExistingPlanRow({ row, onChange, onRemove }) {
+  const [adv, setAdv] = useState(false);
+  const set = (k, v) => onChange({ ...row, [k]: v });
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div className="grid grid-cols-12 gap-2">
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Plan type</label>
+          <select value={row.planType || ""} onChange={e => set("planType", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {EXISTING_PLAN_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Plan name</label>
+          <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Category</label>
+          <select value={row.category || ""} onChange={e => set("category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {EXISTING_PLAN_CATEGORIES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Coverage $</label>
+          <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
+        </div>
+        <div className="col-span-1 flex items-end justify-end">
+          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">From age</label>
+          <NumInput value={row.fromAge || ""} onChange={e => set("fromAge", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">To age</label>
+          <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Allocation $/mo</label>
+          <NumInput value={row.monthly || ""} onChange={e => set("monthly", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Premium ends age</label>
+          <NumInput value={row.premiumEndsAge || ""} onChange={e => set("premiumEndsAge", e.target.value)} />
+        </div>
+        <div className="col-span-3 flex items-end">
+          <button onClick={() => setAdv(a => !a)} className="text-xs text-purple-700 hover:underline">{adv ? "− Hide advanced" : "+ Advanced"}</button>
+        </div>
+        {adv && <>
+          <div className="col-span-3">
+            <label className="text-xs text-slate-500">Step-down age</label>
+            <NumInput value={row.stepDownAge || ""} onChange={e => set("stepDownAge", e.target.value)} />
+          </div>
+          <div className="col-span-3">
+            <label className="text-xs text-slate-500">Step-down amount $</label>
+            <NumInput value={row.stepDownAmount || ""} onChange={e => set("stepDownAmount", e.target.value)} />
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+function ExistingInvestmentRow({ row, onChange, onRemove }) {
+  const set = (k, v) => onChange({ ...row, [k]: v });
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div className="grid grid-cols-12 gap-2">
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Type</label>
+          <select value={row.type || ""} onChange={e => set("type", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {INVESTMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-4">
+          <label className="text-xs text-slate-500">Description</label>
+          <Input value={row.description || ""} onChange={e => set("description", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Current value $</label>
+          <NumInput value={row.currentValue || ""} onChange={e => set("currentValue", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Monthly $</label>
+          <NumInput value={row.monthlyContribution || ""} onChange={e => set("monthlyContribution", e.target.value)} />
+        </div>
+        <div className="col-span-1 flex items-end justify-end">
+          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        </div>
+        <div className="col-span-12">
+          <label className="text-xs text-slate-500">Notes</label>
+          <Input value={row.notes || ""} onChange={e => set("notes", e.target.value)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CurrentCoverageSection({ client, update }) {
+  const plans = client.existingPlans || [];
+  const invs = client.existingInvestments || [];
+  return (
+    <>
+      <Collapsible
+        title="Existing Insurance Plans"
+        defaultOpen={true}
+        right={<button onClick={() => update({ existingPlans: [...plans, { id: uid() }] })} className="text-sm text-purple-800 hover:underline">+ Add existing plan</button>}
+      >
+        {plans.length === 0 && <div className="text-sm text-slate-400">No existing plans added yet.</div>}
+        <div className="space-y-3">
+          {plans.map((row, i) => (
+            <ExistingPlanRow
+              key={row.id || i}
+              row={row}
+              onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
+              onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
+            />
+          ))}
+        </div>
+      </Collapsible>
+      <Collapsible
+        title="Existing Investment Portfolio"
+        defaultOpen={false}
+        right={<button onClick={() => update({ existingInvestments: [...invs, { id: uid() }] })} className="text-sm text-purple-800 hover:underline">+ Add investment</button>}
+      >
+        {invs.length === 0 && <div className="text-sm text-slate-400">No investments added yet.</div>}
+        <div className="space-y-3">
+          {invs.map((row, i) => (
+            <ExistingInvestmentRow
+              key={row.id || i}
+              row={row}
+              onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
+              onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
+            />
+          ))}
+        </div>
+      </Collapsible>
+    </>
+  );
+}
+
 const Stat = ({ label, value, accent, gold }) => (
   <div className={"rounded-lg px-4 py-3 " + (accent ? "bg-purple-900 text-white" : gold ? "bg-amber-100 border border-amber-400" : "bg-slate-50 border border-slate-200")}>
     <div className={"text-xs uppercase tracking-wide " + (accent ? "text-purple-200" : gold ? "text-amber-700" : "text-slate-500")}>{label}</div>
@@ -568,7 +737,16 @@ const Stat = ({ label, value, accent, gold }) => (
 );
 
 // ---------- main app ----------
-const STEPS = ["Profile", "Income Allocation", "Assets & Liabilities", "Objectives", "Plans", "Narrative"];
+const STEPS = [
+  { label: "Profile", icon: User },
+  { label: "Income Allocation", icon: Wallet },
+  { label: "Assets & Liabilities", icon: Scale },
+  { label: "Objectives", icon: Target },
+  { label: "Current Coverage", icon: Shield },
+  { label: "Recommended Plans", icon: ClipboardList },
+  { label: "Overview", icon: LayoutDashboard },
+  { label: "Narrative", icon: FileText },
+];
 
 export default function App() {
   const [clients, setClients] = useState([]);
@@ -578,6 +756,14 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (window.innerWidth < 1024) return false;
+    return window.localStorage.getItem("gl-sidebar-expanded") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("gl-sidebar-expanded", sidebarExpanded ? "1" : "0");
+  }, [sidebarExpanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1199,28 +1385,55 @@ export default function App() {
   }
 
   // ----- edit view -----
+  const sidebarWidth = sidebarExpanded ? 220 : 64;
+  const navRow = (Icon, label, active, onClick, extra = {}) => (
+    <button
+      onClick={onClick}
+      title={sidebarExpanded ? "" : label}
+      className={"w-full flex items-center transition-colors rounded-md " + (active ? "bg-white text-[#3a1955]" : "text-white hover:bg-white/10")}
+      style={{ padding: "10px 12px", opacity: active ? 1 : 0.85, ...extra.style }}
+    >
+      <Icon size={extra.iconSize || 18} style={{ opacity: active ? 1 : 0.9, flexShrink: 0 }} />
+      {sidebarExpanded && <span className="ml-3 truncate" style={{ fontSize: extra.fontSize || 13, fontWeight: 500 }}>{label}</span>}
+    </button>
+  );
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-slate-100 flex">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap'); .font-serif{font-family:'Cormorant Garamond',Georgia,serif} body{font-family:'Source Sans 3',system-ui,sans-serif}`}</style>
-      <header className="text-white sticky top-0 z-10" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+      <aside
+        className="sticky top-0 h-screen flex flex-col shrink-0 transition-all duration-200"
+        style={{ width: sidebarWidth, background: "#3a1955", borderRight: "1px solid rgba(255,255,255,0.1)" }}
+      >
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {STEPS.map((s, i) => navRow(s.icon, `${i + 1}. ${s.label}`, step === i, () => setStep(i)))}
+        </div>
+        <div className="p-2 border-t border-white/10 space-y-1">
+          <button
+            onClick={() => setSidebarExpanded(v => !v)}
+            title={sidebarExpanded ? "Collapse" : "Expand"}
+            className="w-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 rounded-md"
+            style={{ padding: "8px" }}
+          >
+            {sidebarExpanded ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {navRow(Save, "Save", false, persist, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+          {navRow(Eye, "Preview Report", false, () => { persist(); setView("report"); }, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+          {navRow(Download, downloadingDocx ? "Capturing…" : "Download DOCX", false, doDownloadDocx, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+        </div>
+      </aside>
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="text-white flex items-center justify-between px-6 shrink-0" style={{ height: 48, background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => { persist(); setView("list"); }} className="text-sm text-purple-300 hover:text-white">← Clients</button>
-            <span className="font-serif text-lg">{displayName(client.name, "New client")}</span>
+            <button onClick={() => { persist(); setView("list"); }} className="text-xs text-purple-200 hover:text-white">← Clients</button>
+            <span className="font-serif text-lg">GoodLife</span>
           </div>
-          <div className="flex items-center gap-2">
-            {saveState && <span className="text-xs text-purple-300">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
-            <button onClick={persist} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">Save</button>
-            <button onClick={() => { persist(); setView("report"); }} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">Preview report →</button>
+          <div className="flex items-center gap-3">
+            {saveState && <span className="text-xs text-purple-200">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
+            <span className="font-serif text-base">{displayName(client.name, "New client")}</span>
           </div>
-        </div>
-        <div className="max-w-5xl mx-auto px-6 flex gap-1 overflow-x-auto">
-          {STEPS.map((s, i) => (
-            <button key={s} onClick={() => setStep(i)} className={"text-sm px-4 py-2 rounded-t-lg whitespace-nowrap " + (step === i ? "bg-slate-100 text-purple-900 font-semibold" : "text-purple-300 hover:text-white")}>{i + 1}. {s}</button>
-          ))}
-        </div>
-      </header>
-      <main className="max-w-5xl mx-auto px-6 py-6">
+        </header>
+        <main className="flex-1 overflow-auto" style={{ padding: 24, background: "#f8fafc" }}>
+          <h2 className="text-xl font-serif text-[#3a1955] mb-4">{step + 1}. {STEPS[step].label}</h2>
         {/* live summary strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <Stat label="Net income /mo" value={money(d.net)} />
@@ -1468,6 +1681,10 @@ export default function App() {
         </>)}
 
         {step === 4 && (<>
+          <CurrentCoverageSection client={client} update={update} />
+        </>)}
+
+        {step === 5 && (<>
           <SectionCard title="Plan quotation table" right={<span className="text-sm text-slate-500">Selected: {money(d.premMonthly, 2)}/mo · {money(d.premAnnual, 2)}/yr</span>}>
             <Field label="Client's indicated monthly budget (appears in the report legend)">
               <Input value={client.budgetNote} onChange={e => update({ budgetNote: e.target.value })} />
@@ -1544,7 +1761,13 @@ export default function App() {
           </SectionCard>
         </>)}
 
-        {step === 5 && (<>
+        {step === 6 && (<>
+          <SectionCard title="Overview">
+            <div className="p-8 text-center text-gray-400 text-sm">Coverage timeline will appear here.</div>
+          </SectionCard>
+        </>)}
+
+        {step === 7 && (<>
           <SectionCard title="Narrative">
             <div className="mb-4">
               <button onClick={draftWithAI} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
@@ -1569,7 +1792,8 @@ export default function App() {
             <button onClick={() => { persist(); setView("report"); }} className="bg-purple-900 hover:bg-purple-950 text-white font-semibold px-6 py-3 rounded-xl">Preview &amp; print report →</button>
           </div>
         </>)}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
