@@ -573,7 +573,16 @@ const Stat = ({ label, value, accent, gold }) => (
 );
 
 // ---------- main app ----------
-const STEPS = ["Profile", "Income Allocation", "Assets & Liabilities", "Objectives", "Plans", "Narrative"];
+const STEPS = [
+  { label: "Profile", icon: User },
+  { label: "Income Allocation", icon: Wallet },
+  { label: "Assets & Liabilities", icon: Scale },
+  { label: "Objectives", icon: Target },
+  { label: "Current Coverage", icon: Shield },
+  { label: "Recommended Plans", icon: ClipboardList },
+  { label: "Overview", icon: LayoutDashboard },
+  { label: "Narrative", icon: FileText },
+];
 
 export default function App() {
   const [clients, setClients] = useState([]);
