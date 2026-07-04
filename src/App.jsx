@@ -1481,6 +1481,7 @@ export default function App() {
               <Field label="Age"><Input value={calcAge(client.dob)} readOnly className="bg-slate-50" /></Field>
               <Field label="Occupation"><Input value={client.occupation} onChange={e => update({ occupation: e.target.value })} /></Field>
               <Field label="Occupation details"><Input value={client.occDetails} onChange={e => update({ occDetails: e.target.value })} /></Field>
+              <Field label="Client email (for portal login)"><Input type="email" value={client.email || ""} onChange={e => update({ email: e.target.value })} placeholder="client@example.com" /></Field>
               <Field label="Meeting date (for the report)"><Input value={client.meetingDate} onChange={e => update({ meetingDate: e.target.value })} placeholder="e.g. 5th September 2025" /></Field>
               <Field label="Risk profile (from fact-find)">
                 <select value={client.riskProfile} onChange={e => update({ riskProfile: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
