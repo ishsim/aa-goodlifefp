@@ -5,7 +5,7 @@ import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import html2canvas from "html2canvas";
-import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2 } from "lucide-react";
 
 const LOGO = logoAsset.url;
 
@@ -90,7 +90,7 @@ const defaultExpenses = () => Object.fromEntries(
 
 const blankClient = () => ({
   id: uid(),
-  name: "", dob: "", occupation: "", occDetails: "", meetingDate: "", riskProfile: "",
+  name: "", dob: "", occupation: "", occDetails: "", email: "", meetingDate: "", riskProfile: "",
   dependents: [],
   priorities: ["", "", "", "", ""],
   concernsNote: "",
@@ -190,12 +190,14 @@ async function loadClients() {
 async function saveClient(c) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) { console.error("save failed: no user"); return false; }
+  const emailNorm = String(c.email || "").trim().toLowerCase() || null;
   const { error } = await supabase
     .from("clients")
     .upsert({
       id: c.id,
       data: c,
       user_id: user.id,
+      client_email: emailNorm,
       updated_at: new Date(c.updated || Date.now()).toISOString(),
     }, { onConflict: "id" });
   if (error) { console.error("save failed", error); return false; }
@@ -1458,6 +1460,19 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             {saveState && <span className="text-xs text-purple-200">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
+            <button
+              onClick={async () => {
+                const email = String(client.email || "").trim();
+                if (!email) { toast.error("Please add the client's email address to their profile before sharing the portal link."); return; }
+                const url = `${window.location.origin}/portal/${client.id}`;
+                try { await navigator.clipboard.writeText(url); } catch { /* clipboard blocked */ }
+                toast.success(`Link copied — send this to ${displayName(client.name, "the client")} at ${email}`);
+              }}
+              title="Copy portal link"
+              className="flex items-center gap-1 text-xs text-purple-100 hover:text-white bg-white/10 hover:bg-white/20 rounded-md px-2 py-1"
+            >
+              <Share2 size={14} /> Share portal link
+            </button>
             <span className="font-serif text-base">{displayName(client.name, "New client")}</span>
           </div>
         </header>
@@ -1479,6 +1494,7 @@ export default function App() {
               <Field label="Age"><Input value={calcAge(client.dob)} readOnly className="bg-slate-50" /></Field>
               <Field label="Occupation"><Input value={client.occupation} onChange={e => update({ occupation: e.target.value })} /></Field>
               <Field label="Occupation details"><Input value={client.occDetails} onChange={e => update({ occDetails: e.target.value })} /></Field>
+              <Field label="Client email (for portal login)"><Input type="email" value={client.email || ""} onChange={e => update({ email: e.target.value })} placeholder="client@example.com" /></Field>
               <Field label="Meeting date (for the report)"><Input value={client.meetingDate} onChange={e => update({ meetingDate: e.target.value })} placeholder="e.g. 5th September 2025" /></Field>
               <Field label="Risk profile (from fact-find)">
                 <select value={client.riskProfile} onChange={e => update({ riskProfile: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
