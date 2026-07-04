@@ -14,20 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      client_notifications: {
+        Row: {
+          advisor_user_id: string
+          client_id: string
+          client_name: string | null
+          created_at: string
+          id: string
+          message: string
+          read_at: string | null
+        }
+        Insert: {
+          advisor_user_id: string
+          client_id: string
+          client_name?: string | null
+          created_at?: string
+          id?: string
+          message: string
+          read_at?: string | null
+        }
+        Update: {
+          advisor_user_id?: string
+          client_id?: string
+          client_name?: string | null
+          created_at?: string
+          id?: string
+          message?: string
+          read_at?: string | null
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
+          client_email: string | null
           data: Json
           id: string
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          client_email?: string | null
           data: Json
           id: string
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          client_email?: string | null
           data?: Json
           id?: string
           updated_at?: string
