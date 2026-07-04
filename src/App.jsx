@@ -767,6 +767,118 @@ const Stat = ({ label, value, accent, gold }) => (
   </div>
 );
 
+// ---------- coverage timeline (Overview) ----------
+const TIMELINE_MAX_AGE = 100;
+// fallback coverage end ages for recommended products that carry no explicit endAge
+const RECO_END_AGE = {
+  GPP: () => 100,                              // whole life to age 100
+  PA: (start) => Math.min(start + 20, 100),    // 20-year term-style cover
+  MSCC: (start) => Math.min(start + 20, 100),
+  HI: (start) => Math.min(start + 20, 100),
+  STP: (start) => Math.min(start + 20, 100),   // level premium locked 20 years
+  ILP: () => 65,
+  RS: () => 75,                                // annuity payout 60–75
+};
+const TIMELINE_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#dc2626", "#0891b2", "#be185d", "#475569"];
+
+function CoverageTimelinePanel({ client }) {
+  const [mode, setMode] = useState("current");
+  const clientAge = num(calcAge(client.dob));
+
+  const items = useMemo(() => {
+    if (mode === "current") {
+      return (client.existingPlans || []).map(p => {
+        const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
+        const rawEnd = num(p.endAge ?? p.toAge);
+        const end = Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE);
+        return { label: p.planName || p.planType || "Existing plan", category: p.category || "Others", start, end: Math.max(end, start), coverage: p.coverage };
+      });
+    }
+    return (client.products || []).filter(p => p.include).map(p => {
+      const start = Math.max(0, Math.min(p.startAge != null ? num(p.startAge) : clientAge, TIMELINE_MAX_AGE));
+      let end = p.endAge != null ? num(p.endAge) : num(p.cciOption);
+      if (!end) end = (RECO_END_AGE[p.key] || (() => TIMELINE_MAX_AGE))(start);
+      end = Math.min(Math.max(end, start), TIMELINE_MAX_AGE);
+      return { label: p.label, category: p.category || "Others", start, end, coverage: p.coverage };
+    });
+  }, [mode, client.existingPlans, client.products, clientAge]);
+
+  const rows = useMemo(() => {
+    const byCat = new Map();
+    for (const it of items) {
+      if (!byCat.has(it.category)) byCat.set(it.category, []);
+      byCat.get(it.category).push(it);
+    }
+    return [...byCat.entries()].map(([category, plans]) => ({ category, plans }));
+  }, [items]);
+
+  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 26, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7;
+  const x = (age) => LABEL_W + (age / TIMELINE_MAX_AGE) * PLOT_W;
+  const rowHeights = rows.map(r => r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2);
+  const plotH = rowHeights.reduce((a, b) => a + b, 0);
+  const totalH = AXIS_H + Math.max(plotH, 40) + 8;
+  const ticks = Array.from({ length: 11 }, (_, i) => i * 10);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm text-slate-500">Coverage span by age{clientAge ? ` — client is ${clientAge} today` : ""}</div>
+        <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+          {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <div className="p-8 text-center text-slate-400 text-sm">
+          {mode === "current" ? "No existing plans added yet — add them in the Current Coverage step." : "No recommended plans selected yet — tick plans to include in the Recommended Plans step."}
+        </div>
+      ) : (
+        <svg viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
+          {ticks.map(t => (
+            <g key={t}>
+              <line x1={x(t)} y1={AXIS_H - 6} x2={x(t)} y2={AXIS_H + plotH} stroke="#e2e8f0" strokeWidth="1" />
+              <text x={x(t)} y={AXIS_H - 10} textAnchor="middle" fontSize="9" fill="#94a3b8">{t}</text>
+            </g>
+          ))}
+          <text x={LABEL_W + PLOT_W / 2} y={9} textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="600">AGE</text>
+          {rows.map((row, ri) => {
+            const y0 = AXIS_H + rowHeights.slice(0, ri).reduce((a, b) => a + b, 0);
+            const color = TIMELINE_COLORS[ri % TIMELINE_COLORS.length];
+            return (
+              <g key={row.category}>
+                {ri > 0 && <line x1={0} y1={y0} x2={LABEL_W + PLOT_W} y2={y0} stroke="#f1f5f9" strokeWidth="1" />}
+                <text x={LABEL_W - 10} y={y0 + rowHeights[ri] / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
+                {row.plans.map((p, pi) => {
+                  const y = y0 + ROW_PAD + pi * (LANE_H + LANE_GAP);
+                  const w = Math.max(x(p.end) - x(p.start), 2);
+                  return (
+                    <g key={pi}>
+                      <rect x={x(p.start)} y={y} width={w} height={LANE_H} rx="4" fill={color} opacity={mode === "current" ? 0.55 : 0.85}>
+                        <title>{`${p.label} · age ${p.start}–${p.end}${p.coverage ? ` · ${p.coverage}` : ""}`}</title>
+                      </rect>
+                      {w > 90 && <text x={x(p.start) + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" pointerEvents="none">{p.label.length > Math.floor(w / 5.5) ? p.label.slice(0, Math.floor(w / 5.5) - 1) + "…" : p.label}</text>}
+                    </g>
+                  );
+                })}
+              </g>
+            );
+          })}
+          {clientAge > 0 && (
+            <g>
+              <line x1={x(clientAge)} y1={AXIS_H - 4} x2={x(clientAge)} y2={AXIS_H + plotH} stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="4 3" />
+              <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="9" fill={BRAND.seal} fontWeight="600">now ({clientAge})</text>
+            </g>
+          )}
+        </svg>
+      )}
+      {mode === "recommended" && items.length > 0 && (
+        <p className="text-xs text-slate-400 mt-2">Bars use each plan's own start/end ages where set; otherwise they run from the client's current age to the plan's coverage end (e.g. whole life to 100, term options to their stated age).</p>
+      )}
+    </div>
+  );
+}
+
 // ---------- main app ----------
 const STEPS = [
   { label: "Profile", icon: User },
@@ -1815,7 +1927,7 @@ export default function App() {
 
         {step === 6 && (<>
           <SectionCard title="Overview">
-            <div className="p-8 text-center text-gray-400 text-sm">Coverage timeline will appear here.</div>
+            <CoverageTimelinePanel client={client} />
           </SectionCard>
         </>)}
 
