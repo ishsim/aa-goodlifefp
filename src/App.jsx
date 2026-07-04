@@ -1460,6 +1460,19 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             {saveState && <span className="text-xs text-purple-200">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}
+            <button
+              onClick={async () => {
+                const email = String(client.email || "").trim();
+                if (!email) { toast.error("Please add the client's email address to their profile before sharing the portal link."); return; }
+                const url = `${window.location.origin}/portal/${client.id}`;
+                try { await navigator.clipboard.writeText(url); } catch { /* clipboard blocked */ }
+                toast.success(`Link copied — send this to ${displayName(client.name, "the client")} at ${email}`);
+              }}
+              title="Copy portal link"
+              className="flex items-center gap-1 text-xs text-purple-100 hover:text-white bg-white/10 hover:bg-white/20 rounded-md px-2 py-1"
+            >
+              <Share2 size={14} /> Share portal link
+            </button>
             <span className="font-serif text-base">{displayName(client.name, "New client")}</span>
           </div>
         </header>
