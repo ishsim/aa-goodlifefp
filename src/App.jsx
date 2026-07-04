@@ -190,12 +190,14 @@ async function loadClients() {
 async function saveClient(c) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) { console.error("save failed: no user"); return false; }
+  const emailNorm = String(c.email || "").trim().toLowerCase() || null;
   const { error } = await supabase
     .from("clients")
     .upsert({
       id: c.id,
       data: c,
       user_id: user.id,
+      client_email: emailNorm,
       updated_at: new Date(c.updated || Date.now()).toISOString(),
     }, { onConflict: "id" });
   if (error) { console.error("save failed", error); return false; }
