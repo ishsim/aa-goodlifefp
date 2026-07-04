@@ -90,7 +90,7 @@ const defaultExpenses = () => Object.fromEntries(
 
 const blankClient = () => ({
   id: uid(),
-  name: "", dob: "", occupation: "", occDetails: "", meetingDate: "", riskProfile: "",
+  name: "", dob: "", occupation: "", occDetails: "", email: "", meetingDate: "", riskProfile: "",
   dependents: [],
   priorities: ["", "", "", "", ""],
   concernsNote: "",
