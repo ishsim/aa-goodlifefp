@@ -25,9 +25,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Missing GEMINI_API_KEY" }), {
+      return new Response(JSON.stringify({ error: "Missing ANTHROPIC_API_KEY" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -41,31 +41,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
-    );
+      body: JSON.stringify({
+        model: "claude-haiku-4-5",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini API error:", geminiRes.status, errText);
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.error("Claude API error:", claudeRes.status, errText);
       return new Response(
-        JSON.stringify({ error: "Gemini API error", status: geminiRes.status, details: errText }),
+        JSON.stringify({ error: "Claude API error", status: claudeRes.status, details: errText }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const data = await geminiRes.json();
-    const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const data = await claudeRes.json();
+    const text: string | undefined = data?.content?.[0]?.text;
     if (!text) {
       return new Response(
-        JSON.stringify({ error: "No text in Gemini response", raw: data }),
+        JSON.stringify({ error: "No text in Claude response", raw: data }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -75,7 +78,7 @@ Deno.serve(async (req) => {
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.error("Failed to parse JSON from Gemini:", cleaned);
+      console.error("Failed to parse JSON from Claude:", cleaned);
       return new Response(
         JSON.stringify({ error: "Failed to parse JSON from model output", raw: cleaned }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
