@@ -4,7 +4,6 @@ import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import html2canvas from "html2canvas";
 import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2 } from "lucide-react";
 
 const LOGO = logoAsset.url;
@@ -295,7 +294,8 @@ function compute(c) {
   const ratioBars = ratios.filter(r => r.id !== "liquidity").map(r => {
     const na = r.value == null;
     const actualPct = na ? 0 : r.value * 100;
-    const displayYours = Math.min(100, Math.max(0, actualPct));
+    // keep a sliver of bar even at 0 so recharts renders the bar and its label
+    const displayYours = Math.min(100, Math.max(0.8, actualPct));
     return {
       id: r.id,
       name: r.name,
@@ -453,9 +453,11 @@ const RatioBars = ({ data, height = 340 }) => (
         </Bar>
         <Bar dataKey="displayYours" name="Yours (healthy)" fill="#16a34a" radius={[3,3,0,0]}>
           {data.map((e, i) => <Cell key={i} fill={e.na ? "#94a3b8" : (e.pass ? "#16a34a" : "#dc2626")} />)}
-          <LabelList dataKey="displayYours" content={(props) => {
-            const { x, y, width, index } = props;
-            const item = data[index];
+          <LabelList dataKey="shortName" content={(props) => {
+            const { x, y, width, value } = props;
+            // recharts skips zero-height bars when numbering labels, so props.index
+            // cannot be trusted — resolve the row from the label value instead
+            const item = data.find(d => d.shortName === value);
             if (!item) return null;
             const inside = item.actualYours >= 100;
             const cx = Number(x) + Number(width) / 2;
@@ -480,7 +482,8 @@ const StaticDonut = ({ data, colorMap, size = 200 }) => {
   let acc = 0;
   const arc = (val) => {
     const a0 = (acc / total) * 2 * Math.PI - Math.PI / 2; acc += val;
-    const a1 = (acc / total) * 2 * Math.PI - Math.PI / 2;
+    // a full circle degenerates the arc (start == end) — pull the end back a hair
+    const a1 = Math.min((acc / total) * 2 * Math.PI, 2 * Math.PI - 0.0001) - Math.PI / 2;
     const large = a1 - a0 > Math.PI ? 1 : 0;
     const p = (ang, rad) => [cx + rad * Math.cos(ang), cy + rad * Math.sin(ang)];
     const [x0, y0] = p(a0, r), [x1, y1] = p(a1, r), [x2, y2] = p(a1, rin), [x3, y3] = p(a0, rin);
@@ -565,6 +568,31 @@ const StaticRatioBars = ({ data }) => {
       <text x={axisW + 116} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Yours (healthy)</text>
       <rect x={axisW + 230} y={totalH - legendH + 4} width={12} height={10} fill="#dc2626" rx="2" />
       <text x={axisW + 246} y={totalH - legendH + 13} fontSize="9" fill="#64748b">Needs attention</text>
+    </svg>
+  );
+};
+
+const StaticEmergencyFund = ({ months, cash, ef3, ef6, pct3, pct6, pass3, pass6 }) => {
+  const W = 560, rowH = 48, top = 26;
+  const H = top + rowH * 2;
+  const rows = [
+    { label: "3-Month Target: " + money(ef3), pct: pct3, pass: pass3, short: Math.max(0, ef3 - cash) },
+    { label: "6-Month Target: " + money(ef6), pct: pct6, pass: pass6, short: Math.max(0, ef6 - cash) },
+  ];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, fontFamily: "inherit" }}>
+      <text x={0} y={12} fontSize="10" fontWeight="600" fill="#64748b" letterSpacing="1.5">{"EMERGENCY FUND — " + fmt(months, 1) + " MONTHS OF EXPENSES"}</text>
+      {rows.map((r, i) => {
+        const y = top + i * rowH;
+        return (
+          <g key={i}>
+            <text x={0} y={y + 10} fontSize="10" fill="#475569">{r.label}</text>
+            <text x={W} y={y + 10} fontSize="10" textAnchor="end" fontWeight="600" fill={r.pass ? "#7e22ce" : "#dc2626"}>{r.pass ? "✓ Met" : "⚠ Shortfall " + money(r.short)}</text>
+            <rect x={0} y={y + 16} width={W} height={12} rx="6" fill="#f1f5f9" />
+            <rect x={0} y={y + 16} width={Math.max(8, W * Math.min(100, r.pct) / 100)} height={12} rx="6" fill={r.pass ? "#9333ea" : "#ef4444"} />
+          </g>
+        );
+      })}
     </svg>
   );
 };
@@ -1065,19 +1093,28 @@ export default function App() {
 
   const doDownloadDocx = async () => {
     setDownloadingDocx(true);
+    const prevView = view;
     try {
+      // the capture nodes only exist in the report view — switch there briefly if needed
+      if (prevView !== "report") {
+        setView("report");
+        await new Promise(r => setTimeout(r, 400));
+      }
       const captures = await captureChartsForDocx();
       await generateDocx({ client, d, planLibrary: PLAN_LIBRARY, tierMeta: TIER_META, logoUrl: LOGO, captures });
     } catch (e) {
       console.error(e);
       alert("Could not generate the Word document.\n\n" + (e?.message || e));
     } finally {
+      if (prevView !== "report") setView(prevView);
       setDownloadingDocx(false);
     }
   };
 
   const [downloadingDocx, setDownloadingDocx] = useState(false);
 
+  // Rasterize the chart SVGs directly — html2canvas cannot parse the lab()/oklch()
+  // colors Tailwind v4 emits, so every capture through it fails silently.
   const captureChartsForDocx = async () => {
     const root = document.getElementById("report-content");
     if (!root) return {};
@@ -1085,12 +1122,34 @@ export default function App() {
     const map = {};
     for (const el of nodes) {
       const key = el.getAttribute("data-docx-capture");
+      const svg = el.querySelector("svg");
+      if (!svg) continue;
       try {
-        const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2, logging: false, useCORS: true });
-        const dataUrl = canvas.toDataURL("image/png");
-        map[key] = { base64: dataUrl.split(",")[1], w: canvas.width, h: canvas.height };
+        const vb = svg.viewBox && svg.viewBox.baseVal;
+        const rect = svg.getBoundingClientRect();
+        const w = Math.round((vb && vb.width) || rect.width || 600);
+        const h = Math.round((vb && vb.height) || rect.height || 300);
+        const clone = svg.cloneNode(true);
+        clone.setAttribute("width", w);
+        clone.setAttribute("height", h);
+        clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        clone.style.fontFamily = "'Source Sans 3', Helvetica, Arial, sans-serif";
+        const xml = new XMLSerializer().serializeToString(clone);
+        const img = new Image();
+        await new Promise((res, rej) => {
+          img.onload = res; img.onerror = rej;
+          img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml);
+        });
+        const scale = 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = w * scale; canvas.height = h * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        map[key] = { base64: canvas.toDataURL("image/png").split(",")[1], w: canvas.width, h: canvas.height };
       } catch (err) {
-        console.warn("html2canvas capture failed for", key, err);
+        console.warn("chart capture failed for", key, err);
       }
     }
     return map;
@@ -1351,18 +1410,7 @@ export default function App() {
               const pct6 = Math.min(100, (d.cash / d.ef6) * 100);
               return (
                 <div className="my-4 border border-slate-200 rounded-xl p-4" data-docx-capture="emergencyFund">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Emergency Fund — {fmt(months,1)} months of expenses</div>
-                  {[["3-Month Target", d.ef3, pct3, pass3], ["6-Month Target", d.ef6, pct6, pass6]].map(([label, target, pct, pass]) => (
-                    <div key={label} className="mb-3">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-600">{label}: {money(target)}</span>
-                        <span className={pass ? "text-purple-700 font-semibold" : "text-red-600 font-semibold"}>{pass ? "✓ Met" : "⚠ Shortfall " + money(Math.max(0, target - d.cash))}</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-3">
-                        <div className={"h-3 rounded-full " + (pass ? "bg-purple-600" : "bg-red-500")} style={{ width: pct + "%" }} />
-                      </div>
-                    </div>
-                  ))}
+                  <StaticEmergencyFund months={months} cash={d.cash} ef3={d.ef3} ef6={d.ef6} pct3={pct3} pct6={pct6} pass3={pass3} pass6={pass6} />
                 </div>
               );
             })()}
