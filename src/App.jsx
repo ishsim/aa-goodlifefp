@@ -490,7 +490,7 @@ const StaticDonut = ({ data, colorMap, size = 200 }) => {
     return `M${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${rin} ${rin} 0 ${large} 0 ${x3} ${y3} Z`;
   };
   return (
-    <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {data.map((d, i) => <path key={i} d={arc(d.value)} fill={colorMap[d.name] || "#94a3b8"} stroke="#fff" strokeWidth="1.5" />)}
       </svg>
@@ -523,7 +523,7 @@ const StaticRatioBars = ({ data }) => {
     y: yScale(pct), label: pct + "%"
   }));
   return (
-    <svg width="100%" viewBox={`0 0 ${totalW} ${totalH}`} style={{ maxWidth: totalW, fontFamily: "inherit" }}>
+    <svg width="100%" viewBox={`0 0 ${totalW} ${totalH}`} style={{ maxWidth: totalW, fontFamily: "inherit", display: "block", margin: "0 auto" }}>
       {/* Y axis lines & labels */}
       {yLines.map(({y, label}) => (
         <g key={label}>
@@ -572,6 +572,61 @@ const StaticRatioBars = ({ data }) => {
   );
 };
 
+// Life timeline for the report's Concerns & Objectives section: current age,
+// target retirement age, dependents' ages and post-retirement checkpoints on an
+// open-ended axis (arrow, no terminal tick — age isn't capped).
+const LifeTimeline = ({ client }) => {
+  const nowAge = num(calcAge(client.dob));
+  if (!nowAge) return null;
+  const retireAge = nowAge + num(client.retirement.yearsToRetire);
+  const deps = (client.dependents || [])
+    .filter(dep => dep.dob && calcAge(dep.dob) !== "")
+    .map(dep => ({ name: dep.name || "Dependent", age: num(calcAge(dep.dob)) }));
+  const checkpoints = [70, 80, 90].filter(a => a > retireAge && a > nowAge);
+  const maxMark = Math.max(90, retireAge, nowAge, ...deps.map(dep => dep.age));
+  const W = 700, H = 118, axisY = 62, x0 = 24, x1 = 640; // line continues past x1 into the arrow
+  const x = (age) => x0 + (age / (maxMark + 8)) * (x1 - x0);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, fontFamily: "inherit", display: "block", margin: "0 auto" }}>
+      <defs>
+        <marker id="lt-arrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
+          <path d="M0 0 L9 4 L0 8 Z" fill="#94a3b8" />
+        </marker>
+      </defs>
+      {/* open-ended axis */}
+      <line x1={x0} y1={axisY} x2={W - 14} y2={axisY} stroke="#94a3b8" strokeWidth="2" markerEnd="url(#lt-arrow)" />
+      <text x={W - 14} y={axisY + 20} fontSize="9" textAnchor="end" fill="#94a3b8" fontStyle="italic">age</text>
+      {/* dependents below the line */}
+      {deps.map((dep, i) => (
+        <g key={"d" + i}>
+          <circle cx={x(dep.age)} cy={axisY} r="4" fill="#2563eb" />
+          <line x1={x(dep.age)} y1={axisY + 4} x2={x(dep.age)} y2={axisY + 16 + (i % 2) * 16} stroke="#bfdbfe" strokeWidth="1" />
+          <text x={x(dep.age)} y={axisY + 27 + (i % 2) * 16} fontSize="9" textAnchor="middle" fill="#1d4ed8">{dep.name} — {dep.age}</text>
+        </g>
+      ))}
+      {/* client now */}
+      <g>
+        <circle cx={x(nowAge)} cy={axisY} r="6" fill={BRAND.primary} />
+        <line x1={x(nowAge)} y1={axisY - 6} x2={x(nowAge)} y2={axisY - 22} stroke={BRAND.primary} strokeWidth="1" />
+        <text x={x(nowAge)} y={axisY - 27} fontSize="10" textAnchor="middle" fill={BRAND.primary} fontWeight="700">You today — {nowAge}</text>
+      </g>
+      {/* retirement */}
+      <g>
+        <rect x={x(retireAge) - 5} y={axisY - 5} width="10" height="10" transform={`rotate(45 ${x(retireAge)} ${axisY})`} fill="#d97706" />
+        <line x1={x(retireAge)} y1={axisY - 7} x2={x(retireAge)} y2={axisY - 40} stroke="#d97706" strokeWidth="1" />
+        <text x={x(retireAge)} y={axisY - 45} fontSize="10" textAnchor="middle" fill="#b45309" fontWeight="700">Retirement — {retireAge}</text>
+      </g>
+      {/* post-retirement checkpoints */}
+      {checkpoints.map(a => (
+        <g key={a}>
+          <line x1={x(a)} y1={axisY - 6} x2={x(a)} y2={axisY + 6} stroke="#64748b" strokeWidth="1.5" />
+          <text x={x(a)} y={axisY - 12} fontSize="9" textAnchor="middle" fill="#64748b" fontWeight="600">{a}</text>
+        </g>
+      ))}
+    </svg>
+  );
+};
+
 const StaticEmergencyFund = ({ months, cash, ef3, ef6, pct3, pct6, pass3, pass6 }) => {
   const W = 560, rowH = 48, top = 26;
   const H = top + rowH * 2;
@@ -580,7 +635,7 @@ const StaticEmergencyFund = ({ months, cash, ef3, ef6, pct3, pct6, pass3, pass6 
     { label: "6-Month Target: " + money(ef6), pct: pct6, pass: pass6, short: Math.max(0, ef6 - cash) },
   ];
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, fontFamily: "inherit" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, fontFamily: "inherit", display: "block", margin: "0 auto" }}>
       <text x={0} y={12} fontSize="10" fontWeight="600" fill="#64748b" letterSpacing="1.5">{"EMERGENCY FUND — " + fmt(months, 1) + " MONTHS OF EXPENSES"}</text>
       {rows.map((r, i) => {
         const y = top + i * rowH;
@@ -1248,6 +1303,22 @@ export default function App() {
   if (view === "report") {
     const n = client.narrative;
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{textAlign:"justify",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{p}</p>);
+    // action plan: bold the numbered heading before the colon ("1. Title: details…")
+    const paraAction = (t) => (t || "").split(/\n+/).filter(s => s.trim()).map((p, i) => {
+      const m = p.match(/^(\d+[.)]\s*)([^:\n]{2,90}):\s*([\s\S]*)$/);
+      if (m) return (
+        <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>
+          <b style={{ color: "#3a1955" }}>{m[1]}{m[2]}:</b> {m[3]}
+        </p>
+      );
+      return <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>;
+    });
+    const doPrintPdf = () => {
+      const prev = document.title;
+      document.title = "GoodLife-Report-" + (client.name || "Client").trim().replace(/\s+/g, "-");
+      window.print();
+      setTimeout(() => { document.title = prev; }, 1000);
+    };
 
   // Smart plan body renderer — returns { main, limitations } so callers can
   // interleave images between the main content and the limitations block.
@@ -1353,6 +1424,7 @@ export default function App() {
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
+            <button onClick={doPrintPdf} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Save as PDF</button>
             <button onClick={doDownloadDocx} disabled={downloadingDocx} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100 disabled:opacity-60 disabled:cursor-wait">{downloadingDocx ? "Capturing charts…" : "⬇ Download as Word (.docx)"}</button>
           </div>
         </div>
@@ -1400,7 +1472,7 @@ export default function App() {
             <tr><td className="font-bold text-purple-900">NET WORTH</td><td className="tnum font-bold text-purple-900">{money(d.netWorth)}</td></tr>
           </tbody></table>
           {d.assetPie.length > 0 && (<div className="my-3" data-docx-capture="assetPie"><StaticDonut data={d.assetPie} colorMap={ASSET_COLORS} /></div>)}
-          <p className="text-xs text-slate-500 mb-4">Personal-use assets (houses, vehicles) form part of your standard of living and are normally not drawn upon at death or retirement. Invested assets are held to produce income or capital growth and are available to you or your dependants. Cash and equivalents can normally be liquidated within 12 months and form part of your Emergency Fund.</p>
+          <p className="text-xs text-slate-500 mb-4">Personal-use assets (houses, vehicles) form part of your standard of living and are normally not drawn upon at death or retirement. Invested assets are held to produce income or capital growth and are available to you or your dependants. Cash and equivalents can normally be liquidated within a week or two and form part of your Emergency Fund.</p>
           <h3>2.1 Your Cash Flow Summary</h3>
           <table><tbody>
             <tr><td>Net Income (take-home)</td><td className="tnum">{money(d.net)} / month</td></tr>
@@ -1444,11 +1516,17 @@ export default function App() {
                 </div>
               );
             })()}
-            {d.ratioBars.length > 0 && (<div className="my-3" data-docx-capture="ratioBars"><div className="text-xs text-slate-500 mb-1">Financial ratios vs. benchmark — capped at 100% (green = healthy, red = needs attention).</div><StaticRatioBars data={d.ratioBars} /></div>)}
+            {d.ratioBars.length > 0 && (<div className="my-3" data-docx-capture="ratioBars"><div className="text-xs text-slate-500 mb-1 text-center">Financial ratios vs. benchmark — capped at 100% (green = healthy, red = needs attention).</div><StaticRatioBars data={d.ratioBars} /></div>)}
           </>)}
 
           <div className="pagebreak" />
           <h2>3. Your Concerns &amp; Objectives</h2>
+          {calcAge(client.dob) !== "" && (
+            <div className="my-4" style={{ breakInside: "avoid" }}>
+              <LifeTimeline client={client} />
+              <p className="text-xs text-slate-500 mt-1" style={{ textAlign: "center" }}>Your planning horizon at a glance — where you are today, your target retirement age, your dependents, and the years beyond.</p>
+            </div>
+          )}
           <h3>3.1 Income Replacement</h3>
           <p className="mb-2">To provide an income of {money(num(client.incomeReplacement.monthly))} per month in the event of premature death or total permanent disability, for {client.incomeReplacement.years} years from today (potential income of {money(d.potentialIncome)}).</p>
           <table>
@@ -1534,7 +1612,7 @@ export default function App() {
           <div className="pagebreak" />
           <h2>4. Recommendation</h2>
           {n.recoIntro ? para(n.recoIntro) : <p className="italic text-slate-400">No recommendation narrative yet — draft one in the Narrative step.</p>}
-          {n.actionPlan && (<><h3>Action Plan</h3>{para(n.actionPlan)}</>)}
+          {n.actionPlan && (<><h3>Action Plan</h3>{paraAction(n.actionPlan)}</>)}
 
           <h3>4.1 Recommended Plans</h3>
           <p className="mb-2">The main purpose of these plan recommendations is to prioritise protecting your income — ensuring financial security for you and your family — and to prepare funds for retirement, including addressing potential income loss due to disability or sickness.</p>
@@ -1551,7 +1629,7 @@ export default function App() {
                 <tbody>{g.items.map(p => (
                   <tr key={p.key}>
                     <td><b>{p.label}</b><div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div></td>
-                    <td>{p.coverage}</td><td className="tnum">{money(num(p.monthly), 2)}</td><td className="tnum">{money(num(p.annual), 2)}</td><td className="text-xs">{p.returns}</td>
+                    <td>{p.coverage}</td><td className="tnum">{money(num(p.monthly), 2)}</td><td className="tnum">{money(num(p.annual), 2)}</td><td className="text-xs">{(p.returns || "").split(/\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -1572,8 +1650,8 @@ export default function App() {
                   {(p.planImages||[]).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
-                        <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16 }}>
-                          <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6 }} />
+                        <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16, textAlign: "center" }}>
+                          <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
                           {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
                         </div>
                       ))}
