@@ -1415,6 +1415,8 @@ export default function App() {
           @media print{
             body{background:#fff!important}
             .no-print{display:none!important}
+            /* Lovable injects an "Edit with Lovable" badge on hosted previews — keep it out of the PDF */
+            #lovable-badge,a[href*="lovable.dev"],a[href*="lovable.app"],[id*="lovable" i],div[class*="lovable" i]{display:none!important}
             *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
             .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm!important}
             @page{size:A4;margin:0}
@@ -1429,30 +1431,85 @@ export default function App() {
           </div>
         </div>
         <div id="report-content" className="rpt sheet bg-white max-w-[210mm] mx-auto my-6 shadow-xl" style={{ padding: "18mm 18mm" }}>
-          {/* cover */}
-          <div className="text-center pt-16 pb-10">
-            <img src={LOGO} alt="GoodLife Financial Planning" style={{ maxWidth: 380, width: "72%", margin: "0 auto 24px" }} />
-            <div className="text-xs uppercase tracking-[0.3em] text-slate-500 mb-6">Affiliated with Nancy Group · in association with AIA Brunei</div>
-            <div className="serif text-xl text-slate-500">Recommendation Report</div>
-            <div className="serif text-lg text-slate-500 mb-3">specially prepared for</div>
-            <h1 className="serif text-4xl font-semibold text-purple-950 uppercase tracking-wide mb-6">{client.name || "—"}</h1>
-            {(client.dependents||[]).length > 0 && (
-              <div className="text-sm text-slate-600 mb-10">
-                <div className="text-xs uppercase tracking-[0.15em] text-slate-400 mb-2">Dependents</div>
-                {client.dependents.map(d => (
-                  <span key={d.id} className="inline-block mr-4">{d.name}{d.relationship && <span className="text-slate-400"> ({d.relationship})</span>}{d.dob && <span className="text-slate-400"> · Age {calcAge(d.dob)}</span>}</span>
-                ))}
+          {/* cover — mirrors the Canva master template */}
+          <div style={{ minHeight: "252mm", display: "flex", flexDirection: "column" }}>
+            <div className="text-center" style={{ paddingTop: 56 }}>
+              <div style={{ display: "inline-block", border: "2.5px solid #475569", padding: "8px 32px", background: "#fff" }}>
+                <span style={{ color: "#dc2626", fontWeight: 800, fontSize: 30, letterSpacing: "0.04em", fontFamily: "Arial, Helvetica, sans-serif" }}>CONFIDENTIAL</span>
               </div>
-            )}
-            <div className="inline-block text-left text-sm border-t-2 border-purple-900 pt-4">
-              <div className="font-semibold">Prepared by Abdul Azim Saifuddin</div>
+            </div>
+            <div className="text-center" style={{ marginTop: 90 }}>
+              <div className="serif text-2xl italic text-slate-600">Recommendation Report</div>
+              <div className="serif text-xl italic text-slate-600 mb-4">specially prepared for</div>
+              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{client.name || "—"}</h1>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="text-left text-sm">
+              <div className="font-bold">Prepared by:</div>
+              <div className="font-bold">Abdul Azim Saifuddin</div>
               <div>BSc, CFP — Financial Planning Service Provider</div>
               <div>AIA Senior Life Advisor</div>
-              <div className="text-slate-500 mt-2 text-xs">Authorized representative of AIA Singapore (Ref No. RFC20004468)<br/>BDCB License No: 129/AIA &amp; 288/AIA</div>
-              <div className="text-slate-500 mt-2 text-xs italic">The information collected and maintained in this document will be held in the strictest confidence.</div>
-              <div className="text-slate-500 mt-2 text-xs">{client.meetingDate ? "Based on our meeting of " + client.meetingDate + " · " : ""}Prepared {todayLong()}</div>
+              <div className="italic text-slate-600 mt-4">Date Presented: {client.meetingDate || todayLong()}</div>
             </div>
+            <div className="flex items-end justify-between mt-10">
+              <div className="text-left text-xs italic text-slate-600" style={{ maxWidth: "55%" }}>
+                <div>Authorised representative of AIA Singapore</div>
+                <div>(Ref No. RFC20004468)</div>
+                <div>BDCB License No: 129/AIA &amp; 288/AIA</div>
+              </div>
+              <div className="text-center">
+                <img src={LOGO} alt="GoodLife Financial Planning" style={{ maxWidth: 240, width: "100%" }} />
+                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mt-1">A Subsidiary of Nancy Group</div>
+              </div>
+            </div>
+            <div className="text-center text-sm mt-8">The information collected and maintained in this document will be held in the <b>strictest confidence</b>.</div>
           </div>
+
+          <div className="pagebreak" />
+          <h2>Table of Contents</h2>
+          {(() => {
+            const hasOther = (client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0;
+            const entries = [
+              { num: "1.", title: "Executive Summary", sub: [
+                ...(client.sections.hierarchy ? ["The Hierarchy of Needs in Financial Planning"] : []),
+                ...(client.sections.education ? EDU_SECTIONS.slice(1).map(s => s.title) : []),
+              ] },
+              { num: "2.", title: "Your Finances", sub: [
+                "Net Worth", "2.1 Cash Flow Summary",
+                ...(client.sections.allocation ? ["4-3-2-1 Allocation"] : []),
+                ...(client.sections.ratios ? ["2.2 Financial Ratio Analysis"] : []),
+              ] },
+              { num: "3.", title: "Your Concerns & Objectives", sub: [
+                "3.1 Income Replacement", "3.2 Retirement Planning",
+                ...(hasOther ? ["3.3 Other Objectives"] : []),
+              ] },
+              { num: "4.", title: "Recommendation", sub: [
+                ...(n.actionPlan ? ["Action Plan"] : []),
+                "4.1 Recommended Plans",
+              ] },
+              ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", sub: d.selected.map((p, i) => (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label)) }] : []),
+              { num: d.selected.length ? "6." : "5.", title: "Conclusion", sub: ["Client Acknowledgement"] },
+            ];
+            return (
+              <div style={{ fontSize: 13, marginTop: 18 }}>
+                {entries.map((e, i) => (
+                  <div key={i} style={{ marginBottom: 12, breakInside: "avoid" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", fontWeight: 700, color: "#3a1955" }}>
+                      <span style={{ width: 26, flexShrink: 0 }}>{e.num}</span>
+                      <span style={{ textTransform: "uppercase", letterSpacing: "0.03em" }}>{e.title}</span>
+                      <span style={{ flex: 1, borderBottom: "2px dotted #cbd5e1", margin: "0 0 3px 8px" }} />
+                    </div>
+                    {e.sub.map((s, j) => (
+                      <div key={j} style={{ display: "flex", alignItems: "baseline", color: "#475569", marginLeft: 26, fontStyle: "italic", lineHeight: 1.8 }}>
+                        <span>{s}</span>
+                        <span style={{ flex: 1, borderBottom: "1px dotted #e2e8f0", margin: "0 0 4px 8px" }} />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="pagebreak" />
           <h2>1. Executive Summary</h2>
@@ -1638,13 +1695,48 @@ export default function App() {
           {d.selected.length > 0 && (
             <table><tbody><tr><td className="font-bold">Total of plans shown</td><td className="tnum font-bold">{money(d.premMonthly, 2)} / month · {money(d.premAnnual, 2)} / year</td></tr></tbody></table>
           )}
+          {d.net > 0 && (() => {
+            const protGuide = d.net * 0.1, savGuide = d.net * 0.2;
+            const protSel = d.selected.filter(p => p.category === "Risk Management").reduce((s, p) => s + num(p.monthly), 0);
+            const savSel = d.selected.filter(p => p.category !== "Risk Management").reduce((s, p) => s + num(p.monthly), 0);
+            const row = (ok) => ok ? "text-purple-900" : "text-red-700";
+            return (
+              <div className="my-4" style={{ breakInside: "avoid" }}>
+                <h3>Budget guideline — the 4-3-2-1 rule</h3>
+                <p className="text-xs text-slate-500 mb-1">As a guideline, set aside about <b>10%</b> of take-home income for protection (insurance) and <b>20%</b> for savings &amp; investments — around 30% combined working toward your future.</p>
+                <table>
+                  <thead><tr><th>Allocation</th><th className="tnum">Guideline /mo</th><th className="tnum">Selected plans /mo</th><th>Position</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td>Protection plans (10% of net income)</td>
+                      <td className="tnum">{money(protGuide)}</td>
+                      <td className="tnum">{money(protSel, 2)}</td>
+                      <td className={"font-semibold " + row(protSel <= protGuide)}>{protSel <= protGuide ? "Within guideline" : "Above guideline by " + money(protSel - protGuide, 2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Savings &amp; investment plans (20% of net income)</td>
+                      <td className="tnum">{money(savGuide)}</td>
+                      <td className="tnum">{money(savSel, 2)}</td>
+                      <td className={"font-semibold " + row(savSel <= savGuide)}>{savSel <= savGuide ? "Room of " + money(savGuide - savSel, 2) : "Above guideline by " + money(savSel - savGuide, 2)}</td>
+                    </tr>
+                    <tr style={{ background: "#f5f0fa" }}>
+                      <td className="font-bold">Combined (30% of net income)</td>
+                      <td className="tnum font-bold">{money(protGuide + savGuide)}</td>
+                      <td className="tnum font-bold">{money(d.premMonthly, 2)}</td>
+                      <td className={"font-bold " + row(d.premMonthly <= protGuide + savGuide)}>{d.premMonthly <= protGuide + savGuide ? "Within guideline" : "Above guideline"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
           <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
             {d.selected.map((p, i) => {
               const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
               return (
-                <div key={p.key + i}>
+                <div key={p.key + i} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {(p.planImages||[]).length > 0 && (
