@@ -927,6 +927,7 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
+  const [clientQuery, setClientQuery] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
     if (typeof window === "undefined") return false;
     if (window.innerWidth < 1024) return false;
@@ -1188,13 +1189,40 @@ export default function App() {
             <button onClick={async () => { await supabase.auth.signOut(); window.location.href = "/auth"; }} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 bg-white">Sign out</button>
           </div>
         </div>
+        {clients.length > 0 && (
+          <div className="relative mb-4">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input
+              type="text"
+              value={clientQuery}
+              onChange={e => setClientQuery(e.target.value)}
+              placeholder="Search clients by name or occupation…"
+              className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+            />
+            {clientQuery && (
+              <button onClick={() => setClientQuery("")} title="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm">✕</button>
+            )}
+          </div>
+        )}
         {clients.length === 0 && (
           <div className="bg-white border border-dashed border-slate-300 rounded-xl p-10 text-center text-slate-500">
             No clients yet. Start a new client to begin the fact-find.
           </div>
         )}
+        {/* Match against the real name/occupation even while privacy mode shows only initials */}
+        {(() => {
+          const q = clientQuery.trim().toLowerCase();
+          const visible = q
+            ? clients.filter(c => (c.name || "").toLowerCase().includes(q) || (c.occupation || "").toLowerCase().includes(q))
+            : clients;
+          if (clients.length > 0 && visible.length === 0) return (
+            <div className="bg-white border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 text-sm">
+              No clients match “{clientQuery.trim()}”.
+            </div>
+          );
+          return (
         <div className="space-y-3">
-          {clients.map(c => (
+          {visible.map(c => (
             <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
               <div>
                 <div className="font-semibold text-slate-800">{displayName(c.name, "Unnamed client")}</div>
@@ -1209,6 +1237,8 @@ export default function App() {
             </div>
           ))}
         </div>
+          );
+        })()}
         <p className="text-xs text-slate-400 mt-8">Client data is saved privately to your account in this app. Remember your confidentiality obligations when handling client information.</p>
       </main>
     </div>
