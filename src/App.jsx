@@ -572,9 +572,11 @@ const StaticRatioBars = ({ data }) => {
   );
 };
 
-// Life timeline for the report's Concerns & Objectives section: current age,
-// target retirement age, dependents' ages and post-retirement checkpoints on an
-// open-ended axis (arrow, no terminal tick — age isn't capped).
+// Life timeline for the report's Concerns & Objectives section. The x-axis is
+// calendar time expressed as the client's age; each dependent gets their own
+// lane below, running concurrently — reading straight down from any marker
+// shows how old everyone is at that moment. Axes end in an arrow, not a tick,
+// so age is never capped.
 const LifeTimeline = ({ client }) => {
   const nowAge = num(calcAge(client.dob));
   if (!nowAge) return null;
@@ -583,46 +585,62 @@ const LifeTimeline = ({ client }) => {
     .filter(dep => dep.dob && calcAge(dep.dob) !== "")
     .map(dep => ({ name: dep.name || "Dependent", age: num(calcAge(dep.dob)) }));
   const checkpoints = [70, 80, 90].filter(a => a > retireAge && a > nowAge);
-  const maxMark = Math.max(90, retireAge, nowAge, ...deps.map(dep => dep.age));
-  const W = 700, H = 118, axisY = 62, x0 = 24, x1 = 640; // line continues past x1 into the arrow
+  const maxMark = Math.max(90, retireAge, nowAge);
+  const W = 700, axisY = 56, laneGap = 36, x0 = 24, x1 = 640; // lines continue past x1 into the arrows
+  const H = axisY + 26 + deps.length * laneGap + (deps.length ? 14 : 0);
   const x = (age) => x0 + (age / (maxMark + 8)) * (x1 - x0);
+  const depAgeAt = (dep, clientAge) => dep.age + (clientAge - nowAge);
+  const lanesBottom = axisY + deps.length * laneGap;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, fontFamily: "inherit", display: "block", margin: "0 auto" }}>
       <defs>
         <marker id="lt-arrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
           <path d="M0 0 L9 4 L0 8 Z" fill="#94a3b8" />
         </marker>
+        <marker id="lt-arrow-lt" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto">
+          <path d="M0 0 L9 4 L0 8 Z" fill="#cbd5e1" />
+        </marker>
       </defs>
-      {/* open-ended axis */}
+      {/* "today" and retirement guides running through every lane */}
+      {deps.length > 0 && <line x1={x(nowAge)} y1={axisY} x2={x(nowAge)} y2={lanesBottom} stroke={BRAND.primary} strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />}
+      {deps.length > 0 && <line x1={x(retireAge)} y1={axisY} x2={x(retireAge)} y2={lanesBottom} stroke="#d97706" strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />}
+      {/* client axis */}
       <line x1={x0} y1={axisY} x2={W - 14} y2={axisY} stroke="#94a3b8" strokeWidth="2" markerEnd="url(#lt-arrow)" />
-      <text x={W - 14} y={axisY + 20} fontSize="9" textAnchor="end" fill="#94a3b8" fontStyle="italic">age</text>
-      {/* dependents below the line */}
-      {deps.map((dep, i) => (
-        <g key={"d" + i}>
-          <circle cx={x(dep.age)} cy={axisY} r="4" fill="#2563eb" />
-          <line x1={x(dep.age)} y1={axisY + 4} x2={x(dep.age)} y2={axisY + 16 + (i % 2) * 16} stroke="#bfdbfe" strokeWidth="1" />
-          <text x={x(dep.age)} y={axisY + 27 + (i % 2) * 16} fontSize="9" textAnchor="middle" fill="#1d4ed8">{dep.name} — {dep.age}</text>
-        </g>
-      ))}
-      {/* client now */}
+      {deps.length === 0 && <text x={W - 14} y={axisY + 20} fontSize="9" textAnchor="end" fill="#94a3b8" fontStyle="italic">age</text>}
       <g>
         <circle cx={x(nowAge)} cy={axisY} r="6" fill={BRAND.primary} />
         <line x1={x(nowAge)} y1={axisY - 6} x2={x(nowAge)} y2={axisY - 22} stroke={BRAND.primary} strokeWidth="1" />
         <text x={x(nowAge)} y={axisY - 27} fontSize="10" textAnchor="middle" fill={BRAND.primary} fontWeight="700">You today — {nowAge}</text>
       </g>
-      {/* retirement */}
       <g>
         <rect x={x(retireAge) - 5} y={axisY - 5} width="10" height="10" transform={`rotate(45 ${x(retireAge)} ${axisY})`} fill="#d97706" />
         <line x1={x(retireAge)} y1={axisY - 7} x2={x(retireAge)} y2={axisY - 40} stroke="#d97706" strokeWidth="1" />
         <text x={x(retireAge)} y={axisY - 45} fontSize="10" textAnchor="middle" fill="#b45309" fontWeight="700">Retirement — {retireAge}</text>
       </g>
-      {/* post-retirement checkpoints */}
       {checkpoints.map(a => (
         <g key={a}>
           <line x1={x(a)} y1={axisY - 6} x2={x(a)} y2={axisY + 6} stroke="#64748b" strokeWidth="1.5" />
           <text x={x(a)} y={axisY - 12} fontSize="9" textAnchor="middle" fill="#64748b" fontWeight="600">{a}</text>
         </g>
       ))}
+      {/* one concurrent lane per dependent */}
+      {deps.map((dep, i) => {
+        const y = axisY + (i + 1) * laneGap;
+        const birthX = Math.max(x0, x(nowAge - dep.age));
+        return (
+          <g key={"d" + i}>
+            <line x1={birthX} y1={y} x2={W - 14} y2={y} stroke="#cbd5e1" strokeWidth="1.5" markerEnd="url(#lt-arrow-lt)" />
+            <circle cx={x(nowAge)} cy={y} r="4" fill="#2563eb" />
+            <text x={x(nowAge) - 9} y={y + 3} fontSize="9" textAnchor="end" fill="#1d4ed8" fontWeight="600">{dep.name} — {dep.age}</text>
+            {/* their age when the client retires and at each checkpoint */}
+            <text x={x(retireAge)} y={y - 6} fontSize="8.5" textAnchor="middle" fill="#b45309">{depAgeAt(dep, retireAge)}</text>
+            {checkpoints.map(a => (
+              <text key={a} x={x(a)} y={y - 6} fontSize="8.5" textAnchor="middle" fill="#94a3b8">{depAgeAt(dep, a)}</text>
+            ))}
+            {i === deps.length - 1 && <text x={W - 14} y={y + 16} fontSize="9" textAnchor="end" fill="#94a3b8" fontStyle="italic">age</text>}
+          </g>
+        );
+      })}
     </svg>
   );
 };
