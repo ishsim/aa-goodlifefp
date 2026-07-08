@@ -102,7 +102,8 @@ const blankClient = () => ({
     personal: [{ id: uid(), name: "Personal", amount: "" }, { id: uid(), name: "Motor", amount: "" }, { id: uid(), name: "Property", amount: "" }],
   },
   liabilities: [{ id: uid(), name: "Car loan", amount: "" }, { id: uid(), name: "Housing loan", amount: "" }, { id: uid(), name: "Credit card", amount: "" }],
-  incomeReplacement: { monthly: "5000", years: "20", covDeath: "", covMCI: "", covECI: "", covAccident: "" },
+  retirementAge: "60",
+  incomeReplacement: { monthly: "", years: "", covDeath: "", covMCI: "", covECI: "", covAccident: "" },
   retirement: { monthly: "5000", years: "20", yearsToRetire: "25", inflation: "2.5", spkProj: "", spkAnnuityMonthly: "", spkAnnuityYears: "15", pension: "", annuities: { current: "", contrib: "", rate: "", years: "" }, investments: { current: "", contrib: "", rate: "", years: "" } },
   otherObjectives: [],
   existingPlans: [],
@@ -262,8 +263,14 @@ function compute(c) {
   // emergency fund
   const ef3 = totalExpenses * 3, ef6 = totalExpenses * 6;
   // income replacement
+  // target retirement age (profile) drives the default planning horizons
+  const age = num(calcAge(c.dob));
+  const retAge = num(c.retirementAge);
+  const yearsToRet = age > 0 && retAge > age ? retAge - age : (num(c.retirement.yearsToRetire) || 25);
   const ir = c.incomeReplacement;
-  const irMonthly = num(ir.monthly), irYears = num(ir.years);
+  // defaults: income to replace = net income/month; years = until target retirement age
+  const irMonthly = num(ir.monthly) > 0 ? num(ir.monthly) : net;
+  const irYears = num(ir.years) > 0 ? num(ir.years) : yearsToRet;
   const potentialIncome = irMonthly * 12 * irYears;
   const irRows = [
     { name: "Death / TPD (10 years)", guideline: "10 years of income", bench: irMonthly * 12 * 10, current: num(ir.covDeath) },
@@ -275,10 +282,10 @@ function compute(c) {
   // retirement
   const rt = c.retirement;
   const rtRequired = num(rt.monthly) * 12 * num(rt.years);
-  const rtAdjusted = rtRequired * Math.pow(1 + num(rt.inflation) / 100, num(rt.yearsToRetire));
+  const rtAdjusted = rtRequired * Math.pow(1 + num(rt.inflation) / 100, yearsToRet);
   const spkAnnuityTotal = num(rt.spkAnnuityMonthly) > 0 ? num(rt.spkAnnuityMonthly) * 12 * num(rt.spkAnnuityYears) : num(rt.spkAnnuityLegacy);
-  const annTotal = projectFV(rt.annuities || {}, rt.yearsToRetire);
-  const invTotal = projectFV(rt.investments || {}, rt.yearsToRetire);
+  const annTotal = projectFV(rt.annuities || {}, yearsToRet);
+  const invTotal = projectFV(rt.investments || {}, yearsToRet);
   const rtProjected = num(rt.spkProj) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal;
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
   const rtMonthlyAnnuity = num(rt.years) > 0 ? rtProjected / (num(rt.years) * 12) : 0;
@@ -316,7 +323,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, premMonthly, premAnnual };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, premMonthly, premAnnual };
 }
 
 function buildClaudePrompt(c, d) {
@@ -580,7 +587,7 @@ const StaticRatioBars = ({ data }) => {
 const LifeTimeline = ({ client }) => {
   const nowAge = num(calcAge(client.dob));
   if (!nowAge) return null;
-  const retireAge = nowAge + num(client.retirement.yearsToRetire);
+  const retireAge = num(client.retirementAge) > nowAge ? num(client.retirementAge) : nowAge + num(client.retirement.yearsToRetire);
   const deps = (client.dependents || [])
     .filter(dep => dep.dob && calcAge(dep.dob) !== "")
     .map(dep => ({ name: dep.name || "Dependent", age: num(calcAge(dep.dob)) }));
@@ -637,6 +644,17 @@ const LifeTimeline = ({ client }) => {
             {checkpoints.map(a => (
               <text key={a} x={x(a)} y={y - 6} fontSize="8.5" textAnchor="middle" fill="#94a3b8">{depAgeAt(dep, a)}</text>
             ))}
+            {/* coming-of-age milestones: when this dependent turns 18 and 21 */}
+            {[18, 21].filter(m => dep.age < m).map(m => {
+              const clientAgeThen = nowAge + (m - dep.age);
+              if (clientAgeThen > maxMark + 6) return null;
+              return (
+                <g key={"m" + m}>
+                  <line x1={x(clientAgeThen)} y1={y - 4} x2={x(clientAgeThen)} y2={y + 4} stroke="#059669" strokeWidth="1.5" />
+                  <text x={x(clientAgeThen)} y={y + 15} fontSize="8.5" textAnchor="middle" fill="#059669" fontWeight="700">{m}</text>
+                </g>
+              );
+            })}
             {i === deps.length - 1 && <text x={W - 14} y={y + 16} fontSize="9" textAnchor="end" fill="#94a3b8" fontStyle="italic">age</text>}
           </g>
         );
@@ -1599,11 +1617,11 @@ export default function App() {
           {calcAge(client.dob) !== "" && (
             <div className="my-4" style={{ breakInside: "avoid" }}>
               <LifeTimeline client={client} />
-              <p className="text-xs text-slate-500 mt-1" style={{ textAlign: "center" }}>Your planning horizon at a glance — where you are today, your target retirement age, your dependents, and the years beyond.</p>
+              <p className="text-xs text-slate-500 mt-1" style={{ textAlign: "center" }}>Your planning horizon at a glance — where you are today, your target retirement age, your dependents, and the years beyond. Green marks show when each child reaches 18 and 21.</p>
             </div>
           )}
           <h3>3.1 Income Replacement</h3>
-          <p className="mb-2">To provide an income of {money(num(client.incomeReplacement.monthly))} per month in the event of premature death or total permanent disability, for {client.incomeReplacement.years} years from today (potential income of {money(d.potentialIncome)}).</p>
+          <p className="mb-2">To provide an income of {money(d.irMonthly)} per month in the event of premature death or total permanent disability, for {d.irYears} years from today (potential income of {money(d.potentialIncome)}).</p>
           <table>
             <thead><tr><th>Need</th><th>Guideline</th><th className="tnum">Benchmark</th><th className="tnum">Current</th><th className="tnum">Shortfall</th></tr></thead>
             <tbody>{d.irRows.map(r => (
@@ -1630,7 +1648,7 @@ export default function App() {
                 <td className="tnum">—</td>
               </tr>
               <tr>
-                <td>Inflation-adjusted ({client.retirement.inflation}% over {client.retirement.yearsToRetire} years)</td>
+                <td>Inflation-adjusted ({client.retirement.inflation}% over {d.yearsToRet} years)</td>
                 <td className="tnum">{money(d.rtAdjusted)}</td>
                 <td className="tnum">—</td>
                 <td className="tnum">—</td>
@@ -1870,6 +1888,7 @@ export default function App() {
               <Field label="Full name"><Input value={client.name} onChange={e => update({ name: e.target.value })} /></Field>
               <Field label="Date of birth"><Input type="date" value={client.dob} onChange={e => update({ dob: e.target.value })} /></Field>
               <Field label="Age"><Input value={calcAge(client.dob)} readOnly className="bg-slate-50" /></Field>
+              <Field label="Target retirement age" hint="drives the default planning horizons in the Objectives step"><NumInput value={client.retirementAge} onChange={e => update({ retirementAge: e.target.value })} /></Field>
               <Field label="Occupation"><Input value={client.occupation} onChange={e => update({ occupation: e.target.value })} /></Field>
               <Field label="Occupation details"><Input value={client.occDetails} onChange={e => update({ occDetails: e.target.value })} /></Field>
               <Field label="Client email (for portal login)"><Input type="email" value={client.email || ""} onChange={e => update({ email: e.target.value })} placeholder="client@example.com" /></Field>
@@ -2031,8 +2050,8 @@ export default function App() {
         {step === 3 && (<>
           <SectionCard title="3.1 Income replacement objective">
             <div className="grid md:grid-cols-2 gap-4 mb-4">
-              <Field label="Income to replace ($/month)"><NumInput value={client.incomeReplacement.monthly} onChange={e => updateDeep("incomeReplacement", { monthly: e.target.value })} /></Field>
-              <Field label="For how many years"><NumInput value={client.incomeReplacement.years} onChange={e => updateDeep("incomeReplacement", { years: e.target.value })} /></Field>
+              <Field label="Income to replace ($/month)" hint={num(client.incomeReplacement.monthly) > 0 ? "" : "using net income: " + money(d.net)}><NumInput value={client.incomeReplacement.monthly} onChange={e => updateDeep("incomeReplacement", { monthly: e.target.value })} placeholder={String(Math.round(d.net))} /></Field>
+              <Field label="For how many years" hint={num(client.incomeReplacement.years) > 0 ? "" : "until target retirement age: " + d.yearsToRet + " years"}><NumInput value={client.incomeReplacement.years} onChange={e => updateDeep("incomeReplacement", { years: e.target.value })} placeholder={String(d.yearsToRet)} /></Field>
             </div>
             <div className="grid md:grid-cols-4 gap-4">
               <Field label="Current Death/TPD cover"><NumInput value={client.incomeReplacement.covDeath} onChange={e => updateDeep("incomeReplacement", { covDeath: e.target.value })} /></Field>
@@ -2051,7 +2070,11 @@ export default function App() {
             <div className="grid md:grid-cols-4 gap-4 mb-4">
               <Field label="Retirement income ($/month)"><NumInput value={client.retirement.monthly} onChange={e => updateDeep("retirement", { monthly: e.target.value })} /></Field>
               <Field label="Years in retirement"><NumInput value={client.retirement.years} onChange={e => updateDeep("retirement", { years: e.target.value })} /></Field>
-              <Field label="Years until retirement"><NumInput value={client.retirement.yearsToRetire} onChange={e => updateDeep("retirement", { yearsToRetire: e.target.value })} /></Field>
+              <Field label="Years until retirement" hint={d.age > 0 && d.retAge > d.age ? "= target retirement age " + d.retAge + " − current age " + d.age : "set DOB and target retirement age in Profile to derive this"}>
+                {d.age > 0 && d.retAge > d.age
+                  ? <Input value={d.yearsToRet} readOnly className="bg-slate-50" />
+                  : <NumInput value={client.retirement.yearsToRetire} onChange={e => updateDeep("retirement", { yearsToRetire: e.target.value })} />}
+              </Field>
               <Field label="Inflation % p.a."><NumInput value={client.retirement.inflation} onChange={e => updateDeep("retirement", { inflation: e.target.value })} /></Field>
             </div>
             <div className="grid md:grid-cols-2 gap-4">

@@ -278,7 +278,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
   // ---- 3. Objectives ----
   children.push(H1("3. Your Concerns & Objectives"));
   children.push(H2("3.1 Income Replacement"));
-  children.push(P("To provide an income of " + money(num(client.incomeReplacement.monthly)) + " per month in the event of premature death or total permanent disability, for " + client.incomeReplacement.years + " years from today (potential income of " + money(d.potentialIncome) + ")."));
+  children.push(P("To provide an income of " + money(d.irMonthly) + " per month in the event of premature death or total permanent disability, for " + d.irYears + " years from today (potential income of " + money(d.potentialIncome) + ")."));
   children.push(buildTable(
     ["Need", "Guideline", "Benchmark", "Current", "Shortfall"],
     d.irRows.map(r => [
@@ -296,7 +296,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     ["Item", "Projected Arrangement", "Amount"],
     [
       ["Amount required for " + client.retirement.years + " years", "Required", { text: money(d.rtRequired), align: AlignmentType.RIGHT }],
-      ["Inflation-adjusted (" + client.retirement.inflation + "% over " + client.retirement.yearsToRetire + " years)", "Required", { text: money(d.rtAdjusted), align: AlignmentType.RIGHT }],
+      ["Inflation-adjusted (" + client.retirement.inflation + "% over " + d.yearsToRet + " years)", "Required", { text: money(d.rtAdjusted), align: AlignmentType.RIGHT }],
       ["SPK — Member Account", "Projected", { text: money(num(client.retirement.spkProj)), align: AlignmentType.RIGHT }],
       ["SPK Annuity — Employer", "Projected", { text: money(d.spkAnnuityTotal), align: AlignmentType.RIGHT }],
       ["Old Age Pension", "Projected", { text: money(num(client.retirement.pension)), align: AlignmentType.RIGHT }],
