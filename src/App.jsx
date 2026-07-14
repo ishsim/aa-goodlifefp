@@ -136,6 +136,8 @@ function migrate(c) {
   if (typeof m.retirement.investments !== "object" || m.retirement.investments == null) m.retirement.investments = { current: String(rt0.investments || ""), contrib: "", rate: "", years: "" };
   if (!Array.isArray(m.otherObjectives)) m.otherObjectives = [];
   if (!Array.isArray(m.existingPlans)) m.existingPlans = [];
+  // "GPP (steps down)" was renamed to "Whole Life"
+  m.existingPlans = m.existingPlans.map(p => p.planType === "GPP (steps down)" ? { ...p, planType: "Whole Life" } : p);
   if (!Array.isArray(m.existingInvestments)) m.existingInvestments = [];
   // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
   const existingProds = Array.isArray(c.products) ? c.products : [];
@@ -716,8 +718,8 @@ const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
 const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase", "Education fund", "Travel", "Wedding"];
 
 // ---------- Current Coverage editor ----------
-const EXISTING_PLAN_TYPES = ["Insurance Plan", "GPP (steps down)", "Retirement Annuity", "SPK", "Investment", "Solitaire PA"];
-const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Investment", "Child Savings", "Others"];
+const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Investment", "Solitaire PA"];
+const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Investment", "Child Savings", "Others"];
 const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 
 function Collapsible({ title, defaultOpen = true, right, children }) {
@@ -910,7 +912,7 @@ const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "
 
 function CoverageTimelinePanel({ client }) {
   const [mode, setMode] = useState("current");
-  const [win, setWin] = useState({ a0: 0, a1: TIMELINE_MAX_AGE }); // visible age window (zoom)
+  const [win, setWin] = useState({ a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
   const [hover, setHover] = useState(null);       // { item, left, top }
   const [selected, setSelected] = useState(null); // pinned item for the detail card
   const wrapRef = useRef(null);
@@ -928,25 +930,32 @@ function CoverageTimelinePanel({ client }) {
     })),
   ], [client.dependents, client.name, clientAge]);
   const insuredById = (id) => insuredList.find(p => p.id === id) || insuredList[0];
+  // bars sit on the CLIENT's age axis: shift each insured person's ages by the age gap
+  const offsetOf = (who) => (who.age != null && clientAge > 0 ? clientAge - who.age : 0);
+  const kfmt = (v) => v >= 1000000 ? "$" + fmt(v / 1000000, 1) + "M" : v >= 1000 ? "$" + fmt(v / 1000, v % 1000 ? 1 : 0) + "k" : v > 0 ? "$" + fmt(v) : "";
 
   const items = useMemo(() => {
     if (mode === "current") {
       return (client.existingPlans || []).map((p, i) => {
         const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
-        const end = Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE);
+        const end = Math.max(Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE), start);
         const who = insuredById(p.insured || "self");
+        const stepAge = num(p.stepDownAge), stepAmt = num(p.stepDownAmount);
+        const hasStep = stepAge > start && stepAge < end && stepAmt > 0;
         return {
           id: p.id || "cur" + i,
           label: p.planName || p.planType || "Existing plan",
-          category: p.category || "Others", start, end: Math.max(end, start), insured: who,
+          category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
+          covShort: kfmt(num(p.coverage)),
+          stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
-            ["Plan type", p.planType], ["Coverage", p.coverage ? money(num(p.coverage)) : ""],
-            ["Coverage ages", start + " – " + Math.max(end, start)],
+            ["Plan type", p.planType], ["Coverage", num(p.coverage) > 0 ? money(num(p.coverage)) : ""],
+            ["Coverage ages", start + " – " + end + " (own age)"],
+            ["Steps down", hasStep ? "to " + money(stepAmt) + " at age " + stepAge : ""],
             ["Allocation", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo" : ""],
             ["Premium ends", num(p.premiumEndsAge) > 0 ? "age " + p.premiumEndsAge : ""],
-            ["Step-down", num(p.stepDownAge) > 0 ? money(num(p.stepDownAmount)) + " at age " + p.stepDownAge : ""],
             ["Notes", p.notes],
           ].filter(([, v]) => v),
         };
@@ -961,11 +970,13 @@ function CoverageTimelinePanel({ client }) {
       end = Math.min(Math.max(end, start), TIMELINE_MAX_AGE);
       return {
         id: p.key + (p.cciOption || "") + i,
-        label: p.label, category: p.category || "Others", start, end, insured: who,
+        label: p.label, category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
+        covShort: (p.coverage || "").split("(")[0].trim(),
+        stepAge: null, stepAmt: null,
         details: [
           ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
           ["Tier", TIER_META[p.tier] ? TIER_META[p.tier].label : ""],
-          ["Coverage", p.coverage], ["Coverage ages", start + " – " + end],
+          ["Coverage", p.coverage], ["Coverage ages", start + " – " + end + " (own age)"],
           ["Premium", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo · " + money(num(p.annual), 2) + "/yr" : ""],
           ["Projected returns", p.returns],
         ].filter(([, v]) => v),
@@ -973,23 +984,41 @@ function CoverageTimelinePanel({ client }) {
     });
   }, [mode, client.existingPlans, client.products, clientAge, insuredList]);
 
-  const rows = useMemo(() => {
-    const byCat = new Map();
-    for (const it of items) {
-      if (!byCat.has(it.category)) byCat.set(it.category, []);
-      byCat.get(it.category).push(it);
-    }
-    return [...byCat.entries()].map(([category, plans]) => ({ category, plans }));
-  }, [items]);
+  // one section per insured person (client first), each with its own category rows;
+  // the client's section also lists categories with no coverage yet as gaps
+  const sections = useMemo(() => {
+    const persons = insuredList.filter(pp => pp.id === "self" ? true : items.some(it => it.insured.id === pp.id));
+    return persons.map(person => {
+      const mine = items.filter(it => it.insured.id === person.id);
+      let rows;
+      if (person.id === "self" && mode === "current") {
+        const covered = new Set(mine.map(it => it.category));
+        const comboCovered = covered.has("Death, Disability & Critical Illness");
+        rows = EXISTING_PLAN_CATEGORIES.filter(cat => {
+          if (mine.some(it => it.category === cat)) return true;
+          if (cat === "Others" || cat === "Child Savings") return false;              // no gap row for these
+          if (cat === "Death, Disability & Critical Illness") return false;          // gap shown via the two singles
+          if (comboCovered && (cat === "Death & Disability" || cat === "Critical Illness")) return false;
+          return true;                                                                // uncovered → gap row
+        }).map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) }));
+      } else {
+        const byCat = new Map();
+        for (const it of mine) {
+          if (!byCat.has(it.category)) byCat.set(it.category, []);
+          byCat.get(it.category).push(it);
+        }
+        rows = [...byCat.entries()].map(([category, plans]) => ({ category, plans }));
+      }
+      return { person, rows };
+    }).filter(s => s.rows.length > 0);
+  }, [items, insuredList, mode]);
 
-  // only people who actually appear on the chart make it into the legend/markers
-  const presentInsured = useMemo(() => insuredList.filter(pp => items.some(it => it.insured.id === pp.id)), [insuredList, items]);
-
-  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 24, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7;
+  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 20, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7, EMPTY_H = 20, SEC_H = 22;
   const span = Math.max(win.a1 - win.a0, 1);
   const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
-  const rowHeights = rows.map(r => r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2);
-  const plotH = Math.max(rowHeights.reduce((a, b) => a + b, 0), 40);
+  const rowH = (r) => r.plans.length ? r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2 : EMPTY_H;
+  const secH = (s) => SEC_H + s.rows.reduce((a, r) => a + rowH(r), 0);
+  const plotH = Math.max(sections.reduce((a, s) => a + secH(s), 0), 40);
   const totalH = AXIS_H + plotH + BOT_H;
   const tickStep = span > 60 ? 10 : span > 25 ? 5 : span > 12 ? 2 : 1;
   const ticks = [];
@@ -1028,18 +1057,25 @@ function CoverageTimelinePanel({ client }) {
     setHover({ item, left: Math.min(e.clientX - r.left + 14, r.width - 240), top: e.clientY - r.top + 14 });
   };
 
-  const barGeom = (p) => {
-    if (p.end < win.a0 || p.start > win.a1) return null;
-    const bx0 = x(Math.max(p.start, win.a0)), bx1 = x(Math.min(p.end, win.a1));
-    return { bx0, w: Math.max(bx1 - bx0, 2) };
+  // clip an age range (already on the client axis) to the zoom window; null if outside
+  const clipX = (a, b) => {
+    if (b < win.a0 || a > win.a1) return null;
+    const x0 = x(Math.max(a, win.a0)), x1 = x(Math.min(b, win.a1));
+    return { x0, w: Math.max(x1 - x0, 2) };
   };
+
+  const barLabel = (txt, g, y, bold) => g.w > 60 && (
+    <text x={g.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" fontWeight={bold ? 700 : 400} pointerEvents="none">
+      {txt.length > Math.floor(g.w / 5.3) ? txt.slice(0, Math.floor(g.w / 5.3) - 1) + "…" : txt}
+    </text>
+  );
 
   const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
   return (
     <div ref={wrapRef} className="relative">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <div className="text-sm text-slate-500">Coverage span by age{clientAge ? ` — client is ${clientAge} today` : ""}</div>
+        <div className="text-sm text-slate-500">Coverage span on the client's age axis{clientAge ? ` — client is ${clientAge} today` : ""}</div>
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
             <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 0.7)} title="Zoom in" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold">+</button>
@@ -1053,70 +1089,115 @@ function CoverageTimelinePanel({ client }) {
           </div>
         </div>
       </div>
-      {items.length === 0 ? (
-        <div className="p-8 text-center text-slate-400 text-sm">
-          {mode === "current" ? "No existing plans added yet — add them in the Current Coverage step." : "No recommended plans selected yet — tick plans to include in the Recommended Plans step."}
-        </div>
+      {items.length === 0 && mode === "recommended" ? (
+        <div className="p-8 text-center text-slate-400 text-sm">No recommended plans selected yet — tick plans to include in the Recommended Plans step.</div>
+      ) : sections.length === 0 ? (
+        <div className="p-8 text-center text-slate-400 text-sm">No existing plans added yet — add them in the Current Coverage step.</div>
       ) : (
         <>
         <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
-          <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">AGE</text>
+          <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
           {ticks.map(t => (
             <g key={t}>
               <line x1={x(t)} y1={AXIS_H - 6} x2={x(t)} y2={AXIS_H + plotH} stroke="#e2e8f0" strokeWidth="1" />
               <text x={x(t)} y={AXIS_H - 10} textAnchor="middle" fontSize="9" fill="#94a3b8">{t}</text>
             </g>
           ))}
-          {rows.map((row, ri) => {
-            const y0 = AXIS_H + rowHeights.slice(0, ri).reduce((a, b) => a + b, 0);
+          {sections.map((sec, si) => {
+            const secY = AXIS_H + sections.slice(0, si).reduce((a, s) => a + secH(s), 0);
             return (
-              <g key={row.category}>
-                {ri > 0 && <line x1={0} y1={y0} x2={LABEL_W + PLOT_W} y2={y0} stroke="#f1f5f9" strokeWidth="1" />}
-                <text x={LABEL_W - 10} y={y0 + rowHeights[ri] / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
-                {row.plans.map((p, pi) => {
-                  const g = barGeom(p);
-                  if (!g) return null;
-                  const y = y0 + ROW_PAD + pi * (LANE_H + LANE_GAP);
-                  const active = hover?.item.id === p.id || selected?.id === p.id;
+              <g key={sec.person.id}>
+                <rect x={0} y={secY} width={LABEL_W + PLOT_W + PAD_R} height={SEC_H - 4} fill="#f8fafc" />
+                <circle cx={8} cy={secY + (SEC_H - 4) / 2} r="4" fill={sec.person.color} />
+                <text x={18} y={secY + (SEC_H - 4) / 2 + 3.5} fontSize="10.5" fill={sec.person.color} fontWeight="700">
+                  {sec.person.name}{sec.person.age != null ? " — age " + sec.person.age + " today" : ""}
+                </text>
+                {sec.rows.map((row, ri) => {
+                  const y0 = secY + SEC_H + sec.rows.slice(0, ri).reduce((a, r) => a + rowH(r), 0);
+                  if (!row.plans.length) {
+                    const g = clipX(win.a0, win.a1);
+                    return (
+                      <g key={row.category}>
+                        <text x={LABEL_W - 10} y={y0 + EMPTY_H / 2 + 3} textAnchor="end" fontSize="9.5" fill="#94a3b8" fontStyle="italic">{row.category}</text>
+                        <rect x={g.x0} y={y0 + 3} width={g.w} height={EMPTY_H - 7} rx="4" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" />
+                        <text x={g.x0 + g.w / 2} y={y0 + EMPTY_H / 2 + 3} textAnchor="middle" fontSize="8.5" fill="#94a3b8" fontStyle="italic">not covered yet</text>
+                      </g>
+                    );
+                  }
                   return (
-                    <g key={p.id}>
-                      <rect x={g.bx0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color}
-                        opacity={active ? 1 : mode === "current" ? 0.6 : 0.85}
-                        stroke={selected?.id === p.id ? "#0f172a" : "none"} strokeWidth="1.5"
-                        style={{ cursor: "pointer" }}
-                        onMouseMove={e => showHover(e, p)}
-                        onMouseLeave={() => setHover(null)}
-                        onClick={() => setSelected(s => s?.id === p.id ? null : p)}
-                      />
-                      {g.w > 90 && <text x={g.bx0 + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" pointerEvents="none">{p.label.length > Math.floor(g.w / 5.5) ? p.label.slice(0, Math.floor(g.w / 5.5) - 1) + "…" : p.label}</text>}
+                    <g key={row.category}>
+                      <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
+                      {row.plans.map((p, pi) => {
+                        const y = y0 + ROW_PAD + pi * (LANE_H + LANE_GAP);
+                        const cs = p.start + p.offset, ce = p.end + p.offset;
+                        const active = hover?.item.id === p.id || selected?.id === p.id;
+                        const common = {
+                          style: { cursor: "pointer" },
+                          onMouseMove: (e) => showHover(e, p),
+                          onMouseLeave: () => setHover(null),
+                          onClick: () => setSelected(s => s?.id === p.id ? null : p),
+                        };
+                        const opacity = active ? 1 : mode === "current" ? 0.65 : 0.85;
+                        const stroke = selected?.id === p.id ? "#0f172a" : "none";
+                        if (p.stepAge != null) {
+                          const stepC = p.stepAge + p.offset;
+                          const g1 = clipX(cs, stepC), g2 = clipX(stepC, ce);
+                          return (
+                            <g key={p.id}>
+                              {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />}
+                              {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={p.insured.color} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" {...common} />}
+                              {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
+                              {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
+                            </g>
+                          );
+                        }
+                        const g = clipX(cs, ce);
+                        if (!g) return null;
+                        return (
+                          <g key={p.id}>
+                            <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />
+                            {barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
+                          </g>
+                        );
+                      })}
                     </g>
                   );
                 })}
               </g>
             );
           })}
-          {presentInsured.filter(pp => pp.age != null && pp.age >= win.a0 && pp.age <= win.a1).map((pp, mi) => (
-            <g key={pp.id}>
-              <line x1={x(pp.age)} y1={AXIS_H - 4} x2={x(pp.age)} y2={AXIS_H + plotH} stroke={pp.color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />
-              <text x={x(pp.age)} y={AXIS_H + plotH + 11 + (mi % 2) * 10} textAnchor="middle" fontSize="8.5" fill={pp.color} fontWeight="600">{pp.name.split(/\s+/)[0]} · {pp.age}</text>
+          {clientAge > 0 && clientAge >= win.a0 && clientAge <= win.a1 && (
+            <g>
+              <line x1={x(clientAge)} y1={AXIS_H - 4} x2={x(clientAge)} y2={AXIS_H + plotH} stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="4 3" />
+              <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="9" fill={BRAND.seal} fontWeight="600">today</text>
             </g>
-          ))}
+          )}
         </svg>
         {/* legend */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-600">
           <span className="font-semibold text-slate-500">Insured:</span>
-          {presentInsured.map(pp => (
-            <span key={pp.id} className="inline-flex items-center gap-1.5">
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: pp.color, display: "inline-block" }} />
-              {pp.name}{pp.age != null ? ` (${pp.age})` : ""}
+          {sections.map(s => (
+            <span key={s.person.id} className="inline-flex items-center gap-1.5">
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: s.person.color, display: "inline-block" }} />
+              {s.person.name}{s.person.age != null ? ` (${s.person.age})` : ""}
             </span>
           ))}
           <span className="inline-flex items-center gap-1.5">
-            <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 3" /></svg>
-            age today (per person)
+            <svg width="20" height="10"><line x1="10" y1="0" x2="10" y2="10" stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="3 2" /></svg>
+            today
           </span>
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="26" height="12"><rect x="0" y="1" width="13" height="10" rx="2" fill="#94a3b8" /><rect x="13" y="3.5" width="13" height="5" rx="2" fill="#94a3b8" opacity="0.6" /></svg>
+            coverage steps down
+          </span>
+          {mode === "current" && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" /></svg>
+              not covered yet
+            </span>
+          )}
         </div>
-        <p className="text-[11px] text-slate-400 mt-1">Bars run across each insured person's own age. Hover a bar for details · click to pin the full breakdown · scroll on the chart or use − / + to zoom the age axis.</p>
+        <p className="text-[11px] text-slate-400 mt-1">All rows share the client's age axis — dependents' bars are shifted so everyone lines up in calendar time (their own ages are in the details). Hover a bar for details · click to pin the full breakdown · scroll on the chart or use − / + to zoom.</p>
         {/* pinned detail card */}
         {selected && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
@@ -1153,6 +1234,7 @@ function CoverageTimelinePanel({ client }) {
     </div>
   );
 }
+
 
 // ---------- main app ----------
 const STEPS = [
