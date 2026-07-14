@@ -919,6 +919,7 @@ function CoverageTimelinePanel({ client }) {
   const svgRef = useRef(null);
   const winRef = useRef(win); winRef.current = win;
   const clientAge = num(calcAge(client.dob));
+  const retireAge = num(client.retirementAge); // from Profile (KYC) step
 
   // everyone a plan can insure: the client plus each dependent, each with a colour
   const insuredList = useMemo(() => [
@@ -1013,7 +1014,7 @@ function CoverageTimelinePanel({ client }) {
     }).filter(s => s.rows.length > 0);
   }, [items, insuredList, mode]);
 
-  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 20, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7, EMPTY_H = 20, SEC_H = 22;
+  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 32, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7, EMPTY_H = 20, SEC_H = 22;
   const span = Math.max(win.a1 - win.a0, 1);
   const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
   const rowH = (r) => r.plans.length ? r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2 : EMPTY_H;
@@ -1163,6 +1164,20 @@ function CoverageTimelinePanel({ client }) {
                     </g>
                   );
                 })}
+                {/* coming-of-age milestones for this dependent — 18 always emphasised (only shown while still under 18), 21 shown while still under 21 */}
+                {sec.person.id !== "self" && sec.person.age != null && clientAge > 0 && [18, 21].filter(m => sec.person.age < m).map(m => {
+                  const mAge = clientAge + (m - sec.person.age);
+                  if (mAge < win.a0 || mAge > win.a1) return null;
+                  const secTop = secY + SEC_H, secBot = secY + secH(sec);
+                  const under18 = m === 18;
+                  return (
+                    <g key={"m" + m}>
+                      <line x1={x(mAge)} y1={secTop} x2={x(mAge)} y2={secBot} stroke="#059669" strokeWidth={under18 ? 2 : 1.25} strokeDasharray={under18 ? "none" : "3 2"} opacity={under18 ? 0.85 : 0.55} />
+                      {under18 && <rect x={x(mAge) - 10} y={secTop - 1} width={20} height={11} rx="3" fill="#059669" />}
+                      <text x={x(mAge)} y={secTop + 7} textAnchor="middle" fontSize="8" fill={under18 ? "#fff" : "#059669"} fontWeight="700">{m}</text>
+                    </g>
+                  );
+                })}
               </g>
             );
           })}
@@ -1170,6 +1185,13 @@ function CoverageTimelinePanel({ client }) {
             <g>
               <line x1={x(clientAge)} y1={AXIS_H - 4} x2={x(clientAge)} y2={AXIS_H + plotH} stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="4 3" />
               <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="9" fill={BRAND.seal} fontWeight="600">today</text>
+            </g>
+          )}
+          {retireAge > 0 && retireAge >= win.a0 && retireAge <= win.a1 && (
+            <g>
+              <line x1={x(retireAge)} y1={AXIS_H - 4} x2={x(retireAge)} y2={AXIS_H + plotH} stroke="#d97706" strokeWidth="1.5" strokeDasharray="4 3" />
+              <rect x={x(retireAge) - 4} y={AXIS_H - 8} width={8} height={8} transform={`rotate(45 ${x(retireAge)} ${AXIS_H - 4})`} fill="#d97706" />
+              <text x={x(retireAge)} y={AXIS_H + plotH + 25} textAnchor="middle" fontSize="9" fill="#b45309" fontWeight="600">retirement ({retireAge})</text>
             </g>
           )}
         </svg>
@@ -1186,6 +1208,18 @@ function CoverageTimelinePanel({ client }) {
             <svg width="20" height="10"><line x1="10" y1="0" x2="10" y2="10" stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="3 2" /></svg>
             today
           </span>
+          {retireAge > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="10"><line x1="10" y1="0" x2="10" y2="10" stroke="#d97706" strokeWidth="1.5" strokeDasharray="3 2" /></svg>
+              retirement ({retireAge})
+            </span>
+          )}
+          {sections.some(s => s.person.id !== "self") && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="10"><rect x="6" y="0" width="8" height="9" rx="2" fill="#059669" /></svg>
+              turns 18 (still under 18) · <svg width="14" height="10"><line x1="7" y1="0" x2="7" y2="10" stroke="#059669" strokeWidth="1.25" strokeDasharray="3 2" /></svg> turns 21
+            </span>
+          )}
           <span className="inline-flex items-center gap-1.5">
             <svg width="26" height="12"><rect x="0" y="1" width="13" height="10" rx="2" fill="#94a3b8" /><rect x="13" y="3.5" width="13" height="5" rx="2" fill="#94a3b8" opacity="0.6" /></svg>
             coverage steps down
