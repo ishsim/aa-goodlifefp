@@ -735,7 +735,7 @@ function Collapsible({ title, defaultOpen = true, right, children }) {
   );
 }
 
-function ExistingPlanRow({ row, onChange, onRemove }) {
+function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   const [adv, setAdv] = useState(false);
   const set = (k, v) => onChange({ ...row, [k]: v });
   return (
@@ -760,11 +760,18 @@ function ExistingPlanRow({ row, onChange, onRemove }) {
           </select>
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-slate-500">Coverage $</label>
-          <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
+          <label className="text-xs text-slate-500">Insured</label>
+          <select value={row.insured || "self"} onChange={e => set("insured", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="self">Self</option>
+            {dependents.map(dep => <option key={dep.id} value={dep.id}>{dep.name || "(unnamed)"}{dep.relationship ? " (" + dep.relationship + ")" : ""}</option>)}
+          </select>
         </div>
         <div className="col-span-1 flex items-end justify-end">
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Coverage $</label>
+          <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">From age</label>
@@ -774,7 +781,7 @@ function ExistingPlanRow({ row, onChange, onRemove }) {
           <label className="text-xs text-slate-500">To age</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Allocation $/mo</label>
           <NumInput value={row.monthly || ""} onChange={e => set("monthly", e.target.value)} />
         </div>
@@ -782,7 +789,7 @@ function ExistingPlanRow({ row, onChange, onRemove }) {
           <label className="text-xs text-slate-500">Premium ends age</label>
           <NumInput value={row.premiumEndsAge || ""} onChange={e => set("premiumEndsAge", e.target.value)} />
         </div>
-        <div className="col-span-3 flex items-end">
+        <div className="col-span-2 flex items-end">
           <button onClick={() => setAdv(a => !a)} className="text-xs text-purple-700 hover:underline">{adv ? "− Hide advanced" : "+ Advanced"}</button>
         </div>
         {adv && <>
@@ -852,6 +859,7 @@ function CurrentCoverageSection({ client, update }) {
             <ExistingPlanRow
               key={row.id || i}
               row={row}
+              dependents={client.dependents || []}
               onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
               onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
             />
@@ -898,29 +906,72 @@ const RECO_END_AGE = {
   ILP: () => 65,
   RS: () => 75,                                // annuity payout 60–75
 };
-const TIMELINE_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#dc2626", "#0891b2", "#be185d", "#475569"];
+const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
 
 function CoverageTimelinePanel({ client }) {
   const [mode, setMode] = useState("current");
+  const [win, setWin] = useState({ a0: 0, a1: TIMELINE_MAX_AGE }); // visible age window (zoom)
+  const [hover, setHover] = useState(null);       // { item, left, top }
+  const [selected, setSelected] = useState(null); // pinned item for the detail card
+  const wrapRef = useRef(null);
+  const svgRef = useRef(null);
+  const winRef = useRef(win); winRef.current = win;
   const clientAge = num(calcAge(client.dob));
+
+  // everyone a plan can insure: the client plus each dependent, each with a colour
+  const insuredList = useMemo(() => [
+    { id: "self", name: client.name || "Client", age: clientAge || null, color: INSURED_COLORS[0] },
+    ...(client.dependents || []).map((dep, i) => ({
+      id: dep.id, name: dep.name || "Dependent " + (i + 1),
+      age: dep.dob && calcAge(dep.dob) !== "" ? num(calcAge(dep.dob)) : null,
+      color: INSURED_COLORS[(i + 1) % INSURED_COLORS.length],
+    })),
+  ], [client.dependents, client.name, clientAge]);
+  const insuredById = (id) => insuredList.find(p => p.id === id) || insuredList[0];
 
   const items = useMemo(() => {
     if (mode === "current") {
-      return (client.existingPlans || []).map(p => {
+      return (client.existingPlans || []).map((p, i) => {
         const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
         const end = Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE);
-        return { label: p.planName || p.planType || "Existing plan", category: p.category || "Others", start, end: Math.max(end, start), coverage: p.coverage };
+        const who = insuredById(p.insured || "self");
+        return {
+          id: p.id || "cur" + i,
+          label: p.planName || p.planType || "Existing plan",
+          category: p.category || "Others", start, end: Math.max(end, start), insured: who,
+          details: [
+            ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
+            ["Plan type", p.planType], ["Coverage", p.coverage ? money(num(p.coverage)) : ""],
+            ["Coverage ages", start + " – " + Math.max(end, start)],
+            ["Allocation", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo" : ""],
+            ["Premium ends", num(p.premiumEndsAge) > 0 ? "age " + p.premiumEndsAge : ""],
+            ["Step-down", num(p.stepDownAge) > 0 ? money(num(p.stepDownAmount)) + " at age " + p.stepDownAge : ""],
+            ["Notes", p.notes],
+          ].filter(([, v]) => v),
+        };
       });
     }
-    return (client.products || []).filter(p => p.include).map(p => {
-      const start = Math.max(0, Math.min(p.startAge != null ? num(p.startAge) : clientAge, TIMELINE_MAX_AGE));
+    return (client.products || []).filter(p => p.include).map((p, i) => {
+      const who = insuredById(p.insuredBy || "self");
+      const baseAge = who.age != null ? who.age : clientAge;
+      const start = Math.max(0, Math.min(p.startAge != null ? num(p.startAge) : baseAge, TIMELINE_MAX_AGE));
       let end = p.endAge != null ? num(p.endAge) : num(p.cciOption);
       if (!end) end = (RECO_END_AGE[p.key] || (() => TIMELINE_MAX_AGE))(start);
       end = Math.min(Math.max(end, start), TIMELINE_MAX_AGE);
-      return { label: p.label, category: p.category || "Others", start, end, coverage: p.coverage };
+      return {
+        id: p.key + (p.cciOption || "") + i,
+        label: p.label, category: p.category || "Others", start, end, insured: who,
+        details: [
+          ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
+          ["Tier", TIER_META[p.tier] ? TIER_META[p.tier].label : ""],
+          ["Coverage", p.coverage], ["Coverage ages", start + " – " + end],
+          ["Premium", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo · " + money(num(p.annual), 2) + "/yr" : ""],
+          ["Projected returns", p.returns],
+        ].filter(([, v]) => v),
+      };
     });
-  }, [mode, client.existingPlans, client.products, clientAge]);
+  }, [mode, client.existingPlans, client.products, clientAge, insuredList]);
 
   const rows = useMemo(() => {
     const byCat = new Map();
@@ -931,21 +982,75 @@ function CoverageTimelinePanel({ client }) {
     return [...byCat.entries()].map(([category, plans]) => ({ category, plans }));
   }, [items]);
 
-  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 26, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7;
-  const x = (age) => LABEL_W + (age / TIMELINE_MAX_AGE) * PLOT_W;
+  // only people who actually appear on the chart make it into the legend/markers
+  const presentInsured = useMemo(() => insuredList.filter(pp => items.some(it => it.insured.id === pp.id)), [insuredList, items]);
+
+  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 24, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7;
+  const span = Math.max(win.a1 - win.a0, 1);
+  const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
   const rowHeights = rows.map(r => r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2);
-  const plotH = rowHeights.reduce((a, b) => a + b, 0);
-  const totalH = AXIS_H + Math.max(plotH, 40) + 8;
-  const ticks = Array.from({ length: 11 }, (_, i) => i * 10);
+  const plotH = Math.max(rowHeights.reduce((a, b) => a + b, 0), 40);
+  const totalH = AXIS_H + plotH + BOT_H;
+  const tickStep = span > 60 ? 10 : span > 25 ? 5 : span > 12 ? 2 : 1;
+  const ticks = [];
+  for (let t = Math.ceil(win.a0 / tickStep) * tickStep; t <= win.a1 + 0.001; t += tickStep) ticks.push(Math.round(t * 10) / 10);
+
+  const zoomAt = (centerAge, factor) => {
+    setSelected(null);
+    setWin(v => {
+      const oldSpan = v.a1 - v.a0;
+      const s = Math.min(TIMELINE_MAX_AGE, Math.max(6, oldSpan * factor));
+      let a0 = centerAge - (centerAge - v.a0) * (s / oldSpan);
+      a0 = Math.max(0, Math.min(a0, TIMELINE_MAX_AGE - s));
+      return { a0: Math.round(a0 * 10) / 10, a1: Math.round((a0 + s) * 10) / 10 };
+    });
+  };
+
+  // wheel zoom needs a non-passive listener; React's synthetic onWheel can't preventDefault
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const v = winRef.current;
+      const px = ((e.clientX - rect.left) / rect.width) * (LABEL_W + PLOT_W + PAD_R);
+      const age = Math.max(0, Math.min(TIMELINE_MAX_AGE, v.a0 + ((px - LABEL_W) / PLOT_W) * (v.a1 - v.a0)));
+      zoomAt(age, e.deltaY > 0 ? 1.25 : 0.8);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [items.length]);
+
+  const showHover = (e, item) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setHover({ item, left: Math.min(e.clientX - r.left + 14, r.width - 240), top: e.clientY - r.top + 14 });
+  };
+
+  const barGeom = (p) => {
+    if (p.end < win.a0 || p.start > win.a1) return null;
+    const bx0 = x(Math.max(p.start, win.a0)), bx1 = x(Math.min(p.end, win.a1));
+    return { bx0, w: Math.max(bx1 - bx0, 2) };
+  };
+
+  const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
+    <div ref={wrapRef} className="relative">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div className="text-sm text-slate-500">Coverage span by age{clientAge ? ` — client is ${clientAge} today` : ""}</div>
-        <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
-            <button key={k} onClick={() => setMode(k)} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+            <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 0.7)} title="Zoom in" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold">+</button>
+            <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 1.45)} title="Zoom out" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold border-l border-slate-200">−</button>
+            {zoomed && <button onClick={() => setWin({ a0: 0, a1: TIMELINE_MAX_AGE })} className="px-3 py-1.5 bg-white text-purple-800 hover:bg-purple-50 border-l border-slate-200">Reset ({Math.round(win.a0)}–{Math.round(win.a1)})</button>}
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+            {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
+              <button key={k} onClick={() => { setMode(k); setSelected(null); setHover(null); }} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
+            ))}
+          </div>
         </div>
       </div>
       {items.length === 0 ? (
@@ -953,46 +1058,97 @@ function CoverageTimelinePanel({ client }) {
           {mode === "current" ? "No existing plans added yet — add them in the Current Coverage step." : "No recommended plans selected yet — tick plans to include in the Recommended Plans step."}
         </div>
       ) : (
-        <svg viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
+        <>
+        <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
+          <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">AGE</text>
           {ticks.map(t => (
             <g key={t}>
               <line x1={x(t)} y1={AXIS_H - 6} x2={x(t)} y2={AXIS_H + plotH} stroke="#e2e8f0" strokeWidth="1" />
               <text x={x(t)} y={AXIS_H - 10} textAnchor="middle" fontSize="9" fill="#94a3b8">{t}</text>
             </g>
           ))}
-          <text x={LABEL_W + PLOT_W / 2} y={9} textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="600">AGE</text>
           {rows.map((row, ri) => {
             const y0 = AXIS_H + rowHeights.slice(0, ri).reduce((a, b) => a + b, 0);
-            const color = TIMELINE_COLORS[ri % TIMELINE_COLORS.length];
             return (
               <g key={row.category}>
                 {ri > 0 && <line x1={0} y1={y0} x2={LABEL_W + PLOT_W} y2={y0} stroke="#f1f5f9" strokeWidth="1" />}
                 <text x={LABEL_W - 10} y={y0 + rowHeights[ri] / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
                 {row.plans.map((p, pi) => {
+                  const g = barGeom(p);
+                  if (!g) return null;
                   const y = y0 + ROW_PAD + pi * (LANE_H + LANE_GAP);
-                  const w = Math.max(x(p.end) - x(p.start), 2);
+                  const active = hover?.item.id === p.id || selected?.id === p.id;
                   return (
-                    <g key={pi}>
-                      <rect x={x(p.start)} y={y} width={w} height={LANE_H} rx="4" fill={color} opacity={mode === "current" ? 0.55 : 0.85}>
-                        <title>{`${p.label} · age ${p.start}–${p.end}${p.coverage ? ` · ${p.coverage}` : ""}`}</title>
-                      </rect>
-                      {w > 90 && <text x={x(p.start) + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" pointerEvents="none">{p.label.length > Math.floor(w / 5.5) ? p.label.slice(0, Math.floor(w / 5.5) - 1) + "…" : p.label}</text>}
+                    <g key={p.id}>
+                      <rect x={g.bx0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color}
+                        opacity={active ? 1 : mode === "current" ? 0.6 : 0.85}
+                        stroke={selected?.id === p.id ? "#0f172a" : "none"} strokeWidth="1.5"
+                        style={{ cursor: "pointer" }}
+                        onMouseMove={e => showHover(e, p)}
+                        onMouseLeave={() => setHover(null)}
+                        onClick={() => setSelected(s => s?.id === p.id ? null : p)}
+                      />
+                      {g.w > 90 && <text x={g.bx0 + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" pointerEvents="none">{p.label.length > Math.floor(g.w / 5.5) ? p.label.slice(0, Math.floor(g.w / 5.5) - 1) + "…" : p.label}</text>}
                     </g>
                   );
                 })}
               </g>
             );
           })}
-          {clientAge > 0 && (
-            <g>
-              <line x1={x(clientAge)} y1={AXIS_H - 4} x2={x(clientAge)} y2={AXIS_H + plotH} stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="4 3" />
-              <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="9" fill={BRAND.seal} fontWeight="600">now ({clientAge})</text>
+          {presentInsured.filter(pp => pp.age != null && pp.age >= win.a0 && pp.age <= win.a1).map((pp, mi) => (
+            <g key={pp.id}>
+              <line x1={x(pp.age)} y1={AXIS_H - 4} x2={x(pp.age)} y2={AXIS_H + plotH} stroke={pp.color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />
+              <text x={x(pp.age)} y={AXIS_H + plotH + 11 + (mi % 2) * 10} textAnchor="middle" fontSize="8.5" fill={pp.color} fontWeight="600">{pp.name.split(/\s+/)[0]} · {pp.age}</text>
             </g>
-          )}
+          ))}
         </svg>
+        {/* legend */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-600">
+          <span className="font-semibold text-slate-500">Insured:</span>
+          {presentInsured.map(pp => (
+            <span key={pp.id} className="inline-flex items-center gap-1.5">
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: pp.color, display: "inline-block" }} />
+              {pp.name}{pp.age != null ? ` (${pp.age})` : ""}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 3" /></svg>
+            age today (per person)
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1">Bars run across each insured person's own age. Hover a bar for details · click to pin the full breakdown · scroll on the chart or use − / + to zoom the age axis.</p>
+        {/* pinned detail card */}
+        {selected && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="font-semibold text-slate-800">
+                <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: selected.insured.color, marginRight: 8 }} />
+                {selected.label}
+              </div>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mt-2">
+              {selected.details.map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-4 border-b border-slate-100 py-1">
+                  <span className="text-slate-500 text-xs uppercase tracking-wide pt-0.5">{k}</span>
+                  <span className="text-right">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        </>
+      )}
+      {/* hover tooltip */}
+      {hover && (
+        <div className="absolute z-10 pointer-events-none rounded-lg bg-slate-900 text-white text-xs px-3 py-2 shadow-lg" style={{ left: hover.left, top: hover.top, maxWidth: 240 }}>
+          <div className="font-semibold mb-1">{hover.item.label}</div>
+          {hover.item.details.slice(0, 5).map(([k, v]) => <div key={k}><span className="text-slate-400">{k}: </span>{v}</div>)}
+          <div className="text-slate-400 mt-1 italic">click to pin details</div>
+        </div>
       )}
       {mode === "recommended" && items.length > 0 && (
-        <p className="text-xs text-slate-400 mt-2">Bars use each plan's own start/end ages where set; otherwise they run from the client's current age to the plan's coverage end (e.g. whole life to 100, term options to their stated age).</p>
+        <p className="text-xs text-slate-400 mt-2">Bars use each plan's own start/end ages where set; otherwise they run from the insured person's current age to the plan's coverage end (e.g. whole life to 100, term options to their stated age).</p>
       )}
     </div>
   );
