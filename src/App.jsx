@@ -155,14 +155,24 @@ function migrate(c) {
       })),
     ];
   }
-  // Investment rows: "Monthly $" became allocation + frequency, and the single return-rate/
-  // years/value became a repeatable list of scenarios
+  // Investment rows: "Monthly $" became allocation + frequency, and the flat return-scenario
+  // list became rate groups, each with a repeatable list of projection-year horizons
   m.existingInvestments = m.existingInvestments.map(r => {
     let row = r;
     if (row.monthlyContribution != null && row.allocation == null) row = { ...row, allocation: row.monthlyContribution, allocationFreq: "monthly" };
-    if (!Array.isArray(row.scenarios)) {
-      const legacy = row.returnRate != null || row.projectionYears != null || row.projectedValueOverride != null;
-      row = { ...row, scenarios: legacy ? [{ id: uid(), rate: row.returnRate || "", years: row.projectionYears || "", projectedValueOverride: row.projectedValueOverride || "" }] : [] };
+    if (!Array.isArray(row.returnRates)) {
+      let flat = Array.isArray(row.scenarios) ? row.scenarios : [];
+      if (!flat.length && (row.returnRate != null || row.projectionYears != null || row.projectedValueOverride != null)) {
+        flat = [{ rate: row.returnRate || "", years: row.projectionYears || "", projectedValueOverride: row.projectedValueOverride || "" }];
+      }
+      const groups = [];
+      flat.forEach(sc => {
+        const key = String(sc.rate ?? "");
+        let g = groups.find(g => g.rate === key);
+        if (!g) { g = { id: uid(), rate: key, horizons: [] }; groups.push(g); }
+        g.horizons.push({ id: uid(), years: sc.years || "", projectedValueOverride: sc.projectedValueOverride || "" });
+      });
+      row = { ...row, returnRates: groups };
     }
     return row;
   });
@@ -856,11 +866,15 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
 
 function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
-  const scenarios = row.scenarios || [];
+  const rates = row.returnRates || [];
   const monthlyEquiv = freqMonthlyEquiv(row.allocation, row.allocationFreq);
-  const setScenario = (i, k, v) => { const l = [...scenarios]; l[i] = { ...l[i], [k]: v }; set("scenarios", l); };
-  const addScenario = () => set("scenarios", [...scenarios, { id: uid(), rate: "", years: "", projectedValueOverride: "" }]);
-  const removeScenario = (i) => set("scenarios", scenarios.filter((_, j) => j !== i));
+  const setRates = (next) => set("returnRates", next);
+  const setRate = (gi, k, v) => setRates(rates.map((g, i) => i === gi ? { ...g, [k]: v } : g));
+  const addRate = () => setRates([...rates, { id: uid(), rate: "", horizons: [{ id: uid(), years: "", projectedValueOverride: "" }] }]);
+  const removeRate = (gi) => setRates(rates.filter((_, i) => i !== gi));
+  const setHorizon = (gi, hi, k, v) => setRates(rates.map((g, i) => i !== gi ? g : { ...g, horizons: g.horizons.map((h, j) => j === hi ? { ...h, [k]: v } : h) }));
+  const addHorizon = (gi) => setRates(rates.map((g, i) => i !== gi ? g : { ...g, horizons: [...g.horizons, { id: uid(), years: "", projectedValueOverride: "" }] }));
+  const removeHorizon = (gi, hi) => setRates(rates.map((g, i) => i !== gi ? g : { ...g, horizons: g.horizons.filter((_, j) => j !== hi) }));
   const ownerOptions = (key) => (
     <select value={row[key] || "self"} onChange={e => set(key, e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
       <option value="self">Self</option>
@@ -903,52 +917,71 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
           <label className="text-xs text-slate-500">Age started</label>
           <NumInput value={row.startAge || ""} onChange={e => set("startAge", e.target.value)} />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">To age</label>
+          <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} placeholder="e.g. 100" />
+        </div>
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Current value $</label>
           <NumInput value={row.currentValue || ""} onChange={e => set("currentValue", e.target.value)} />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Allocation $</label>
           <NumInput value={row.allocation || ""} onChange={e => set("allocation", e.target.value)} />
         </div>
-        <div className="col-span-4">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Frequency</label>
           <select value={row.allocationFreq || "monthly"} onChange={e => set("allocationFreq", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             {ALLOCATION_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
         </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Pay until age</label>
+          <NumInput value={row.payUntilAge || ""} onChange={e => set("payUntilAge", e.target.value)} />
+        </div>
       </div>
       <div className="mt-3 pt-3 border-t border-slate-200">
         <div className="flex items-center justify-between mb-2">
-          <label className="text-xs text-slate-500 font-semibold">Projected returns (add a row per rate / horizon assumption)</label>
-          <button onClick={addScenario} className="text-xs text-purple-700 hover:underline">+ Add scenario</button>
+          <label className="text-xs text-slate-500 font-semibold">Projected returns — group by rate, then add a year for each horizon</label>
+          <button onClick={addRate} className="text-xs text-purple-700 hover:underline">+ Add rate</button>
         </div>
-        {scenarios.length === 0 && <div className="text-xs text-slate-400 mb-2">No scenarios yet — add one to project this investment's growth.</div>}
+        {rates.length === 0 && <div className="text-xs text-slate-400 mb-2">No return assumptions yet — add a rate to project this investment's growth.</div>}
         <div className="space-y-2">
-          {scenarios.map((sc, i) => {
-            const auto = projectFV({ current: row.currentValue, contrib: monthlyEquiv, rate: sc.rate, years: sc.years }, 0);
-            const projected = num(sc.projectedValueOverride) > 0 ? num(sc.projectedValueOverride) : auto;
-            return (
-              <div key={sc.id || i} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-3">
+          {rates.map((g, gi) => (
+            <div key={g.id || gi} className="rounded-lg border border-slate-200 bg-white p-2">
+              <div className="flex items-end gap-2 mb-2">
+                <div className="w-32">
                   <label className="text-xs text-slate-500">Return % p.a.</label>
-                  <NumInput value={sc.rate || ""} onChange={e => setScenario(i, "rate", e.target.value)} placeholder="e.g. 6" />
+                  <NumInput value={g.rate || ""} onChange={e => setRate(gi, "rate", e.target.value)} placeholder="e.g. 6" />
                 </div>
-                <div className="col-span-3">
-                  <label className="text-xs text-slate-500">Projection years</label>
-                  <NumInput value={sc.years || ""} onChange={e => setScenario(i, "years", e.target.value)} />
-                </div>
-                <div className="col-span-5">
-                  <label className="text-xs text-slate-500">Projected value $ {auto > 0 ? "(auto: " + money(auto) + ")" : ""}</label>
-                  <NumInput value={sc.projectedValueOverride || ""} onChange={e => setScenario(i, "projectedValueOverride", e.target.value)} placeholder={auto > 0 ? String(Math.round(auto)) : "auto-calculated"} />
-                </div>
-                <div className="col-span-1 flex items-end justify-end">
-                  <button onClick={() => removeScenario(i)} className="text-red-500 text-sm">✕</button>
-                </div>
-                {projected > 0 && <div className="col-span-12 text-[11px] text-slate-400 -mt-1">Projects to {money(projected)}{num(sc.years) > 0 ? " in " + sc.years + " years" : ""} — override the field above if fees or a different scenario should apply.</div>}
+                <button onClick={() => addHorizon(gi)} className="text-xs text-purple-700 hover:underline mb-1.5">+ Add year</button>
+                <div className="flex-1" />
+                <button onClick={() => removeRate(gi)} className="text-red-500 text-sm mb-1.5">✕ Remove rate</button>
               </div>
-            );
-          })}
+              <div className="space-y-1.5 pl-3 border-l-2 border-purple-100">
+                {(g.horizons || []).map((h, hi) => {
+                  const auto = projectFV({ current: row.currentValue, contrib: monthlyEquiv, rate: g.rate, years: h.years }, 0);
+                  const projected = num(h.projectedValueOverride) > 0 ? num(h.projectedValueOverride) : auto;
+                  return (
+                    <div key={h.id || hi} className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-3">
+                        <label className="text-xs text-slate-500">Projection years</label>
+                        <NumInput value={h.years || ""} onChange={e => setHorizon(gi, hi, "years", e.target.value)} />
+                      </div>
+                      <div className="col-span-7">
+                        <label className="text-xs text-slate-500">Projected value $ {auto > 0 ? "(auto: " + money(auto) + ")" : ""}</label>
+                        <NumInput value={h.projectedValueOverride || ""} onChange={e => setHorizon(gi, hi, "projectedValueOverride", e.target.value)} placeholder={auto > 0 ? String(Math.round(auto)) : "auto-calculated"} />
+                      </div>
+                      <div className="col-span-2 flex items-end justify-end">
+                        <button onClick={() => removeHorizon(gi, hi)} className="text-red-500 text-sm">✕</button>
+                      </div>
+                      {projected > 0 && <div className="col-span-12 text-[11px] text-slate-400 -mt-1">Projects to {money(projected)}{num(h.years) > 0 ? " in " + h.years + " years" : ""} — override if fees or a different scenario should apply.</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
       <div className="grid grid-cols-12 gap-2 mt-3">
@@ -1084,30 +1117,34 @@ function CoverageTimelinePanel({ client }) {
       });
       const invs = (client.existingInvestments || []).map((r, i) => {
         const start = Math.max(0, Math.min(num(r.startAge), TIMELINE_MAX_AGE));
-        const scenarios = (r.scenarios || []).map(sc => ({
-          rate: num(sc.rate), years: num(sc.years),
-          projected: num(sc.projectedValueOverride) > 0 ? num(sc.projectedValueOverride) : projectFV({ current: r.currentValue, contrib: freqMonthlyEquiv(r.allocation, r.allocationFreq), rate: sc.rate, years: sc.years }, 0),
-        })).filter(sc => sc.years > 0);
-        const maxYears = scenarios.reduce((m, sc) => Math.max(m, sc.years), 0);
-        const headline = scenarios.filter(sc => sc.years === maxYears).reduce((best, sc) => (!best || sc.projected > best.projected) ? sc : best, null);
-        const end = Math.min(start + (maxYears > 0 ? maxYears : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
+        const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
+        // flatten rate groups → individual horizon points for the headline figure + details list
+        const horizons = (r.returnRates || []).flatMap(g => (g.horizons || []).map(h => ({
+          rate: num(g.rate), years: num(h.years),
+          projected: num(h.projectedValueOverride) > 0 ? num(h.projectedValueOverride) : projectFV({ current: r.currentValue, contrib: monthlyEquiv, rate: g.rate, years: h.years }, 0),
+        }))).filter(h => h.years > 0);
+        const maxYears = horizons.reduce((m, h) => Math.max(m, h.years), 0);
+        const headline = horizons.filter(h => h.years === maxYears).reduce((best, h) => (!best || h.projected > best.projected) ? h : best, null);
+        const toAgeSet = num(r.toAge) > start;
+        const end = toAgeSet ? Math.min(num(r.toAge), TIMELINE_MAX_AGE) : Math.min(start + (maxYears > 0 ? maxYears : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
         const who = insuredById(r.insured || "self");
         const owner = insuredById(r.owner || "self");
-        const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
-        const contribuing = monthlyEquiv > 0 && maxYears > 0;
+        const payUntil = num(r.payUntilAge);
         return {
           id: r.id || "inv" + i,
           label: r.description || r.type || "Investment",
           category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
           covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
           stepAge: null, stepAmt: null,
-          premStart: contribuing ? start : null, premEnd: contribuing ? start + maxYears : null,
+          premStart: payUntil > start ? start : null, premEnd: payUntil > start ? payUntil : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Policy owner", owner.name], ["Type", r.type], ["Category", r.category],
+            ["Coverage ages", start + " – " + end],
             ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
             ["Allocation", num(r.allocation) > 0 ? money(num(r.allocation), 2) + " / " + freqLabel(r.allocationFreq).toLowerCase() : ""],
-            ...scenarios.map((sc, si) => [(scenarios.length > 1 ? "Scenario " + (si + 1) : "Projected"), sc.rate + "% p.a. → " + money(sc.projected) + " in " + sc.years + " yrs"]),
+            ["Pay until", payUntil > 0 ? "age " + payUntil : ""],
+            ...horizons.map(h => [h.rate + "% p.a. @ " + h.years + " yrs", money(h.projected)]),
             ["Notes", r.notes],
           ].filter(([, v]) => v),
         };
