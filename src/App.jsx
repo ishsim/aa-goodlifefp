@@ -19,6 +19,19 @@ const fmt = (n, dp = 0) => {
 };
 const money = (n, dp = 0) => "$" + fmt(n, dp);
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+// immutably set a value at a dot path (numeric segments address array indices), e.g.
+// setDeep(obj, "savingsMaturity.0.age", "55") clones just the touched branch
+const setDeep = (obj, path, value) => {
+  const [key, ...rest] = path.split(".");
+  const isIdx = /^\d+$/.test(key);
+  if (rest.length === 0) {
+    if (isIdx) { const arr = Array.isArray(obj) ? [...obj] : []; arr[Number(key)] = value; return arr; }
+    return { ...(obj || {}), [key]: value };
+  }
+  if (isIdx) { const arr = Array.isArray(obj) ? [...obj] : []; arr[Number(key)] = setDeep(arr[Number(key)], rest.join("."), value); return arr; }
+  const base = obj || {};
+  return { ...base, [key]: setDeep(base[key], rest.join("."), value) };
+};
 const uid = () => Math.random().toString(36).slice(2, 10);
 const calcAge = (dob) => {
   if (!dob) return "";
@@ -109,6 +122,7 @@ const blankClient = () => ({
   existingPlans: [],
   existingInvestments: [],
   insuranceNeedsOverrides: {},
+  insuranceDetailTables: {},
   products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
@@ -1126,10 +1140,90 @@ function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
   );
 }
 
+const TCell = ({ value, onChange, placeholder, align = "right" }) => (
+  <input
+    type="text"
+    value={value || ""}
+    onChange={onChange}
+    placeholder={placeholder}
+    className={"w-full bg-transparent text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-400 rounded " + (align === "right" ? "text-right" : "text-left")}
+  />
+);
+
+// four reference tables matching the client's own illustration format — Health Benefits
+// (staged CI: Minor/Early/Major), Life Protection (Death/TPD) + Savings (Maturity /
+// Premium Returns / Retirement income at chosen ages), and Accident Coverage
+// (Major: Death/TPD, Minor: Hospital Expenses/Week Indemnity/Hospital Benefit).
+// This granularity isn't captured by Existing Plans, so every cell is a plain manual entry.
+function InsuranceNeedsDetailTables({ tables, setField }) {
+  const t = tables || {};
+  const th = "bg-purple-900 text-white text-center text-xs font-semibold px-2 py-1.5";
+  const subhead = "border border-slate-200 px-2 py-1 text-xs font-semibold bg-slate-50";
+  const td = "border border-slate-200 px-1 py-0.5";
+  const ageValueRows = (groupKey, rows) => rows.map((label, i) => {
+    const row = (t[groupKey] && t[groupKey][i]) || {};
+    return (
+      <tr key={i}>
+        {i === 0 && <td className={td + " text-xs font-medium align-top"} rowSpan={rows.length}>{label}</td>}
+        <td className={td}><TCell value={row.age} onChange={e => setField(groupKey + "." + i + ".age", e.target.value)} placeholder="@ age" align="left" /></td>
+        <td className={td}><TCell value={row.value} onChange={e => setField(groupKey + "." + i + ".value", e.target.value)} placeholder="—" /></td>
+      </tr>
+    );
+  });
+
+  return (
+    <div className="grid md:grid-cols-3 gap-4 items-start mt-3">
+      <table className="w-full border-collapse h-fit">
+        <thead>
+          <tr><th className={th} colSpan={3}>Health Benefits</th></tr>
+          <tr><th className={subhead + " text-center"}>Minor</th><th className={subhead + " text-center"}>Early</th><th className={subhead + " text-center"}>Major</th></tr>
+        </thead>
+        <tbody><tr>
+          <td className={td}><TCell value={t.health?.minor} onChange={e => setField("health.minor", e.target.value)} placeholder="—" align="center" /></td>
+          <td className={td}><TCell value={t.health?.early} onChange={e => setField("health.early", e.target.value)} placeholder="—" align="center" /></td>
+          <td className={td}><TCell value={t.health?.major} onChange={e => setField("health.major", e.target.value)} placeholder="—" align="center" /></td>
+        </tr></tbody>
+      </table>
+
+      <table className="w-full border-collapse h-fit">
+        <thead><tr><th className={th} colSpan={2}>Accident Coverage</th></tr></thead>
+        <tbody>
+          <tr><td className={subhead} colSpan={2}>Major</td></tr>
+          <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.accidentMajor?.death} onChange={e => setField("accidentMajor.death", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.accidentMajor?.tpDisability} onChange={e => setField("accidentMajor.tpDisability", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={subhead} colSpan={2}>Minor</td></tr>
+          <tr><td className={td + " text-xs px-2"}>Hospital Expenses</td><td className={td}><TCell value={t.accidentMinor?.hospitalExpenses} onChange={e => setField("accidentMinor.hospitalExpenses", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Week Indemnity</td><td className={td}><TCell value={t.accidentMinor?.weekIndemnity} onChange={e => setField("accidentMinor.weekIndemnity", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Hospital Benefit</td><td className={td}><TCell value={t.accidentMinor?.hospitalBenefit} onChange={e => setField("accidentMinor.hospitalBenefit", e.target.value)} placeholder="—" /></td></tr>
+        </tbody>
+      </table>
+
+      <div className="space-y-3">
+        <table className="w-full border-collapse">
+          <thead><tr><th className={th} colSpan={2}>Life Protection</th></tr></thead>
+          <tbody>
+            <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.life?.death} onChange={e => setField("life.death", e.target.value)} placeholder="—" /></td></tr>
+            <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.life?.tpDisability} onChange={e => setField("life.tpDisability", e.target.value)} placeholder="—" /></td></tr>
+          </tbody>
+        </table>
+        <table className="w-full border-collapse">
+          <thead><tr><th className={th} colSpan={3}>Savings</th></tr></thead>
+          <tbody>
+            {ageValueRows("savingsMaturity", ["Maturity", "Maturity"]).slice(0, 2)}
+            {ageValueRows("savingsPremiumReturns", ["Premium Returns", "Premium Returns"]).slice(0, 2)}
+            {ageValueRows("savingsRetirementIncome", ["Retirement income"]).slice(0, 1)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function InsuranceNeedsSummary({ client, update }) {
   const plans = client.existingPlans || [];
   const clientAge = num(calcAge(client.dob));
   const overrides = client.insuranceNeedsOverrides || {};
+  const detailTables = client.insuranceDetailTables || {};
   const persons = useMemo(() => [
     { id: "self", name: client.name || "Client", age: clientAge || null },
     ...(client.dependents || []).map((dep, i) => ({
@@ -1139,15 +1233,17 @@ function InsuranceNeedsSummary({ client, update }) {
   ].filter(p => p.id === "self" || plans.some(pl => (pl.insured || "self") === p.id)), [client.dependents, client.name, clientAge, plans]);
 
   const setOverride = (personId, key, v) => update({ insuranceNeedsOverrides: { ...overrides, [personId]: { ...(overrides[personId] || {}), [key]: v } } });
+  const setTableField = (personId, path, v) => update({ insuranceDetailTables: { ...detailTables, [personId]: setDeep(detailTables[personId], path, v) } });
 
   return (
     <div>
       <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
-      <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
+      <div className="space-y-8">
         {persons.map(person => (
-          <div key={person.id}>
+          <div key={person.id} className={persons.length > 1 ? "pb-6 border-b border-slate-100 last:border-0 last:pb-0" : ""}>
             <div className="font-semibold text-sm text-purple-900 mb-1 text-center">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
             <InsuranceNeedsTriangle person={person} plans={plans} overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)} />
+            <InsuranceNeedsDetailTables tables={detailTables[person.id]} setField={(path, v) => setTableField(person.id, path, v)} />
           </div>
         ))}
         {persons.length === 0 && <div className="text-sm text-slate-400">Add existing plans in the Current Coverage step to see this summary.</div>}
