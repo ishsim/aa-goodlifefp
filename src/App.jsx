@@ -136,9 +136,25 @@ function migrate(c) {
   if (typeof m.retirement.investments !== "object" || m.retirement.investments == null) m.retirement.investments = { current: String(rt0.investments || ""), contrib: "", rate: "", years: "" };
   if (!Array.isArray(m.otherObjectives)) m.otherObjectives = [];
   if (!Array.isArray(m.existingPlans)) m.existingPlans = [];
+  if (!Array.isArray(m.existingInvestments)) m.existingInvestments = [];
   // "GPP (steps down)" was renamed to "Whole Life"
   m.existingPlans = m.existingPlans.map(p => p.planType === "GPP (steps down)" ? { ...p, planType: "Whole Life" } : p);
-  if (!Array.isArray(m.existingInvestments)) m.existingInvestments = [];
+  // "Allocation $/mo" became an amount + frequency pair
+  m.existingPlans = m.existingPlans.map(p => (p.monthly != null && p.allocation == null) ? { ...p, allocation: p.monthly, allocationFreq: "monthly" } : p);
+  // "Investment" plan type/category was removed from Existing Plans — move those rows into Existing Investment Portfolio instead
+  const movedInvestments = m.existingPlans.filter(p => p.category === "Investment" || p.planType === "Investment");
+  if (movedInvestments.length) {
+    m.existingPlans = m.existingPlans.filter(p => !(p.category === "Investment" || p.planType === "Investment"));
+    m.existingInvestments = [
+      ...m.existingInvestments,
+      ...movedInvestments.map(p => ({
+        id: p.id || uid(), type: "Other", description: p.planName || p.planType || "Investment plan",
+        insured: p.insured || "self", owner: "self", startAge: p.fromAge || "",
+        currentValue: p.coverage || "", monthlyContribution: p.allocation || p.monthly || "",
+        notes: p.notes || "",
+      })),
+    ];
+  }
   // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
   const existingProds = Array.isArray(c.products) ? c.products : [];
   const mergedProds = DEFAULT_PRODUCTS.map(def => {
@@ -718,9 +734,14 @@ const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
 const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase", "Education fund", "Travel", "Wedding"];
 
 // ---------- Current Coverage editor ----------
-const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Investment", "Solitaire PA"];
-const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Investment", "Child Savings", "Others"];
+// "Investment" plan type/category was removed — those entries belong in the
+// Existing Investment Portfolio section instead (see migrate()).
+const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Solitaire PA"];
+const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+const ALLOCATION_FREQS = [["monthly", "Monthly", 12], ["quarterly", "Quarterly", 4], ["semiannual", "Semi-annual", 2], ["annual", "Annual", 1]];
+const freqLabel = (freq) => (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[1];
+const freqMonthlyEquiv = (amt, freq) => { const per = (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[2]; return num(amt) * per / 12; };
 
 function Collapsible({ title, defaultOpen = true, right, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -743,7 +764,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
       <div className="grid grid-cols-12 gap-2">
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Plan type</label>
           <select value={row.planType || ""} onChange={e => set("planType", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <option value="">Select…</option>
@@ -754,7 +775,11 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
           <label className="text-xs text-slate-500">Plan name</label>
           <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Policy number</label>
+          <Input value={row.policyNumber || ""} onChange={e => set("policyNumber", e.target.value)} />
+        </div>
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Category</label>
           <select value={row.category || ""} onChange={e => set("category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <option value="">Select…</option>
@@ -775,17 +800,23 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
           <label className="text-xs text-slate-500">Coverage $</label>
           <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
         </div>
-        <div className="col-span-2">
+        <div className="col-span-1">
           <label className="text-xs text-slate-500">From age</label>
           <NumInput value={row.fromAge || ""} onChange={e => set("fromAge", e.target.value)} />
         </div>
-        <div className="col-span-2">
+        <div className="col-span-1">
           <label className="text-xs text-slate-500">To age</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
         </div>
         <div className="col-span-2">
-          <label className="text-xs text-slate-500">Allocation $/mo</label>
-          <NumInput value={row.monthly || ""} onChange={e => set("monthly", e.target.value)} />
+          <label className="text-xs text-slate-500">Allocation $</label>
+          <NumInput value={row.allocation || ""} onChange={e => set("allocation", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Frequency</label>
+          <select value={row.allocationFreq || "monthly"} onChange={e => set("allocationFreq", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            {ALLOCATION_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Premium ends age</label>
@@ -809,21 +840,44 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   );
 }
 
-function ExistingInvestmentRow({ row, onChange, onRemove }) {
+function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
+  const autoValue = projectFV({ current: row.currentValue, contrib: row.monthlyContribution, rate: row.returnRate, years: row.projectionYears }, 0);
+  const projectedValue = num(row.projectedValueOverride) > 0 ? num(row.projectedValueOverride) : autoValue;
+  const ownerOptions = (label) => (
+    <select value={row[label.key] || "self"} onChange={e => set(label.key, e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+      <option value="self">Self</option>
+      {dependents.map(dep => <option key={dep.id} value={dep.id}>{dep.name || "(unnamed)"}{dep.relationship ? " (" + dep.relationship + ")" : ""}</option>)}
+    </select>
+  );
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
       <div className="grid grid-cols-12 gap-2">
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Type</label>
           <select value={row.type || ""} onChange={e => set("type", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <option value="">Select…</option>
             {INVESTMENT_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
-        <div className="col-span-4">
+        <div className="col-span-3">
           <label className="text-xs text-slate-500">Description</label>
           <Input value={row.description || ""} onChange={e => set("description", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Insured</label>
+          {ownerOptions({ key: "insured" })}
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Policy owner</label>
+          {ownerOptions({ key: "owner" })}
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Age started</label>
+          <NumInput value={row.startAge || ""} onChange={e => set("startAge", e.target.value)} />
+        </div>
+        <div className="col-span-1 flex items-end justify-end">
+          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Current value $</label>
@@ -833,14 +887,24 @@ function ExistingInvestmentRow({ row, onChange, onRemove }) {
           <label className="text-xs text-slate-500">Monthly $</label>
           <NumInput value={row.monthlyContribution || ""} onChange={e => set("monthlyContribution", e.target.value)} />
         </div>
-        <div className="col-span-1 flex items-end justify-end">
-          <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Return % p.a.</label>
+          <NumInput value={row.returnRate || ""} onChange={e => set("returnRate", e.target.value)} placeholder="e.g. 6" />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Projection years</label>
+          <NumInput value={row.projectionYears || ""} onChange={e => set("projectionYears", e.target.value)} />
+        </div>
+        <div className="col-span-4">
+          <label className="text-xs text-slate-500">Projected value $ {autoValue > 0 ? "(auto: " + money(autoValue) + ")" : ""}</label>
+          <NumInput value={row.projectedValueOverride || ""} onChange={e => set("projectedValueOverride", e.target.value)} placeholder={autoValue > 0 ? String(Math.round(autoValue)) : "auto-calculated"} />
         </div>
         <div className="col-span-12">
           <label className="text-xs text-slate-500">Notes</label>
           <Input value={row.notes || ""} onChange={e => set("notes", e.target.value)} />
         </div>
       </div>
+      {projectedValue > 0 && <div className="text-[11px] text-slate-400 mt-1">Projects to {money(projectedValue)} {num(row.projectionYears) > 0 ? "in " + row.projectionYears + " years" : ""} — override the field above if fees or a different scenario should apply.</div>}
     </div>
   );
 }
@@ -870,7 +934,7 @@ function CurrentCoverageSection({ client, update }) {
       </Collapsible>
       <Collapsible
         title="Existing Investment Portfolio"
-        defaultOpen={false}
+        defaultOpen={true}
         right={<button onClick={() => update({ existingInvestments: [...invs, { id: uid() }] })} className="text-sm text-purple-800 hover:underline">+ Add investment</button>}
       >
         {invs.length === 0 && <div className="text-sm text-slate-400">No investments added yet.</div>}
@@ -879,6 +943,7 @@ function CurrentCoverageSection({ client, update }) {
             <ExistingInvestmentRow
               key={row.id || i}
               row={row}
+              dependents={client.dependents || []}
               onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
               onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
             />
@@ -937,30 +1002,62 @@ function CoverageTimelinePanel({ client }) {
 
   const items = useMemo(() => {
     if (mode === "current") {
-      return (client.existingPlans || []).map((p, i) => {
+      const plans = (client.existingPlans || []).map((p, i) => {
         const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
         const end = Math.max(Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE), start);
         const who = insuredById(p.insured || "self");
         const stepAge = num(p.stepDownAge), stepAmt = num(p.stepDownAmount);
         const hasStep = stepAge > start && stepAge < end && stepAmt > 0;
+        const allocAmt = num(p.allocation ?? p.monthly);
+        const premEnd = num(p.premiumEndsAge);
         return {
           id: p.id || "cur" + i,
           label: p.planName || p.planType || "Existing plan",
           category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
           covShort: kfmt(num(p.coverage)),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
+          premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
-            ["Plan type", p.planType], ["Coverage", num(p.coverage) > 0 ? money(num(p.coverage)) : ""],
+            ["Plan type", p.planType], ["Policy number", p.policyNumber],
+            ["Coverage", num(p.coverage) > 0 ? money(num(p.coverage)) : ""],
             ["Coverage ages", start + " – " + end + " (own age)"],
             ["Steps down", hasStep ? "to " + money(stepAmt) + " at age " + stepAge : ""],
-            ["Allocation", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo" : ""],
-            ["Premium ends", num(p.premiumEndsAge) > 0 ? "age " + p.premiumEndsAge : ""],
+            ["Allocation", allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : ""],
+            ["Premium ends", premEnd > 0 ? "age " + premEnd : ""],
             ["Notes", p.notes],
           ].filter(([, v]) => v),
         };
       });
+      const invs = (client.existingInvestments || []).map((r, i) => {
+        const start = Math.max(0, Math.min(num(r.startAge), TIMELINE_MAX_AGE));
+        const years = num(r.projectionYears);
+        const end = Math.min(start + (years > 0 ? years : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
+        const who = insuredById(r.insured || "self");
+        const owner = insuredById(r.owner || "self");
+        const auto = projectFV({ current: r.currentValue, contrib: r.monthlyContribution, rate: r.returnRate, years: r.projectionYears }, 0);
+        const projected = num(r.projectedValueOverride) > 0 ? num(r.projectedValueOverride) : auto;
+        const contribuing = num(r.monthlyContribution) > 0 && years > 0;
+        return {
+          id: r.id || "inv" + i,
+          label: r.description || r.type || "Investment",
+          category: "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
+          covShort: kfmt(num(r.currentValue)) + (projected > num(r.currentValue) ? " → " + kfmt(projected) : ""),
+          stepAge: null, stepAmt: null,
+          premStart: contribuing ? start : null, premEnd: contribuing ? end : null,
+          details: [
+            ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
+            ["Policy owner", owner.name], ["Type", r.type],
+            ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
+            ["Monthly contribution", num(r.monthlyContribution) > 0 ? money(num(r.monthlyContribution), 2) + "/mo" : ""],
+            ["Return assumption", num(r.returnRate) > 0 ? r.returnRate + "% p.a." : ""],
+            ["Projected value", projected > 0 ? money(projected) + (years > 0 ? " in " + years + " yrs" : "") : ""],
+            ["Notes", r.notes],
+          ].filter(([, v]) => v),
+        };
+      });
+      return [...plans, ...invs];
     }
     return (client.products || []).filter(p => p.include).map((p, i) => {
       const who = insuredById(p.insuredBy || "self");
@@ -973,7 +1070,7 @@ function CoverageTimelinePanel({ client }) {
         id: p.key + (p.cciOption || "") + i,
         label: p.label, category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
         covShort: (p.coverage || "").split("(")[0].trim(),
-        stepAge: null, stepAmt: null,
+        stepAge: null, stepAmt: null, premStart: null, premEnd: null,
         details: [
           ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
           ["Tier", TIER_META[p.tier] ? TIER_META[p.tier].label : ""],
@@ -983,7 +1080,7 @@ function CoverageTimelinePanel({ client }) {
         ].filter(([, v]) => v),
       };
     });
-  }, [mode, client.existingPlans, client.products, clientAge, insuredList]);
+  }, [mode, client.existingPlans, client.existingInvestments, client.products, clientAge, insuredList]);
 
   // one section per insured person (client first), each with its own category rows;
   // the client's section also lists categories with no coverage yet as gaps
@@ -1002,6 +1099,9 @@ function CoverageTimelinePanel({ client }) {
           if (comboCovered && (cat === "Death & Disability" || cat === "Critical Illness")) return false;
           return true;                                                                // uncovered → gap row
         }).map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) }));
+        // categories outside the fixed insurance list (e.g. "Investment Portfolio") get their own row too
+        const extraCats = [...new Set(mine.map(it => it.category).filter(c => !EXISTING_PLAN_CATEGORIES.includes(c)))];
+        rows = rows.concat(extraCats.map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) })));
       } else {
         const byCat = new Map();
         for (const it of mine) {
@@ -1070,6 +1170,21 @@ function CoverageTimelinePanel({ client }) {
       {txt.length > Math.floor(g.w / 5.3) ? txt.slice(0, Math.floor(g.w / 5.3) - 1) + "…" : txt}
     </text>
   );
+  // premium/contribution commitment: a two-ended black bracket overlaid on the bar,
+  // showing when payments start and stop (which can differ from the coverage span itself)
+  const premBracket = (p, y) => {
+    if (p.premStart == null) return null;
+    const g = clipX(p.premStart + p.offset, p.premEnd + p.offset);
+    if (!g) return null;
+    const midY = y + LANE_H / 2, x1 = g.x0, x2 = g.x0 + g.w;
+    return (
+      <g key="prem" pointerEvents="none">
+        <line x1={x1} y1={midY} x2={x2} y2={midY} stroke="#0f172a" strokeWidth="2" />
+        <line x1={x1} y1={y + 2} x2={x1} y2={y + LANE_H - 2} stroke="#0f172a" strokeWidth="2" />
+        <line x1={x2} y1={y + 2} x2={x2} y2={y + LANE_H - 2} stroke="#0f172a" strokeWidth="2" />
+      </g>
+    );
+  };
 
   const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
@@ -1149,6 +1264,7 @@ function CoverageTimelinePanel({ client }) {
                               {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={p.insured.color} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" {...common} />}
                               {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
                               {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
+                              {premBracket(p, y)}
                             </g>
                           );
                         }
@@ -1158,6 +1274,7 @@ function CoverageTimelinePanel({ client }) {
                           <g key={p.id}>
                             <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />
                             {barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
+                            {premBracket(p, y)}
                           </g>
                         );
                       })}
@@ -1224,6 +1341,12 @@ function CoverageTimelinePanel({ client }) {
             <svg width="26" height="12"><rect x="0" y="1" width="13" height="10" rx="2" fill="#94a3b8" /><rect x="13" y="3.5" width="13" height="5" rx="2" fill="#94a3b8" opacity="0.6" /></svg>
             coverage steps down
           </span>
+          {items.some(it => it.premStart != null) && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="24" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="#0f172a" strokeWidth="2" /><line x1="2" y1="1" x2="2" y2="9" stroke="#0f172a" strokeWidth="2" /><line x1="22" y1="1" x2="22" y2="9" stroke="#0f172a" strokeWidth="2" /></svg>
+              premium / contribution period
+            </span>
+          )}
           {mode === "current" && (
             <span className="inline-flex items-center gap-1.5">
               <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" /></svg>
