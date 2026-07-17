@@ -1070,15 +1070,61 @@ const RECO_END_AGE = {
 };
 const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
 
-// coverage $ totals per insured, grouped from Existing Plans' categories — a combined
-// "Death, Disability & Critical Illness" plan counts toward both Life Protection and
-// Critical Illness, matching how such a plan actually pays out on either trigger
-const INSURANCE_NEED_GROUPS = [
-  { key: "lifeProtection", label: "Life Protection", categories: ["Death & Disability", "Death, Disability & Critical Illness"] },
-  { key: "criticalIllness", label: "Critical Illness", categories: ["Critical Illness", "Death, Disability & Critical Illness"] },
-  { key: "personalAccident", label: "Personal Accident", categories: ["Personal Accident"] },
-  { key: "hospitalBenefit", label: "Hospital / Health Benefit", categories: ["Hospital Stay"] },
+// coverage $ totals per insured, grouped from Existing Plans' categories into the three
+// points of coverage — a combined "Death, Disability & Critical Illness" plan counts
+// toward both Life and Health, matching how such a plan actually pays out on either trigger
+const NEEDS_TRIANGLE_GROUPS = [
+  { key: "health", label: "Health Benefits", categories: ["Critical Illness", "Death, Disability & Critical Illness", "Hospital Stay"], corner: { x: 108, y: 96 } },
+  { key: "life", label: "Life Protection", categories: ["Death & Disability", "Death, Disability & Critical Illness"], corner: { x: 352, y: 96 } },
+  { key: "accident", label: "Accident Coverage", categories: ["Personal Accident"], corner: { x: 230, y: 344 } },
 ];
+
+function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
+  const autoTotal = (categories) => plans.filter(p => (p.insured || "self") === person.id && categories.includes(p.category)).reduce((s, p) => s + num(p.coverage), 0);
+  const values = NEEDS_TRIANGLE_GROUPS.map(g => {
+    const auto = autoTotal(g.categories);
+    const raw = overrides[g.key];
+    const isOverridden = raw != null && raw !== "";
+    return { ...g, auto, value: isOverridden ? num(raw) : auto, isOverridden, raw };
+  });
+  const total = values.reduce((s, v) => s + v.value, 0);
+  const W = 460, H = 440, CENTER = { x: 230, y: 214 }, R_CENTER = 58, R_CORNER = 48;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: "block", margin: "0 auto", fontFamily: "inherit" }}>
+      <polygon points={values.map(v => v.corner.x + "," + v.corner.y).join(" ")} fill="#f5f0fa" stroke="#d8b4fe" strokeWidth="2" />
+      {values.map(v => <line key={v.key} x1={CENTER.x} y1={CENTER.y} x2={v.corner.x} y2={v.corner.y} stroke="#d8b4fe" strokeWidth="2" />)}
+      <circle cx={CENTER.x} cy={CENTER.y} r={R_CENTER} fill={BRAND.primary} />
+      <text x={CENTER.x} y={CENTER.y - 12} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">TOTAL</text>
+      <text x={CENTER.x} y={CENTER.y + 1} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">INSURANCE</text>
+      <text x={CENTER.x} y={CENTER.y + 14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">NEEDS</text>
+      <text x={CENTER.x} y={CENTER.y + 32} textAnchor="middle" fontSize="10" fill="#e9d5ff">{money(total)}</text>
+      {values.map(v => {
+        // corners below the hub put their label under the whole node instead of above,
+        // so it never collides with the center circle
+        const below = v.corner.y > CENTER.y;
+        const labelY = below ? v.corner.y + R_CORNER + 46 : v.corner.y - R_CORNER - 10;
+        return (
+        <g key={v.key}>
+          <circle cx={v.corner.x} cy={v.corner.y} r={R_CORNER} fill="#fff" stroke={BRAND.primary} strokeWidth="2.5" />
+          <text x={v.corner.x} y={labelY} textAnchor="middle" fontSize="11.5" fontWeight="700" fill="#3a1955">{v.label}</text>
+          <text x={v.corner.x} y={v.corner.y - 10} textAnchor="middle" fontSize="8.5" fill={v.isOverridden ? "#b45309" : "#94a3b8"} fontStyle="italic">{v.isOverridden ? "edited" : "auto-total"}</text>
+          <foreignObject x={v.corner.x - 42} y={v.corner.y - 2} width="84" height="26">
+            <input
+              type="number" inputMode="decimal" step="any"
+              value={v.isOverridden ? v.raw : ""}
+              placeholder={String(Math.round(v.auto))}
+              onChange={e => setOverride(v.key, e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", textAlign: "center", fontSize: 11, border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 4px", fontFamily: "inherit" }}
+            />
+          </foreignObject>
+          <text x={v.corner.x} y={v.corner.y + 34} textAnchor="middle" fontSize="9" fill="#7c3aed" fontWeight="600">{money(v.value)}</text>
+        </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 function InsuranceNeedsSummary({ client, update }) {
   const plans = client.existingPlans || [];
@@ -1092,42 +1138,16 @@ function InsuranceNeedsSummary({ client, update }) {
     })),
   ].filter(p => p.id === "self" || plans.some(pl => (pl.insured || "self") === p.id)), [client.dependents, client.name, clientAge, plans]);
 
-  const autoTotal = (personId, categories) => plans.filter(p => (p.insured || "self") === personId && categories.includes(p.category)).reduce((s, p) => s + num(p.coverage), 0);
   const setOverride = (personId, key, v) => update({ insuranceNeedsOverrides: { ...overrides, [personId]: { ...(overrides[personId] || {}), [key]: v } } });
 
   return (
     <div>
-      <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()}. Totals are calculated automatically from Existing Insurance Plans but can be edited — current value from Investment plans is not included here.</p>
-      <div className="space-y-5">
+      <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
+      <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
         {persons.map(person => (
           <div key={person.id}>
-            <div className="font-semibold text-sm text-purple-900 mb-1.5">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-purple-900 text-white">
-                  <th className="text-left px-3 py-1.5 font-semibold">Category</th>
-                  <th className="text-right px-3 py-1.5 font-semibold w-48">Total coverage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {INSURANCE_NEED_GROUPS.map(g => {
-                  const auto = autoTotal(person.id, g.categories);
-                  const ov = overrides[person.id]?.[g.key];
-                  const isOverridden = ov != null && ov !== "";
-                  return (
-                    <tr key={g.key} className="border-b border-slate-100">
-                      <td className="px-3 py-1.5">{g.label}</td>
-                      <td className="px-3 py-1.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-32"><NumInput value={isOverridden ? ov : ""} placeholder={money(auto)} onChange={e => setOverride(person.id, g.key, e.target.value)} className="text-right" /></div>
-                          {isOverridden && <button onClick={() => setOverride(person.id, g.key, "")} title="Reset to auto-total" className="text-xs text-purple-700 hover:underline">reset</button>}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="font-semibold text-sm text-purple-900 mb-1 text-center">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
+            <InsuranceNeedsTriangle person={person} plans={plans} overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)} />
           </div>
         ))}
         {persons.length === 0 && <div className="text-sm text-slate-400">Add existing plans in the Current Coverage step to see this summary.</div>}
