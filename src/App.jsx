@@ -170,6 +170,21 @@ function migrate(c) {
       })),
     ];
   }
+  // Single Category + Coverage $ became a repeatable coverage breakdown (a plan can now
+  // carry coverage in several granular categories at once)
+  const OLD_CATEGORY_TO_COVERAGES = {
+    "Death, Disability & Critical Illness": ["Death", "Disability", "Health (Major Critical Illness)"],
+    "Death & Disability": ["Death", "Disability"],
+    "Critical Illness": ["Health (Major Critical Illness)"],
+    "Personal Accident": ["Death (Accident)", "Disability (Accident)"],
+    "Hospital Stay": ["Hospitalisation (Accident)"],
+    "Retirement": ["Retirement"], "Child Savings": ["Child Savings"], "Others": ["Others"],
+  };
+  m.existingPlans = m.existingPlans.map(p => {
+    if (Array.isArray(p.coverages)) return p;
+    const cats = OLD_CATEGORY_TO_COVERAGES[p.category] || (p.category ? ["Others"] : []);
+    return { ...p, coverages: cats.map(cat => ({ id: uid(), category: cat, amount: p.coverage || "" })) };
+  });
   // Investment rows: "Monthly $" became allocation + frequency, and the flat return-scenario
   // list became rate groups, each with a repeatable list of projection-year horizons
   m.existingInvestments = m.existingInvestments.map(r => {
@@ -773,7 +788,26 @@ const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase
 // "Investment" plan type/category was removed — those entries belong in the
 // Existing Investment Portfolio section instead (see migrate()).
 const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Solitaire PA"];
-const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
+// a plan can carry coverage in several of these at once (e.g. a combined whole-life +
+// CI plan has both "Death" and "Health (Major Critical Illness)" entries) — see the
+// coverage-breakdown rows on ExistingPlanRow
+const PLAN_COVERAGE_CATEGORIES = [
+  "Death", "Disability",
+  "Health (Major Critical Illness)", "Health (Early-Intermediate Stage)", "Health (Minor)",
+  "Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)",
+  "Retirement", "Child Savings", "Others",
+];
+// broader bucket each granular category rolls up into — drives which Overview timeline
+// row a plan's coverage appears on, and the Total Insurance Needs auto-totals
+const CATEGORY_BUCKET = {
+  "Death": "Death & Disability", "Disability": "Death & Disability",
+  "Health (Major Critical Illness)": "Critical Illness", "Health (Early-Intermediate Stage)": "Critical Illness", "Health (Minor)": "Critical Illness",
+  "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
+  "Hospitalisation (Accident)": "Hospital Stay",
+  "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
+};
+// Overview timeline row buckets, in display order
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay"];
 const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
@@ -802,6 +836,12 @@ function Collapsible({ title, defaultOpen = true, right, children }) {
 function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   const [adv, setAdv] = useState(false);
   const set = (k, v) => onChange({ ...row, [k]: v });
+  const coverages = row.coverages || [];
+  const setCoverages = (next) => set("coverages", next);
+  const setCoverage = (i, k, v) => setCoverages(coverages.map((c, j) => j === i ? { ...c, [k]: v } : c));
+  const addCoverage = () => setCoverages([...coverages, { id: uid(), category: "", amount: "" }]);
+  const removeCoverage = (i) => setCoverages(coverages.filter((_, j) => j !== i));
+  const coverageTotal = coverages.reduce((s, c) => s + num(c.amount), 0);
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
       <div className="grid grid-cols-12 gap-2">
@@ -812,20 +852,13 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
             {EXISTING_PLAN_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
-        <div className="col-span-3">
+        <div className="col-span-4">
           <label className="text-xs text-slate-500">Plan name</label>
           <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
         </div>
-        <div className="col-span-2">
+        <div className="col-span-3">
           <label className="text-xs text-slate-500">Policy number</label>
           <Input value={row.policyNumber || ""} onChange={e => set("policyNumber", e.target.value)} />
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Category</label>
-          <select value={row.category || ""} onChange={e => set("category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
-            <option value="">Select…</option>
-            {EXISTING_PLAN_CATEGORIES.map(t => <option key={t}>{t}</option>)}
-          </select>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Insured</label>
@@ -837,15 +870,42 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
         <div className="col-span-1 flex items-end justify-end">
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Coverage $</label>
-          <NumInput value={row.coverage || ""} onChange={e => set("coverage", e.target.value)} />
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-slate-200">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-slate-500 font-semibold">Coverage breakdown{coverageTotal > 0 ? " — total " + money(coverageTotal) : ""}</label>
+          <button onClick={addCoverage} className="text-xs text-purple-700 hover:underline">+ Add category</button>
         </div>
-        <div className="col-span-1">
+        {coverages.length === 0 && <div className="text-xs text-slate-400 mb-2">No categories yet — add one to record what this plan pays out on (Death, Disability, Health, Accident…).</div>}
+        <div className="space-y-2">
+          {coverages.map((c, i) => (
+            <div key={c.id || i} className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-7">
+                <label className="text-xs text-slate-500">Category</label>
+                <select value={c.category || ""} onChange={e => setCoverage(i, "category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+                  <option value="">Select…</option>
+                  {PLAN_COVERAGE_CATEGORIES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="col-span-4">
+                <label className="text-xs text-slate-500">Amount $</label>
+                <NumInput value={c.amount || ""} onChange={e => setCoverage(i, "amount", e.target.value)} />
+              </div>
+              <div className="col-span-1 flex items-end justify-end">
+                <button onClick={() => removeCoverage(i)} className="text-red-500 text-sm">✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-2 mt-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">From age</label>
           <NumInput value={row.fromAge || ""} onChange={e => set("fromAge", e.target.value)} />
         </div>
-        <div className="col-span-1">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">To age</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
         </div>
@@ -1084,17 +1144,21 @@ const RECO_END_AGE = {
 };
 const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
 
-// coverage $ totals per insured, grouped from Existing Plans' categories into the three
-// points of coverage — a combined "Death, Disability & Critical Illness" plan counts
-// toward both Life and Health, matching how such a plan actually pays out on either trigger
+// coverage $ totals per insured, summed from each plan's granular coverage-breakdown
+// categories into the three points of coverage — a plan with both a "Death" and a
+// "Health (Major Critical Illness)" entry counts toward both Life and Health
 const NEEDS_TRIANGLE_GROUPS = [
-  { key: "health", label: "Health Benefits", categories: ["Critical Illness", "Death, Disability & Critical Illness", "Hospital Stay"], corner: { x: 108, y: 96 } },
-  { key: "life", label: "Life Protection", categories: ["Death & Disability", "Death, Disability & Critical Illness"], corner: { x: 352, y: 96 } },
-  { key: "accident", label: "Accident Coverage", categories: ["Personal Accident"], corner: { x: 230, y: 344 } },
+  { key: "health", label: "Health Benefits", categories: ["Health (Major Critical Illness)", "Health (Early-Intermediate Stage)", "Health (Minor)"], corner: { x: 108, y: 96 } },
+  { key: "life", label: "Life Protection", categories: ["Death", "Disability"], corner: { x: 352, y: 96 } },
+  { key: "accident", label: "Accident Coverage", categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)"], corner: { x: 230, y: 344 } },
 ];
 
 function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
-  const autoTotal = (categories) => plans.filter(p => (p.insured || "self") === person.id && categories.includes(p.category)).reduce((s, p) => s + num(p.coverage), 0);
+  const autoTotal = (categories) => plans
+    .filter(p => (p.insured || "self") === person.id)
+    .flatMap(p => p.coverages || [])
+    .filter(c => categories.includes(c.category))
+    .reduce((s, c) => s + num(c.amount), 0);
   const values = NEEDS_TRIANGLE_GROUPS.map(g => {
     const auto = autoTotal(g.categories);
     const raw = overrides[g.key];
@@ -1154,9 +1218,16 @@ const TCell = ({ value, onChange, placeholder, align = "right" }) => (
 // (staged CI: Minor/Early/Major), Life Protection (Death/TPD) + Savings (Maturity /
 // Premium Returns / Retirement income at chosen ages), and Accident Coverage
 // (Major: Death/TPD, Minor: Hospital Expenses/Week Indemnity/Hospital Benefit).
-// This granularity isn't captured by Existing Plans, so every cell is a plain manual entry.
-function InsuranceNeedsDetailTables({ tables, setField }) {
+// Health/Life/Accident cells auto-total from each plan's coverage breakdown (shown as
+// the placeholder, editable/overridable like the triangle); Savings has no equivalent
+// granular source on a plan, so it stays a plain manual entry.
+function InsuranceNeedsDetailTables({ tables, setField, plans, personId }) {
   const t = tables || {};
+  const mine = useMemo(() => plans.filter(p => (p.insured || "self") === personId).flatMap(p => p.coverages || []), [plans, personId]);
+  const autoFor = (categories) => {
+    const sum = mine.filter(c => categories.includes(c.category)).reduce((s, c) => s + num(c.amount), 0);
+    return sum > 0 ? fmt(sum) : "—";
+  };
   const th = "bg-purple-900 text-white text-center text-xs font-semibold px-2 py-1.5";
   const subhead = "border border-slate-200 px-2 py-1 text-xs font-semibold bg-slate-50";
   const td = "border border-slate-200 px-1 py-0.5";
@@ -1179,9 +1250,9 @@ function InsuranceNeedsDetailTables({ tables, setField }) {
           <tr><th className={subhead + " text-center"}>Minor</th><th className={subhead + " text-center"}>Early</th><th className={subhead + " text-center"}>Major</th></tr>
         </thead>
         <tbody><tr>
-          <td className={td}><TCell value={t.health?.minor} onChange={e => setField("health.minor", e.target.value)} placeholder="—" align="center" /></td>
-          <td className={td}><TCell value={t.health?.early} onChange={e => setField("health.early", e.target.value)} placeholder="—" align="center" /></td>
-          <td className={td}><TCell value={t.health?.major} onChange={e => setField("health.major", e.target.value)} placeholder="—" align="center" /></td>
+          <td className={td}><TCell value={t.health?.minor} onChange={e => setField("health.minor", e.target.value)} placeholder={autoFor(["Health (Minor)"])} align="center" /></td>
+          <td className={td}><TCell value={t.health?.early} onChange={e => setField("health.early", e.target.value)} placeholder={autoFor(["Health (Early-Intermediate Stage)"])} align="center" /></td>
+          <td className={td}><TCell value={t.health?.major} onChange={e => setField("health.major", e.target.value)} placeholder={autoFor(["Health (Major Critical Illness)"])} align="center" /></td>
         </tr></tbody>
       </table>
 
@@ -1189,12 +1260,12 @@ function InsuranceNeedsDetailTables({ tables, setField }) {
         <thead><tr><th className={th} colSpan={2}>Accident Coverage</th></tr></thead>
         <tbody>
           <tr><td className={subhead} colSpan={2}>Major</td></tr>
-          <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.accidentMajor?.death} onChange={e => setField("accidentMajor.death", e.target.value)} placeholder="—" /></td></tr>
-          <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.accidentMajor?.tpDisability} onChange={e => setField("accidentMajor.tpDisability", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.accidentMajor?.death} onChange={e => setField("accidentMajor.death", e.target.value)} placeholder={autoFor(["Death (Accident)"])} /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.accidentMajor?.tpDisability} onChange={e => setField("accidentMajor.tpDisability", e.target.value)} placeholder={autoFor(["Disability (Accident)"])} /></td></tr>
           <tr><td className={subhead} colSpan={2}>Minor</td></tr>
-          <tr><td className={td + " text-xs px-2"}>Hospital Expenses</td><td className={td}><TCell value={t.accidentMinor?.hospitalExpenses} onChange={e => setField("accidentMinor.hospitalExpenses", e.target.value)} placeholder="—" /></td></tr>
-          <tr><td className={td + " text-xs px-2"}>Week Indemnity</td><td className={td}><TCell value={t.accidentMinor?.weekIndemnity} onChange={e => setField("accidentMinor.weekIndemnity", e.target.value)} placeholder="—" /></td></tr>
-          <tr><td className={td + " text-xs px-2"}>Hospital Benefit</td><td className={td}><TCell value={t.accidentMinor?.hospitalBenefit} onChange={e => setField("accidentMinor.hospitalBenefit", e.target.value)} placeholder="—" /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Hospital Expenses</td><td className={td}><TCell value={t.accidentMinor?.hospitalExpenses} onChange={e => setField("accidentMinor.hospitalExpenses", e.target.value)} placeholder={autoFor(["Reimbursement (Accident)"])} /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Week Indemnity</td><td className={td}><TCell value={t.accidentMinor?.weekIndemnity} onChange={e => setField("accidentMinor.weekIndemnity", e.target.value)} placeholder={autoFor(["Weekly Indemnity (Accident)"])} /></td></tr>
+          <tr><td className={td + " text-xs px-2"}>Hospital Benefit</td><td className={td}><TCell value={t.accidentMinor?.hospitalBenefit} onChange={e => setField("accidentMinor.hospitalBenefit", e.target.value)} placeholder={autoFor(["Hospitalisation (Accident)"])} /></td></tr>
         </tbody>
       </table>
 
@@ -1202,8 +1273,8 @@ function InsuranceNeedsDetailTables({ tables, setField }) {
         <table className="w-full border-collapse">
           <thead><tr><th className={th} colSpan={2}>Life Protection</th></tr></thead>
           <tbody>
-            <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.life?.death} onChange={e => setField("life.death", e.target.value)} placeholder="—" /></td></tr>
-            <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.life?.tpDisability} onChange={e => setField("life.tpDisability", e.target.value)} placeholder="—" /></td></tr>
+            <tr><td className={td + " text-xs px-2"}>Death</td><td className={td}><TCell value={t.life?.death} onChange={e => setField("life.death", e.target.value)} placeholder={autoFor(["Death"])} /></td></tr>
+            <tr><td className={td + " text-xs px-2"}>TP Disability</td><td className={td}><TCell value={t.life?.tpDisability} onChange={e => setField("life.tpDisability", e.target.value)} placeholder={autoFor(["Disability"])} /></td></tr>
           </tbody>
         </table>
         <table className="w-full border-collapse">
@@ -1243,7 +1314,7 @@ function InsuranceNeedsSummary({ client, update }) {
           <div key={person.id} className={persons.length > 1 ? "pb-6 border-b border-slate-100 last:border-0 last:pb-0" : ""}>
             <div className="font-semibold text-sm text-purple-900 mb-1 text-center">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
             <InsuranceNeedsTriangle person={person} plans={plans} overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)} />
-            <InsuranceNeedsDetailTables tables={detailTables[person.id]} setField={(path, v) => setTableField(person.id, path, v)} />
+            <InsuranceNeedsDetailTables tables={detailTables[person.id]} setField={(path, v) => setTableField(person.id, path, v)} plans={plans} personId={person.id} />
           </div>
         ))}
         {persons.length === 0 && <div className="text-sm text-slate-400">Add existing plans in the Current Coverage step to see this summary.</div>}
@@ -1278,8 +1349,12 @@ function CoverageTimelinePanel({ client }) {
   const kfmt = (v) => v >= 1000000 ? "$" + fmt(v / 1000000, 1) + "M" : v >= 1000 ? "$" + fmt(v / 1000, v % 1000 ? 1 : 0) + "k" : v > 0 ? "$" + fmt(v) : "";
 
   const items = useMemo(() => {
-    if (mode === "current") {
-      const plans = (client.existingPlans || []).map((p, i) => {
+    // a plan can carry coverage in several granular categories at once (e.g. Death +
+    // Health (Major Critical Illness)) — group those by the timeline bucket they roll
+    // up into, so the plan shows one bar per bucket (Death & Disability, Critical
+    // Illness, …), each labelled with that bucket's representative coverage amount.
+    // Reused in Recommended mode too, so current coverage can be compared against proposals.
+    const buildPlanItems = () => (client.existingPlans || []).flatMap((p, i) => {
         const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
         const end = Math.max(Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE), start);
@@ -1288,25 +1363,36 @@ function CoverageTimelinePanel({ client }) {
         const hasStep = stepAge > start && stepAge < end && stepAmt > 0;
         const allocAmt = num(p.allocation ?? p.monthly);
         const premEnd = num(p.premiumEndsAge);
-        return {
-          id: p.id || "cur" + i,
-          label: p.planName || p.planType || "Existing plan",
-          category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
-          covShort: kfmt(num(p.coverage)),
+        const label = p.planName || p.planType || "Existing plan";
+        const byBucket = new Map();
+        (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
+          const bucket = CATEGORY_BUCKET[c.category] || "Others";
+          if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+          byBucket.get(bucket).push(c);
+        });
+        if (byBucket.size === 0) return [];
+        return [...byBucket.entries()].map(([bucket, covs]) => ({
+          id: (p.id || "cur" + i) + "-" + bucket,
+          origin: "current",
+          label, category: bucket, start, end, insured: who, offset: offsetOf(who),
+          covShort: kfmt(Math.max(...covs.map(c => num(c.amount)))),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Plan type", p.planType], ["Policy number", p.policyNumber],
-            ["Coverage", num(p.coverage) > 0 ? money(num(p.coverage)) : ""],
+            ...covs.map(c => [c.category, money(num(c.amount))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
             ["Steps down", hasStep ? "to " + money(stepAmt) + " at age " + stepAge : ""],
             ["Allocation", allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : ""],
             ["Premium ends", premEnd > 0 ? "age " + premEnd : ""],
             ["Notes", p.notes],
           ].filter(([, v]) => v),
-        };
+        }));
       });
+
+    if (mode === "current") {
+      const plans = buildPlanItems();
       const invs = (client.existingInvestments || []).map((r, i) => {
         const start = Math.max(0, Math.min(num(r.startAge), TIMELINE_MAX_AGE));
         const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
@@ -1324,6 +1410,7 @@ function CoverageTimelinePanel({ client }) {
         const payUntil = num(r.payUntilAge);
         return {
           id: r.id || "inv" + i,
+          origin: "current",
           label: r.description || r.type || "Investment",
           category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
           covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
@@ -1343,7 +1430,11 @@ function CoverageTimelinePanel({ client }) {
       });
       return [...plans, ...invs];
     }
-    return (client.products || []).filter(p => p.include).map((p, i) => {
+
+    // recommended mode: layer current plans (muted) under the recommended products
+    // (highlighted) so the advisor can see how the proposal stacks against what's
+    // already in force, category row by category row
+    const recommended = (client.products || []).filter(p => p.include).map((p, i) => {
       const who = insuredById(p.insuredBy || "self");
       const baseAge = who.age != null ? who.age : clientAge;
       const start = Math.max(0, Math.min(p.startAge != null ? num(p.startAge) : baseAge, TIMELINE_MAX_AGE));
@@ -1351,7 +1442,8 @@ function CoverageTimelinePanel({ client }) {
       if (!end) end = (RECO_END_AGE[p.key] || (() => TIMELINE_MAX_AGE))(start);
       end = Math.min(Math.max(end, start), TIMELINE_MAX_AGE);
       return {
-        id: p.key + (p.cciOption || "") + i,
+        id: "reco-" + p.key + (p.cciOption || "") + i,
+        origin: "recommended",
         label: p.label, category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
         covShort: (p.coverage || "").split("(")[0].trim(),
         stepAge: null, stepAmt: null, premStart: null, premEnd: null,
@@ -1364,6 +1456,7 @@ function CoverageTimelinePanel({ client }) {
         ].filter(([, v]) => v),
       };
     });
+    return [...buildPlanItems(), ...recommended];
   }, [mode, client.existingPlans, client.existingInvestments, client.products, clientAge, insuredList]);
 
   // one section per insured person (client first), each with its own category rows;
@@ -1380,13 +1473,9 @@ function CoverageTimelinePanel({ client }) {
         // that matter most for a child/spouse — critical illness, accident, hospitalisation
         // (and its death/disability sibling) — not retirement or "others"
         const gapCats = person.id === "self" ? EXISTING_PLAN_CATEGORIES : DEPENDENT_GAP_CATEGORIES;
-        const covered = new Set(mine.map(it => it.category));
-        const comboCovered = covered.has("Death, Disability & Critical Illness");
         rows = gapCats.filter(cat => {
           if (mine.some(it => it.category === cat)) return true;
           if (cat === "Others" || cat === "Child Savings") return false;              // no gap row for these
-          if (cat === "Death, Disability & Critical Illness") return false;          // gap shown via the two singles
-          if (comboCovered && (cat === "Death & Disability" || cat === "Critical Illness")) return false;
           return true;                                                                // uncovered → gap row
         }).map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) }));
         // categories outside the fixed gap list (e.g. "Investment Portfolio", "Retirement" for a dependent) still get their own row
@@ -1543,15 +1632,19 @@ function CoverageTimelinePanel({ client }) {
                           onMouseLeave: () => setHover(null),
                           onClick: () => setSelected(s => s?.id === p.id ? null : p),
                         };
-                        const opacity = active ? 1 : mode === "current" ? 0.65 : 0.85;
-                        const stroke = selected?.id === p.id ? "#0f172a" : "none";
+                        // in Recommended mode, current-origin bars are muted with a dashed
+                        // outline so they read as "already in force" behind the proposal
+                        const isMutedCurrent = mode === "recommended" && p.origin === "current";
+                        const opacity = active ? 1 : isMutedCurrent ? 0.5 : mode === "current" ? 0.65 : 0.85;
+                        const stroke = selected?.id === p.id ? "#0f172a" : (isMutedCurrent ? "#64748b" : "none");
+                        const dash = isMutedCurrent ? "3 2" : undefined;
                         if (p.stepAge != null) {
                           const stepC = p.stepAge + p.offset;
                           const g1 = clipX(cs, stepC), g2 = clipX(stepC, ce);
                           return (
                             <g key={p.id}>
-                              {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />}
-                              {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={p.insured.color} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" {...common} />}
+                              {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
+                              {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={p.insured.color} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
                               {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
                               {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
                               {premBracket(p, y)}
@@ -1562,7 +1655,7 @@ function CoverageTimelinePanel({ client }) {
                         if (!g) return null;
                         return (
                           <g key={p.id}>
-                            <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />
+                            <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
                             {barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
                           </g>
@@ -1641,6 +1734,12 @@ function CoverageTimelinePanel({ client }) {
             <span className="inline-flex items-center gap-1.5">
               <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" /></svg>
               not covered yet
+            </span>
+          )}
+          {mode === "recommended" && items.some(it => it.origin === "current") && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="#cbd5e1" stroke="#64748b" strokeDasharray="3 2" opacity="0.7" /></svg>
+              current plan (in force) · solid = recommended
             </span>
           )}
         </div>
