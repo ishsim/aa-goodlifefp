@@ -108,6 +108,7 @@ const blankClient = () => ({
   otherObjectives: [],
   existingPlans: [],
   existingInvestments: [],
+  insuranceNeedsOverrides: {},
   products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
@@ -759,6 +760,8 @@ const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase
 // Existing Investment Portfolio section instead (see migrate()).
 const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Solitaire PA"];
 const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
+// gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
+const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay"];
 const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
 // investment tagged the same way merges into that category's row on the Overview timeline
@@ -864,10 +867,15 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   );
 }
 
-function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
+function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clientAge = null }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
   const rates = row.returnRates || [];
   const monthlyEquiv = freqMonthlyEquiv(row.allocation, row.allocationFreq);
+  const insuredAge = (() => {
+    if (!row.insured || row.insured === "self") return clientAge;
+    const dep = dependents.find(d => d.id === row.insured);
+    return dep && dep.dob && calcAge(dep.dob) !== "" ? num(calcAge(dep.dob)) : null;
+  })();
   const setRates = (next) => set("returnRates", next);
   const setRate = (gi, k, v) => setRates(rates.map((g, i) => i === gi ? { ...g, [k]: v } : g));
   const addRate = () => setRates([...rates, { id: uid(), rate: "", horizons: [{ id: uid(), years: "", projectedValueOverride: "" }] }]);
@@ -967,6 +975,7 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
                       <div className="col-span-3">
                         <label className="text-xs text-slate-500">Projection years</label>
                         <NumInput value={h.years || ""} onChange={e => setHorizon(gi, hi, "years", e.target.value)} />
+                        {insuredAge != null && num(h.years) > 0 && <div className="text-[10px] text-slate-400 mt-0.5">insured will be age {insuredAge + num(h.years)}</div>}
                       </div>
                       <div className="col-span-7">
                         <label className="text-xs text-slate-500">Projected value $ {auto > 0 ? "(auto: " + money(auto) + ")" : ""}</label>
@@ -1029,6 +1038,7 @@ function CurrentCoverageSection({ client, update }) {
               key={row.id || i}
               row={row}
               dependents={client.dependents || []}
+              clientAge={num(calcAge(client.dob))}
               onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
               onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
             />
@@ -1059,6 +1069,72 @@ const RECO_END_AGE = {
   RS: () => 75,                                // annuity payout 60–75
 };
 const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
+
+// coverage $ totals per insured, grouped from Existing Plans' categories — a combined
+// "Death, Disability & Critical Illness" plan counts toward both Life Protection and
+// Critical Illness, matching how such a plan actually pays out on either trigger
+const INSURANCE_NEED_GROUPS = [
+  { key: "lifeProtection", label: "Life Protection", categories: ["Death & Disability", "Death, Disability & Critical Illness"] },
+  { key: "criticalIllness", label: "Critical Illness", categories: ["Critical Illness", "Death, Disability & Critical Illness"] },
+  { key: "personalAccident", label: "Personal Accident", categories: ["Personal Accident"] },
+  { key: "hospitalBenefit", label: "Hospital / Health Benefit", categories: ["Hospital Stay"] },
+];
+
+function InsuranceNeedsSummary({ client, update }) {
+  const plans = client.existingPlans || [];
+  const clientAge = num(calcAge(client.dob));
+  const overrides = client.insuranceNeedsOverrides || {};
+  const persons = useMemo(() => [
+    { id: "self", name: client.name || "Client", age: clientAge || null },
+    ...(client.dependents || []).map((dep, i) => ({
+      id: dep.id, name: dep.name || "Dependent " + (i + 1),
+      age: dep.dob && calcAge(dep.dob) !== "" ? num(calcAge(dep.dob)) : null,
+    })),
+  ].filter(p => p.id === "self" || plans.some(pl => (pl.insured || "self") === p.id)), [client.dependents, client.name, clientAge, plans]);
+
+  const autoTotal = (personId, categories) => plans.filter(p => (p.insured || "self") === personId && categories.includes(p.category)).reduce((s, p) => s + num(p.coverage), 0);
+  const setOverride = (personId, key, v) => update({ insuranceNeedsOverrides: { ...overrides, [personId]: { ...(overrides[personId] || {}), [key]: v } } });
+
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()}. Totals are calculated automatically from Existing Insurance Plans but can be edited — current value from Investment plans is not included here.</p>
+      <div className="space-y-5">
+        {persons.map(person => (
+          <div key={person.id}>
+            <div className="font-semibold text-sm text-purple-900 mb-1.5">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-purple-900 text-white">
+                  <th className="text-left px-3 py-1.5 font-semibold">Category</th>
+                  <th className="text-right px-3 py-1.5 font-semibold w-48">Total coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INSURANCE_NEED_GROUPS.map(g => {
+                  const auto = autoTotal(person.id, g.categories);
+                  const ov = overrides[person.id]?.[g.key];
+                  const isOverridden = ov != null && ov !== "";
+                  return (
+                    <tr key={g.key} className="border-b border-slate-100">
+                      <td className="px-3 py-1.5">{g.label}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-32"><NumInput value={isOverridden ? ov : ""} placeholder={money(auto)} onChange={e => setOverride(person.id, g.key, e.target.value)} className="text-right" /></div>
+                          {isOverridden && <button onClick={() => setOverride(person.id, g.key, "")} title="Reset to auto-total" className="text-xs text-purple-700 hover:underline">reset</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+        {persons.length === 0 && <div className="text-sm text-slate-400">Add existing plans in the Current Coverage step to see this summary.</div>}
+      </div>
+    </div>
+  );
+}
 
 function CoverageTimelinePanel({ client }) {
   const [mode, setMode] = useState("current");
@@ -1177,22 +1253,28 @@ function CoverageTimelinePanel({ client }) {
   // one section per insured person (client first), each with its own category rows;
   // the client's section also lists categories with no coverage yet as gaps
   const sections = useMemo(() => {
-    const persons = insuredList.filter(pp => pp.id === "self" ? true : items.some(it => it.insured.id === pp.id));
+    // in current mode every dependent is shown (even with zero plans) so gaps are visible;
+    // in recommended mode only dependents who actually have a recommended product appear
+    const persons = insuredList.filter(pp => pp.id === "self" || mode === "current" || items.some(it => it.insured.id === pp.id));
     return persons.map(person => {
       const mine = items.filter(it => it.insured.id === person.id);
       let rows;
-      if (person.id === "self" && mode === "current") {
+      if (mode === "current") {
+        // client sees gaps across every insurance category; dependents only see the ones
+        // that matter most for a child/spouse — critical illness, accident, hospitalisation
+        // (and its death/disability sibling) — not retirement or "others"
+        const gapCats = person.id === "self" ? EXISTING_PLAN_CATEGORIES : DEPENDENT_GAP_CATEGORIES;
         const covered = new Set(mine.map(it => it.category));
         const comboCovered = covered.has("Death, Disability & Critical Illness");
-        rows = EXISTING_PLAN_CATEGORIES.filter(cat => {
+        rows = gapCats.filter(cat => {
           if (mine.some(it => it.category === cat)) return true;
           if (cat === "Others" || cat === "Child Savings") return false;              // no gap row for these
           if (cat === "Death, Disability & Critical Illness") return false;          // gap shown via the two singles
           if (comboCovered && (cat === "Death & Disability" || cat === "Critical Illness")) return false;
           return true;                                                                // uncovered → gap row
         }).map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) }));
-        // categories outside the fixed insurance list (e.g. "Investment Portfolio") get their own row too
-        const extraCats = [...new Set(mine.map(it => it.category).filter(c => !EXISTING_PLAN_CATEGORIES.includes(c)))];
+        // categories outside the fixed gap list (e.g. "Investment Portfolio", "Retirement" for a dependent) still get their own row
+        const extraCats = [...new Set(mine.map(it => it.category).filter(c => !gapCats.includes(c)))];
         rows = rows.concat(extraCats.map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) })));
       } else {
         const byCat = new Map();
@@ -2704,6 +2786,9 @@ export default function App() {
         {step === 6 && (<>
           <SectionCard title="Overview">
             <CoverageTimelinePanel client={client} />
+          </SectionCard>
+          <SectionCard title="Total Insurance Needs">
+            <InsuranceNeedsSummary client={client} update={update} />
           </SectionCard>
         </>)}
 
