@@ -150,11 +150,22 @@ function migrate(c) {
       ...movedInvestments.map(p => ({
         id: p.id || uid(), type: "Other", description: p.planName || p.planType || "Investment plan",
         insured: p.insured || "self", owner: "self", startAge: p.fromAge || "",
-        currentValue: p.coverage || "", monthlyContribution: p.allocation || p.monthly || "",
+        currentValue: p.coverage || "", allocation: p.allocation || p.monthly || "", allocationFreq: p.allocationFreq || "monthly",
         notes: p.notes || "",
       })),
     ];
   }
+  // Investment rows: "Monthly $" became allocation + frequency, and the single return-rate/
+  // years/value became a repeatable list of scenarios
+  m.existingInvestments = m.existingInvestments.map(r => {
+    let row = r;
+    if (row.monthlyContribution != null && row.allocation == null) row = { ...row, allocation: row.monthlyContribution, allocationFreq: "monthly" };
+    if (!Array.isArray(row.scenarios)) {
+      const legacy = row.returnRate != null || row.projectionYears != null || row.projectedValueOverride != null;
+      row = { ...row, scenarios: legacy ? [{ id: uid(), rate: row.returnRate || "", years: row.projectionYears || "", projectedValueOverride: row.projectedValueOverride || "" }] : [] };
+    }
+    return row;
+  });
   // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
   const existingProds = Array.isArray(c.products) ? c.products : [];
   const mergedProds = DEFAULT_PRODUCTS.map(def => {
@@ -739,6 +750,9 @@ const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase
 const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Solitaire PA"];
 const EXISTING_PLAN_CATEGORIES = ["Death, Disability & Critical Illness", "Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+// intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
+// investment tagged the same way merges into that category's row on the Overview timeline
+const INVESTMENT_CATEGORIES = ["Investment Portfolio", "Retirement", "Child Savings", "Education", "Emergency Fund", "Property", "Others"];
 const ALLOCATION_FREQS = [["monthly", "Monthly", 12], ["quarterly", "Quarterly", 4], ["semiannual", "Semi-annual", 2], ["annual", "Annual", 1]];
 const freqLabel = (freq) => (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[1];
 const freqMonthlyEquiv = (amt, freq) => { const per = (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[2]; return num(amt) * per / 12; };
@@ -842,10 +856,13 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
 
 function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
-  const autoValue = projectFV({ current: row.currentValue, contrib: row.monthlyContribution, rate: row.returnRate, years: row.projectionYears }, 0);
-  const projectedValue = num(row.projectedValueOverride) > 0 ? num(row.projectedValueOverride) : autoValue;
-  const ownerOptions = (label) => (
-    <select value={row[label.key] || "self"} onChange={e => set(label.key, e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+  const scenarios = row.scenarios || [];
+  const monthlyEquiv = freqMonthlyEquiv(row.allocation, row.allocationFreq);
+  const setScenario = (i, k, v) => { const l = [...scenarios]; l[i] = { ...l[i], [k]: v }; set("scenarios", l); };
+  const addScenario = () => set("scenarios", [...scenarios, { id: uid(), rate: "", years: "", projectedValueOverride: "" }]);
+  const removeScenario = (i) => set("scenarios", scenarios.filter((_, j) => j !== i));
+  const ownerOptions = (key) => (
+    <select value={row[key] || "self"} onChange={e => set(key, e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
       <option value="self">Self</option>
       {dependents.map(dep => <option key={dep.id} value={dep.id}>{dep.name || "(unnamed)"}{dep.relationship ? " (" + dep.relationship + ")" : ""}</option>)}
     </select>
@@ -865,46 +882,81 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [] }) {
           <Input value={row.description || ""} onChange={e => set("description", e.target.value)} />
         </div>
         <div className="col-span-2">
+          <label className="text-xs text-slate-500">Category</label>
+          <select value={row.category || ""} onChange={e => set("category", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <option value="">Select…</option>
+            {INVESTMENT_CATEGORIES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Insured</label>
-          {ownerOptions({ key: "insured" })}
+          {ownerOptions("insured")}
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Policy owner</label>
-          {ownerOptions({ key: "owner" })}
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Age started</label>
-          <NumInput value={row.startAge || ""} onChange={e => set("startAge", e.target.value)} />
+          {ownerOptions("owner")}
         </div>
         <div className="col-span-1 flex items-end justify-end">
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
         <div className="col-span-2">
+          <label className="text-xs text-slate-500">Age started</label>
+          <NumInput value={row.startAge || ""} onChange={e => set("startAge", e.target.value)} />
+        </div>
+        <div className="col-span-3">
           <label className="text-xs text-slate-500">Current value $</label>
           <NumInput value={row.currentValue || ""} onChange={e => set("currentValue", e.target.value)} />
         </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Monthly $</label>
-          <NumInput value={row.monthlyContribution || ""} onChange={e => set("monthlyContribution", e.target.value)} />
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Return % p.a.</label>
-          <NumInput value={row.returnRate || ""} onChange={e => set("returnRate", e.target.value)} placeholder="e.g. 6" />
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Projection years</label>
-          <NumInput value={row.projectionYears || ""} onChange={e => set("projectionYears", e.target.value)} />
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Allocation $</label>
+          <NumInput value={row.allocation || ""} onChange={e => set("allocation", e.target.value)} />
         </div>
         <div className="col-span-4">
-          <label className="text-xs text-slate-500">Projected value $ {autoValue > 0 ? "(auto: " + money(autoValue) + ")" : ""}</label>
-          <NumInput value={row.projectedValueOverride || ""} onChange={e => set("projectedValueOverride", e.target.value)} placeholder={autoValue > 0 ? String(Math.round(autoValue)) : "auto-calculated"} />
+          <label className="text-xs text-slate-500">Frequency</label>
+          <select value={row.allocationFreq || "monthly"} onChange={e => set("allocationFreq", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            {ALLOCATION_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
         </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-slate-200">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-slate-500 font-semibold">Projected returns (add a row per rate / horizon assumption)</label>
+          <button onClick={addScenario} className="text-xs text-purple-700 hover:underline">+ Add scenario</button>
+        </div>
+        {scenarios.length === 0 && <div className="text-xs text-slate-400 mb-2">No scenarios yet — add one to project this investment's growth.</div>}
+        <div className="space-y-2">
+          {scenarios.map((sc, i) => {
+            const auto = projectFV({ current: row.currentValue, contrib: monthlyEquiv, rate: sc.rate, years: sc.years }, 0);
+            const projected = num(sc.projectedValueOverride) > 0 ? num(sc.projectedValueOverride) : auto;
+            return (
+              <div key={sc.id || i} className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <label className="text-xs text-slate-500">Return % p.a.</label>
+                  <NumInput value={sc.rate || ""} onChange={e => setScenario(i, "rate", e.target.value)} placeholder="e.g. 6" />
+                </div>
+                <div className="col-span-3">
+                  <label className="text-xs text-slate-500">Projection years</label>
+                  <NumInput value={sc.years || ""} onChange={e => setScenario(i, "years", e.target.value)} />
+                </div>
+                <div className="col-span-5">
+                  <label className="text-xs text-slate-500">Projected value $ {auto > 0 ? "(auto: " + money(auto) + ")" : ""}</label>
+                  <NumInput value={sc.projectedValueOverride || ""} onChange={e => setScenario(i, "projectedValueOverride", e.target.value)} placeholder={auto > 0 ? String(Math.round(auto)) : "auto-calculated"} />
+                </div>
+                <div className="col-span-1 flex items-end justify-end">
+                  <button onClick={() => removeScenario(i)} className="text-red-500 text-sm">✕</button>
+                </div>
+                {projected > 0 && <div className="col-span-12 text-[11px] text-slate-400 -mt-1">Projects to {money(projected)}{num(sc.years) > 0 ? " in " + sc.years + " years" : ""} — override the field above if fees or a different scenario should apply.</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="grid grid-cols-12 gap-2 mt-3">
         <div className="col-span-12">
           <label className="text-xs text-slate-500">Notes</label>
           <Input value={row.notes || ""} onChange={e => set("notes", e.target.value)} />
         </div>
       </div>
-      {projectedValue > 0 && <div className="text-[11px] text-slate-400 mt-1">Projects to {money(projectedValue)} {num(row.projectionYears) > 0 ? "in " + row.projectionYears + " years" : ""} — override the field above if fees or a different scenario should apply.</div>}
     </div>
   );
 }
@@ -1032,27 +1084,30 @@ function CoverageTimelinePanel({ client }) {
       });
       const invs = (client.existingInvestments || []).map((r, i) => {
         const start = Math.max(0, Math.min(num(r.startAge), TIMELINE_MAX_AGE));
-        const years = num(r.projectionYears);
-        const end = Math.min(start + (years > 0 ? years : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
+        const scenarios = (r.scenarios || []).map(sc => ({
+          rate: num(sc.rate), years: num(sc.years),
+          projected: num(sc.projectedValueOverride) > 0 ? num(sc.projectedValueOverride) : projectFV({ current: r.currentValue, contrib: freqMonthlyEquiv(r.allocation, r.allocationFreq), rate: sc.rate, years: sc.years }, 0),
+        })).filter(sc => sc.years > 0);
+        const maxYears = scenarios.reduce((m, sc) => Math.max(m, sc.years), 0);
+        const headline = scenarios.filter(sc => sc.years === maxYears).reduce((best, sc) => (!best || sc.projected > best.projected) ? sc : best, null);
+        const end = Math.min(start + (maxYears > 0 ? maxYears : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
         const who = insuredById(r.insured || "self");
         const owner = insuredById(r.owner || "self");
-        const auto = projectFV({ current: r.currentValue, contrib: r.monthlyContribution, rate: r.returnRate, years: r.projectionYears }, 0);
-        const projected = num(r.projectedValueOverride) > 0 ? num(r.projectedValueOverride) : auto;
-        const contribuing = num(r.monthlyContribution) > 0 && years > 0;
+        const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
+        const contribuing = monthlyEquiv > 0 && maxYears > 0;
         return {
           id: r.id || "inv" + i,
           label: r.description || r.type || "Investment",
-          category: "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
-          covShort: kfmt(num(r.currentValue)) + (projected > num(r.currentValue) ? " → " + kfmt(projected) : ""),
+          category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
+          covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
           stepAge: null, stepAmt: null,
-          premStart: contribuing ? start : null, premEnd: contribuing ? end : null,
+          premStart: contribuing ? start : null, premEnd: contribuing ? start + maxYears : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
-            ["Policy owner", owner.name], ["Type", r.type],
+            ["Policy owner", owner.name], ["Type", r.type], ["Category", r.category],
             ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
-            ["Monthly contribution", num(r.monthlyContribution) > 0 ? money(num(r.monthlyContribution), 2) + "/mo" : ""],
-            ["Return assumption", num(r.returnRate) > 0 ? r.returnRate + "% p.a." : ""],
-            ["Projected value", projected > 0 ? money(projected) + (years > 0 ? " in " + years + " yrs" : "") : ""],
+            ["Allocation", num(r.allocation) > 0 ? money(num(r.allocation), 2) + " / " + freqLabel(r.allocationFreq).toLowerCase() : ""],
+            ...scenarios.map((sc, si) => [(scenarios.length > 1 ? "Scenario " + (si + 1) : "Projected"), sc.rate + "% p.a. → " + money(sc.projected) + " in " + sc.years + " yrs"]),
             ["Notes", r.notes],
           ].filter(([, v]) => v),
         };
@@ -1170,18 +1225,18 @@ function CoverageTimelinePanel({ client }) {
       {txt.length > Math.floor(g.w / 5.3) ? txt.slice(0, Math.floor(g.w / 5.3) - 1) + "…" : txt}
     </text>
   );
-  // premium/contribution commitment: a two-ended black bracket overlaid on the bar,
-  // showing when payments start and stop (which can differ from the coverage span itself)
+  // premium/contribution commitment: a small two-ended black bracket sitting in a thin
+  // strip along the top of the bar (not through its middle) so it never covers the label
   const premBracket = (p, y) => {
     if (p.premStart == null) return null;
     const g = clipX(p.premStart + p.offset, p.premEnd + p.offset);
     if (!g) return null;
-    const midY = y + LANE_H / 2, x1 = g.x0, x2 = g.x0 + g.w;
+    const topY = y + 1.5, capTop = y + 0.5, capBot = y + 4.5, x1 = g.x0, x2 = g.x0 + g.w;
     return (
       <g key="prem" pointerEvents="none">
-        <line x1={x1} y1={midY} x2={x2} y2={midY} stroke="#0f172a" strokeWidth="2" />
-        <line x1={x1} y1={y + 2} x2={x1} y2={y + LANE_H - 2} stroke="#0f172a" strokeWidth="2" />
-        <line x1={x2} y1={y + 2} x2={x2} y2={y + LANE_H - 2} stroke="#0f172a" strokeWidth="2" />
+        <line x1={x1} y1={topY} x2={x2} y2={topY} stroke="#0f172a" strokeWidth="1.25" />
+        <line x1={x1} y1={capTop} x2={x1} y2={capBot} stroke="#0f172a" strokeWidth="1.25" />
+        <line x1={x2} y1={capTop} x2={x2} y2={capBot} stroke="#0f172a" strokeWidth="1.25" />
       </g>
     );
   };
