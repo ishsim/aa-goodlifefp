@@ -1550,17 +1550,21 @@ function CoverageTimelinePanel({ client }) {
     </text>
   );
   // premium/contribution commitment: a small two-ended black bracket sitting in a thin
-  // strip along the top of the bar (not through its middle) so it never covers the label
+  // strip along the top of the bar (not through its middle) so it never covers the label.
+  // A thin white halo behind the black stroke keeps it crisp against the darker fills.
   const premBracket = (p, y) => {
     if (p.premStart == null) return null;
     const g = clipX(p.premStart + p.offset, p.premEnd + p.offset);
     if (!g) return null;
-    const topY = y + 1.5, capTop = y + 0.5, capBot = y + 4.5, x1 = g.x0, x2 = g.x0 + g.w;
+    const topY = y + 2, capTop = y + 0.5, capBot = y + 5, x1 = g.x0, x2 = g.x0 + g.w;
     return (
       <g key="prem" pointerEvents="none">
-        <line x1={x1} y1={topY} x2={x2} y2={topY} stroke="#0f172a" strokeWidth="1.25" />
-        <line x1={x1} y1={capTop} x2={x1} y2={capBot} stroke="#0f172a" strokeWidth="1.25" />
-        <line x1={x2} y1={capTop} x2={x2} y2={capBot} stroke="#0f172a" strokeWidth="1.25" />
+        <line x1={x1} y1={topY} x2={x2} y2={topY} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" opacity="0.55" />
+        <line x1={x1} y1={capTop} x2={x1} y2={capBot} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" opacity="0.55" />
+        <line x1={x2} y1={capTop} x2={x2} y2={capBot} stroke="#fff" strokeWidth="3.5" strokeLinecap="round" opacity="0.55" />
+        <line x1={x1} y1={topY} x2={x2} y2={topY} stroke="#0f172a" strokeWidth="2" />
+        <line x1={x1} y1={capTop} x2={x1} y2={capBot} stroke="#0f172a" strokeWidth="2" />
+        <line x1={x2} y1={capTop} x2={x2} y2={capBot} stroke="#0f172a" strokeWidth="2" />
       </g>
     );
   };
