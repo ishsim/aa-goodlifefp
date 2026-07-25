@@ -4,7 +4,7 @@ import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2 } from "lucide-react";
+import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2, RefreshCw } from "lucide-react";
 
 const LOGO = logoAsset.url;
 
@@ -126,6 +126,8 @@ const blankClient = () => ({
   products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
+  // Annual Review report — separate narrative from the first-time client report above
+  review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" },
   sections: { education: true, hierarchy: true, ratios: true, allocation: true },
   updated: Date.now(),
 });
@@ -1323,7 +1325,7 @@ function InsuranceNeedsSummary({ client, update }) {
   );
 }
 
-function CoverageTimelinePanel({ client }) {
+function CoverageTimelinePanel({ client, printMode = false }) {
   const [mode, setMode] = useState("current");
   const [win, setWin] = useState({ a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
   const [hover, setHover] = useState(null);       // { item, left, top }
@@ -1515,10 +1517,11 @@ function CoverageTimelinePanel({ client }) {
     });
   };
 
-  // wheel zoom needs a non-passive listener; React's synthetic onWheel can't preventDefault
+  // wheel zoom needs a non-passive listener; React's synthetic onWheel can't preventDefault.
+  // Skipped entirely in printMode — a static embed shouldn't hijack page scroll.
   useEffect(() => {
     const el = svgRef.current;
-    if (!el) return;
+    if (!el || printMode) return;
     const onWheel = (e) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
@@ -1529,7 +1532,7 @@ function CoverageTimelinePanel({ client }) {
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [items.length]);
+  }, [items.length, printMode]);
 
   const showHover = (e, item) => {
     const r = wrapRef.current?.getBoundingClientRect();
@@ -1575,18 +1578,20 @@ function CoverageTimelinePanel({ client }) {
     <div ref={wrapRef} className="relative">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div className="text-sm text-slate-500">Coverage span on the client's age axis{clientAge ? ` — client is ${clientAge} today` : ""}</div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-            <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 0.7)} title="Zoom in" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold">+</button>
-            <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 1.45)} title="Zoom out" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold border-l border-slate-200">−</button>
-            {zoomed && <button onClick={() => setWin({ a0: 0, a1: TIMELINE_MAX_AGE })} className="px-3 py-1.5 bg-white text-purple-800 hover:bg-purple-50 border-l border-slate-200">Reset ({Math.round(win.a0)}–{Math.round(win.a1)})</button>}
+        {!printMode && (
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+              <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 0.7)} title="Zoom in" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold">+</button>
+              <button onClick={() => zoomAt((win.a0 + win.a1) / 2, 1.45)} title="Zoom out" className="px-3 py-1.5 bg-white text-slate-600 hover:bg-slate-50 font-semibold border-l border-slate-200">−</button>
+              {zoomed && <button onClick={() => setWin({ a0: 0, a1: TIMELINE_MAX_AGE })} className="px-3 py-1.5 bg-white text-purple-800 hover:bg-purple-50 border-l border-slate-200">Reset ({Math.round(win.a0)}–{Math.round(win.a1)})</button>}
+            </div>
+            <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+              {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
+                <button key={k} onClick={() => { setMode(k); setSelected(null); setHover(null); }} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
+              ))}
+            </div>
           </div>
-          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-            {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
-              <button key={k} onClick={() => { setMode(k); setSelected(null); setHover(null); }} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
       {items.length === 0 && mode === "recommended" ? (
         <div className="p-8 text-center text-slate-400 text-sm">No recommended plans selected yet — tick plans to include in the Recommended Plans step.</div>
@@ -1802,7 +1807,7 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [activeId, setActiveId] = useState(null);
-  const [view, setView] = useState("list"); // list | edit | report
+  const [view, setView] = useState("list"); // list | edit | report | review
   const [step, setStep] = useState(0);
   const [saveState, setSaveState] = useState("");
   const [privacy, setPrivacy] = useState(true);
@@ -2110,6 +2115,7 @@ export default function App() {
               <div className="flex gap-2">
                 <button onClick={() => { setActiveId(c.id); setView("edit"); setStep(0); }} className="text-sm px-3 py-1.5 rounded-lg border border-purple-700 text-purple-800 hover:bg-purple-50">Open</button>
                 <button onClick={() => { setActiveId(c.id); setView("report"); }} className="text-sm px-3 py-1.5 rounded-lg bg-purple-700 text-white hover:bg-purple-800">Report</button>
+                <button onClick={() => { setActiveId(c.id); setView("review"); }} title="Annual review report" className="text-sm px-3 py-1.5 rounded-lg border border-purple-300 text-purple-800 hover:bg-purple-50">Review</button>
                 <button onClick={() => exportOne(c)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">Export</button>
                 <button onClick={() => { if (confirm("Delete " + displayName(c.name, "this client") + "?")) removeClient(c.id); }} className="text-sm px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50">Delete</button>
               </div>
@@ -2599,6 +2605,326 @@ export default function App() {
     );
   }
 
+  // ----- annual review report view -----
+  if (view === "review") {
+    const rv = client.review || { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" };
+    const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>);
+    // key points / action items: bold the lead phrase before the em-dash or colon
+    const paraLead = (t, sep) => (t || "").split(/\n+/).filter(s => s.trim()).map((p, i) => {
+      const m = sep === "num"
+        ? p.match(/^(\d+[.)]\s*)([^:\n]{2,90}):\s*([\s\S]*)$/)
+        : p.match(/^([^—\n]{2,60})—\s*([\s\S]*)$/);
+      if (m) return sep === "num" ? (
+        <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>
+          <b style={{ color: "#3a1955" }}>{m[1]}{m[2]}:</b> {m[3]}
+        </p>
+      ) : (
+        <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>
+          <b style={{ color: "#3a1955" }}>{m[1].trim()} —</b> {m[2]}
+        </p>
+      );
+      return <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>;
+    });
+    const doPrintPdf = () => {
+      const prev = document.title;
+      document.title = "GoodLife-Review-" + (client.name || "Client").trim().replace(/\s+/g, "-");
+      window.print();
+      setTimeout(() => { document.title = prev; }, 1000);
+    };
+    const renderPlanBody = (body) => {
+      if (!body) return { main: null, limitations: null };
+      const lines = body.split("\n").filter(l => l.trim());
+      const mainEls = [];
+      let limitationsEl = null;
+      let bulletGroup = [], limitGroup = [];
+      const flushBullets = () => {
+        if (!bulletGroup.length) return;
+        mainEls.push(
+          <ul key={"ul" + mainEls.length} className="mb-4 space-y-2">
+            {bulletGroup.map((line, i) => {
+              const text = line.replace(/^•\s*/, "");
+              const dashIdx = text.indexOf(" — ");
+              const colonIdx = text.indexOf(": ");
+              const splitAt = dashIdx !== -1 ? dashIdx : (colonIdx !== -1 && colonIdx < 50 ? colonIdx : -1);
+              if (splitAt !== -1) {
+                const feature = text.slice(0, splitAt);
+                const desc = text.slice(splitAt + (dashIdx !== -1 ? 3 : 2));
+                return (
+                  <li key={i} style={{ textAlign: "justify", lineHeight: 1.6, paddingLeft: 16, position: "relative", fontSize: 13 }}>
+                    <span style={{ position: "absolute", left: 0, color: "#66229d", fontWeight: 700 }}>•</span>
+                    <span style={{ color: "#3a1955", fontWeight: 700 }}>{feature}</span>
+                    <span style={{ color: "#475569" }}>{dashIdx !== -1 ? " — " : ": "}{desc}</span>
+                  </li>
+                );
+              }
+              return (
+                <li key={i} style={{ textAlign: "justify", lineHeight: 1.6, paddingLeft: 16, position: "relative", fontSize: 13 }}>
+                  <span style={{ position: "absolute", left: 0, color: "#66229d", fontWeight: 700 }}>•</span>
+                  <span style={{ color: "#1f2937" }}>{text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        );
+        bulletGroup = [];
+      };
+      lines.forEach((line, i) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("∴")) {
+          flushBullets();
+          if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") return;
+          limitGroup.push(trimmed);
+        } else if (trimmed.startsWith("•")) {
+          bulletGroup.push(trimmed);
+        } else if (trimmed === "Plan Limitations:" || trimmed === "Plan Limitation:") {
+          flushBullets();
+        } else {
+          flushBullets();
+          mainEls.push(<p key={"p" + i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, fontSize: 13.5, color: "#1f2937" }}>{trimmed}</p>);
+        }
+      });
+      flushBullets();
+      if (limitGroup.length) {
+        limitationsEl = (
+          <div className="mt-3 mb-3 rounded-lg border border-red-100 bg-red-50 p-3">
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#991b1b", marginBottom: 6 }}>Plan Limitations</div>
+            <ul className="space-y-1">
+              {limitGroup.map((line, i) => (
+                <li key={i} style={{ textAlign: "justify", lineHeight: 1.55, paddingLeft: 16, position: "relative", fontSize: 12.5, color: "#7f1d1d" }}>
+                  <span style={{ position: "absolute", left: 0 }}>∴</span>
+                  <span>{line.replace(/^∴\s*/, "")}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
+      return { main: <div>{mainEls}</div>, limitations: limitationsEl };
+    };
+    const grouped = ["Risk Management", "Goal Planning", "Retirement Planning"].map(cat => ({ cat, items: d.selected.filter(p => p.category === cat) })).filter(g => g.items.length);
+    // one block per insured person who has at least one existing plan
+    const reviewPersons = [
+      { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
+      ...(client.dependents || []).map((dep, i) => ({ id: dep.id, name: dep.name || "Dependent " + (i + 1), age: calcAge(dep.dob) })),
+    ].filter(p => p.id === "self" || (client.existingPlans || []).some(pl => (pl.insured || "self") === p.id));
+
+    return (
+      <div className="bg-slate-200 min-h-screen">
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap');
+          .rpt{font-family:'Source Sans 3',system-ui,sans-serif;color:#1f2937;font-size:13.5px}
+          .rpt h1,.rpt h2,.rpt .serif{font-family:'Cormorant Garamond',Georgia,serif}
+          .rpt h2{color:#51037c;font-size:22px;font-weight:600;border-bottom:2px solid #51037c;padding-bottom:4px;margin:28px 0 14px}
+          .rpt h3{color:#66229d;font-weight:700;font-size:14.5px;margin:18px 0 8px}
+          .rpt table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
+          .rpt th{background:#51037c;color:#fff;text-align:left;padding:6px 10px;font-weight:600}
+          .rpt td{border-bottom:1px solid #e2e8f0;padding:6px 10px;vertical-align:top}
+          .rpt p{text-align:justify;line-height:1.65;margin:0 0 12px}
+          .rpt .tnum{text-align:right;font-variant-numeric:tabular-nums}
+          .pagebreak{break-before:page}
+          .rpt svg{break-inside:avoid}
+          @media print{
+            body{background:#fff!important}
+            .no-print{display:none!important}
+            #lovable-badge,a[href*="lovable.dev"],a[href*="lovable.app"],[id*="lovable" i],div[class*="lovable" i]{display:none!important}
+            *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+            .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm!important}
+            @page{size:A4;margin:0}
+          }
+        `}</style>
+        <div className="no-print sticky top-0 z-10 text-white px-6 py-3 flex items-center justify-between" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
+          <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — annual review preview</div>
+          <div className="flex gap-2">
+            <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
+            <button onClick={doPrintPdf} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Save as PDF</button>
+          </div>
+        </div>
+        <div id="review-content" className="rpt sheet bg-white max-w-[210mm] mx-auto my-6 shadow-xl" style={{ padding: "18mm 18mm" }}>
+          {/* cover */}
+          <div style={{ minHeight: "252mm", display: "flex", flexDirection: "column" }}>
+            <div className="text-center" style={{ paddingTop: 56 }}>
+              <div style={{ display: "inline-block", border: "2.5px solid #475569", padding: "8px 32px", background: "#fff" }}>
+                <span style={{ color: "#dc2626", fontWeight: 800, fontSize: 30, letterSpacing: "0.04em", fontFamily: "Arial, Helvetica, sans-serif" }}>CONFIDENTIAL</span>
+              </div>
+            </div>
+            <div className="text-center" style={{ marginTop: 90 }}>
+              <div className="serif text-2xl italic text-slate-600">Financial Planning &amp; Insurance Summary</div>
+              <div className="serif text-xl italic text-slate-600 mb-4">prepared for</div>
+              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{client.name || "—"}</h1>
+              <div className="text-sm text-slate-500 mt-3">Overview of current planning based on our latest meeting</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="text-left text-sm">
+              <div className="font-bold">Prepared by:</div>
+              <div className="font-bold">Abdul Azim Saifuddin</div>
+              <div>BSc, CFP — Financial Planning Service Provider</div>
+              <div>AIA Senior Life Advisor</div>
+              <div className="italic text-slate-600 mt-4">Date Presented: {client.meetingDate || todayLong()}</div>
+            </div>
+            <div className="flex items-end justify-between mt-10">
+              <div className="text-left text-xs italic text-slate-600" style={{ maxWidth: "55%" }}>
+                <div>Authorised representative of AIA Singapore</div>
+                <div>(Ref No. RFC20004468)</div>
+                <div>BDCB License No: 129/AIA &amp; 288/AIA</div>
+              </div>
+              <div className="text-center">
+                <img src={LOGO} alt="GoodLife Financial Planning" style={{ maxWidth: 240, width: "100%" }} />
+                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mt-1">A Subsidiary of Nancy Group</div>
+              </div>
+            </div>
+            <div className="text-center text-sm mt-8">The information collected and maintained in this document will be held in the <b>strictest confidence</b>.</div>
+          </div>
+
+          {/* 1. Executive Summary */}
+          <div className="pagebreak" />
+          <h2>Executive Summary</h2>
+          {rv.exec ? para(rv.exec) : <p className="italic text-slate-400">No executive summary yet — fill it in under Narrative → Annual Review Report.</p>}
+
+          {/* 2. Key Points */}
+          <h3>Key Points</h3>
+          {rv.keyPoints ? paraLead(rv.keyPoints, "dash") : <p className="italic text-slate-400">No key points yet — add them under Narrative → Annual Review Report.</p>}
+
+          {/* 3. Current Plans & Coverage */}
+          <div className="pagebreak" />
+          <h2>Current Plans &amp; Coverage</h2>
+          <p className="text-xs text-slate-500 mb-2">Existing insurance plans on file, as entered in the Current Coverage step.</p>
+          {reviewPersons.length === 0 && <p className="italic text-slate-400">No existing plans on file yet.</p>}
+          {reviewPersons.map(person => {
+            const plans = (client.existingPlans || []).filter(p => (p.insured || "self") === person.id);
+            if (plans.length === 0) return null;
+            return (
+              <div key={person.id} style={{ breakInside: "avoid" }}>
+                <h3>{person.name}{person.age !== "" ? " (" + person.age + ")" : ""}</h3>
+                <table>
+                  <thead><tr><th>Plan</th><th>Policy No.</th><th>Coverage</th><th className="tnum">Allocation</th></tr></thead>
+                  <tbody>
+                    {plans.map((p, i) => {
+                      const covs = (p.coverages || []).filter(c => c.category && num(c.amount) > 0);
+                      const allocAmt = num(p.allocation ?? p.monthly);
+                      return (
+                        <tr key={p.id || i}>
+                          <td><b>{p.planName || p.planType || "Existing plan"}</b>{p.planType ? <div className="text-xs text-slate-500">{p.planType}</div> : null}</td>
+                          <td>{p.policyNumber || "—"}</td>
+                          <td>{covs.length ? covs.map((c, j) => <div key={j}>{c.category}: {money(num(c.amount))}</div>) : "—"}</td>
+                          <td className="tnum">{allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+
+          {/* 4. Current Financial Health */}
+          <div className="pagebreak" />
+          <h2>Current Financial Health</h2>
+          {rv.financialHealthDone ? (
+            <>
+              <p className="mb-2">Your financial ratios represent your current position and change over time. No single ratio should be reviewed in isolation or be conclusive of your financial position.</p>
+              <table>
+                <thead><tr><th>Ratio</th><th className="tnum">Benchmark</th><th className="tnum">Yours</th><th>Reading</th></tr></thead>
+                <tbody>{d.ratios.map(r => (
+                  <tr key={r.id}>
+                    <td><b>{r.name}</b><div className="text-xs text-slate-500">{r.desc}</div></td>
+                    <td className="tnum">{r.dir === ">=" ? "≥ " : "≤ "}{r.id === "liquidity" ? r.target + " mo" : fmt(r.target * 100, 0) + "%"}</td>
+                    <td className="tnum">{r.value == null ? "—" : r.fmtV(r.value)}</td>
+                    <td className={r.pass == null ? "" : r.pass ? "text-purple-800 font-semibold" : "text-red-700 font-semibold"}>{r.pass == null ? "n/a" : r.pass ? "Healthy" : "Needs attention"}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              {d.cash > 0 && d.ef6 > 0 && (() => {
+                const months = d.totalExpenses > 0 ? d.cash / d.totalExpenses : 0;
+                const pass3 = months >= 3; const pass6 = months >= 6;
+                const pct3 = Math.min(100, (d.cash / d.ef3) * 100);
+                const pct6 = Math.min(100, (d.cash / d.ef6) * 100);
+                return (
+                  <div className="my-4 border border-slate-200 rounded-xl p-4">
+                    <StaticEmergencyFund months={months} cash={d.cash} ef3={d.ef3} ef6={d.ef6} pct3={pct3} pct6={pct6} pass3={pass3} pass6={pass6} />
+                  </div>
+                );
+              })()}
+              {d.ratioBars.length > 0 && (<div className="my-3"><div className="text-xs text-slate-500 mb-1 text-center">Financial ratios vs. benchmark — capped at 100% (green = healthy, red = needs attention).</div><StaticRatioBars data={d.ratioBars} /></div>)}
+            </>
+          ) : (
+            <p>Please note that we have not yet conducted a full Financial Health Check. This is a comprehensive diagnostic tool used to map out your entire financial landscape — from debt management to wealth distribution. The advantage of this process is that it identifies "blind spots" in your financial planning that standard policy reviews might miss, ensuring every dollar you save is working efficiently toward your long-term goals. Should you wish to gain this deeper level of clarity, we can schedule a dedicated session for this whenever you are ready.</p>
+          )}
+
+          {/* 5. Overview of Plans */}
+          <div className="pagebreak" />
+          <h2>Overview of Plans</h2>
+          <p className="text-xs text-slate-500 mb-2">This is a summary of your current in-force insurance plans as of {todayLong()} that is disclosed. Current value from Investment plans is not included in this overview (if any).</p>
+          <div data-docx-capture="reviewTimeline"><CoverageTimelinePanel client={client} printMode={true} /></div>
+
+          {/* 6. Recommendations */}
+          <div className="pagebreak" />
+          <h2>Recommendations</h2>
+          <p className="mb-2">This is a summary of plan option recommendations for your coverage gaps and investment opportunities in insurance. Further info is provided in the Explanation of Recommendations section that follows.</p>
+          <h3>Contingency Planning</h3>
+          <table><tbody>
+            <tr><td>Emergency Funds</td><td>{rv.contingencyNote || ("Allocate " + money(d.ef3) + " as emergency funds")}</td><td className="tnum italic text-slate-500">No Return</td></tr>
+          </tbody></table>
+          <h3>4-3-2-1 Recommended Plans</h3>
+          <table><tbody>
+            <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{money(d.ef3)} – {money(d.ef6)}</td></tr>
+            <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
+            <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
+          </tbody></table>
+          {grouped.length === 0 && <p className="italic text-slate-400">No recommended plans selected yet — tick plans to include in the Recommended Plans step.</p>}
+          {grouped.map(g => (
+            <div key={g.cat}>
+              <h3>{g.cat}</h3>
+              <table>
+                <thead><tr><th>Plan</th><th>Coverage</th><th className="tnum">Monthly</th><th className="tnum">Annual</th><th>Projected returns</th></tr></thead>
+                <tbody>{g.items.map(p => (
+                  <tr key={p.key}>
+                    <td><b>{p.label}</b><div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div></td>
+                    <td>{p.coverage}</td><td className="tnum">{money(num(p.monthly), 2)}</td><td className="tnum">{money(num(p.annual), 2)}</td><td className="text-xs">{(p.returns || "").split(/\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ))}
+          {d.selected.length > 0 && (
+            <table><tbody><tr><td className="font-bold">Total of plans shown</td><td className="tnum font-bold">{money(d.premMonthly, 2)} / month · {money(d.premAnnual, 2)} / year</td></tr></tbody></table>
+          )}
+
+          {/* 7. Explanation of Recommendations */}
+          {d.selected.length > 0 && (<><div className="pagebreak" /><h2>Explanation of Recommendations</h2>
+            {d.selected.map((p, i) => {
+              const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
+              return (
+                <div key={p.key + i} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
+                  <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
+                  {parts.main}
+                  {(p.planImages || []).length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      {p.planImages.map(img => (
+                        <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16, textAlign: "center" }}>
+                          <img src={img.dataUrl} alt={img.caption || img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
+                          {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {parts.limitations}
+                </div>
+              );
+            })}</>)}
+
+          {/* What's Next */}
+          {rv.whatsNext && (<>
+            <div className="pagebreak" />
+            <h2>What's Next</h2>
+            {paraLead(rv.whatsNext, "num")}
+          </>)}
+
+          <div className="text-center text-xs text-slate-400 mt-10 pt-4 border-t border-slate-200">GoodLife Financial Planning · Abdul Azim Saifuddin, CFP · AIA Senior Life Advisor</div>
+        </div>
+      </div>
+    );
+  }
+
   // ----- edit view -----
   const sidebarWidth = sidebarExpanded ? 220 : 64;
   const navRow = (Icon, label, active, onClick, extra = {}) => (
@@ -2633,6 +2959,7 @@ export default function App() {
           </button>
           {navRow(Save, "Save", false, persist, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
           {navRow(Eye, "Preview Report", false, () => { persist(); setView("report"); }, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
+          {navRow(RefreshCw, "Review Report", false, () => { persist(); setView("review"); }, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
           {navRow(Download, downloadingDocx ? "Capturing…" : "Download DOCX", false, doDownloadDocx, { iconSize: 16, fontSize: 12, style: { opacity: 0.75 } })}
         </div>
       </aside>
@@ -3034,6 +3361,25 @@ export default function App() {
           </SectionCard>
           <div className="flex justify-end">
             <button onClick={() => { persist(); setView("report"); }} className="bg-purple-900 hover:bg-purple-950 text-white font-semibold px-6 py-3 rounded-xl">Preview &amp; print report →</button>
+          </div>
+
+          <SectionCard title="Annual Review Report — content (for existing clients)">
+            <p className="text-xs text-slate-500 mb-3">This feeds the separate <b>Review Report</b> — a shorter annual check-in document, distinct from the full Preview Report above. It pulls Current Plans, Recommendations and Explanations straight from the steps you've already filled in; the fields below are just the review-specific narrative.</p>
+            <Field label="Executive summary (meeting recap)" hint="What changed since last time, and why it matters — e.g. a growing family, drifting spending, a new goal."><TextArea rows={6} value={client.review.exec} onChange={e => updateDeep("review", { exec: e.target.value })} /></Field>
+            <div className="h-4" />
+            <Field label="Key points from the discussion" hint="One point per line, formatted 'Title — detail'. E.g. 'Growing Family — your second child arrives this year, so coverage needs an update.'"><TextArea rows={8} value={client.review.keyPoints} onChange={e => updateDeep("review", { keyPoints: e.target.value })} /></Field>
+            <div className="h-4" />
+            <label className="flex items-center gap-2 text-sm py-1">
+              <input type="checkbox" checked={client.review.financialHealthDone} onChange={e => updateDeep("review", { financialHealthDone: e.target.checked })} className="w-4 h-4 accent-purple-700" />
+              Financial Health Check completed this meeting (finances/ratios are up to date)
+            </label>
+            <p className="text-xs text-slate-400 mb-3 ml-6">Leave unchecked to show a "not yet conducted" note instead of the ratio tables — use this when the client hasn't updated their income/expenses since the last review.</p>
+            <Field label="Contingency planning note" hint={"Auto-suggested from your Emergency Fund step: " + money(d.ef3) + " (3 months of expenses). Leave blank to use this."}><TextArea rows={2} value={client.review.contingencyNote} onChange={e => updateDeep("review", { contingencyNote: e.target.value })} placeholder={"Allocate " + money(d.ef3) + " as emergency funds — no return"} /></Field>
+            <div className="h-4" />
+            <Field label="What's next (numbered)" hint="Same numbered 'Title: detail' format as the Action Plan."><TextArea rows={6} value={client.review.whatsNext} onChange={e => updateDeep("review", { whatsNext: e.target.value })} /></Field>
+          </SectionCard>
+          <div className="flex justify-end">
+            <button onClick={() => { persist(); setView("review"); }} className="bg-purple-900 hover:bg-purple-950 text-white font-semibold px-6 py-3 rounded-xl">Preview &amp; print review report →</button>
           </div>
         </>)}
         </main>
