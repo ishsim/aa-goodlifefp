@@ -771,6 +771,84 @@ const MoneyRows = ({ rows, onChange, namePlaceholder }) => (
   </div>
 );
 
+// standard amortization: monthly repayment, remaining balance after k months paid
+const amortize = (principal, annualRatePct, termYears, monthsPaid) => {
+  const P = num(principal), r = num(annualRatePct) / 100 / 12, n = Math.round(num(termYears) * 12);
+  const k = Math.min(Math.max(Math.round(num(monthsPaid)), 0), n);
+  if (P <= 0 || n <= 0) return { monthly: 0, totalInterest: 0, total: 0, monthsRemaining: 0, remainingBalance: 0 };
+  const monthly = r > 0 ? (P * r) / (1 - Math.pow(1 + r, -n)) : P / n;
+  const total = monthly * n;
+  const totalInterest = total - P;
+  const remainingBalance = r > 0
+    ? P * Math.pow(1 + r, k) - monthly * ((Math.pow(1 + r, k) - 1) / r)
+    : P - monthly * k;
+  return { monthly, totalInterest, total, monthsRemaining: n - k, remainingBalance: Math.max(0, remainingBalance) };
+};
+
+const LiabilityRows = ({ rows, onChange }) => {
+  const [openId, setOpenId] = useState(null);
+  return (
+    <div className="space-y-2">
+      {rows.map((r, i) => {
+        const rid = r.id || i;
+        const hasLoan = !!r.loan;
+        const isOpen = openId === rid;
+        const calc = hasLoan ? amortize(r.loan.principal, r.loan.rate, r.loan.termYears, r.loan.monthsPaid) : null;
+        const setRow = (patch) => { const l = [...rows]; l[i] = { ...r, ...patch }; onChange(l); };
+        const setLoan = (patch) => {
+          const loan = { ...r.loan, ...patch };
+          setRow({ loan, amount: amortize(loan.principal, loan.rate, loan.termYears, loan.monthsPaid).remainingBalance.toFixed(2) });
+        };
+        return (
+          <div key={rid} className="rounded-lg border border-slate-200 p-2">
+            <div className="grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-6"><Input value={r.name} onChange={e => setRow({ name: e.target.value })} placeholder="e.g. Personal loan" /></div>
+              <div className="col-span-4">
+                <NumInput value={r.amount} disabled={hasLoan} onChange={e => setRow({ amount: e.target.value })} placeholder="$" className={hasLoan ? "bg-slate-50 text-slate-500" : ""} />
+              </div>
+              <div className="col-span-1 flex items-center justify-center">
+                <button
+                  onClick={() => { if (hasLoan) { setOpenId(isOpen ? null : rid); } else { setRow({ loan: { principal: r.amount || "", rate: "", termYears: "", monthsPaid: "0" } }); setOpenId(rid); } }}
+                  title="Loan calculator" className={"text-sm " + (hasLoan ? "text-purple-700" : "text-slate-400 hover:text-purple-700")}
+                >🧮</button>
+              </div>
+              <div className="col-span-1 flex items-center justify-center">
+                <button onClick={() => onChange(rows.filter((_, j) => j !== i))} className="text-red-500 text-sm">✕</button>
+              </div>
+            </div>
+            {hasLoan && isOpen && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                  <Field label="Loan amount"><NumInput value={r.loan.principal} onChange={e => setLoan({ principal: e.target.value })} placeholder="$" /></Field>
+                  <Field label="Interest rate (%/yr)"><NumInput value={r.loan.rate} onChange={e => setLoan({ rate: e.target.value })} placeholder="4.25" /></Field>
+                  <Field label="Term (years)"><NumInput value={r.loan.termYears} onChange={e => setLoan({ termYears: e.target.value })} placeholder="25" /></Field>
+                  <Field label="Months paid"><NumInput value={r.loan.monthsPaid} onChange={e => setLoan({ monthsPaid: e.target.value })} placeholder="0" /></Field>
+                </div>
+                <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+                  <thead><tr className="bg-indigo-500 text-white"><th colSpan={2} className="text-left py-1.5 px-3 font-semibold">Breakdown</th></tr></thead>
+                  <tbody>
+                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Loan Amount</td><td className="py-1.5 px-3 text-right tabular-nums">{money(num(r.loan.principal))}</td></tr>
+                    <tr><td className="py-1.5 px-3 font-medium">Interest Rate</td><td className="py-1.5 px-3 text-right tabular-nums">{fmt(num(r.loan.rate), 2)}%</td></tr>
+                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Term</td><td className="py-1.5 px-3 text-right tabular-nums">{num(r.loan.termYears)}</td></tr>
+                    <tr><td className="py-1.5 px-3 font-medium">Total Interest</td><td className="py-1.5 px-3 text-right tabular-nums">{money(calc.totalInterest)}</td></tr>
+                    <tr className="bg-orange-50 border-y border-dashed border-orange-300"><td className="py-1.5 px-3 font-medium">Total</td><td className="py-1.5 px-3 text-right tabular-nums font-bold text-orange-600">{money(calc.total)}</td></tr>
+                    <tr className="bg-orange-50 border-b border-dashed border-orange-300"><td className="py-1.5 px-3 font-medium">Monthly Repayment</td><td className="py-1.5 px-3 text-right tabular-nums font-bold">{money(calc.monthly)}</td></tr>
+                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Months Paid</td><td className="py-1.5 px-3 text-right tabular-nums">{Math.round(num(r.loan.monthsPaid))}</td></tr>
+                    <tr><td className="py-1.5 px-3 font-medium">Months Remaining</td><td className="py-1.5 px-3 text-right tabular-nums">{calc.monthsRemaining}</td></tr>
+                    <tr className="bg-slate-100 ring-2 ring-red-500 ring-inset"><td className="py-1.5 px-3 font-medium">Remaining Balance</td><td className="py-1.5 px-3 text-right tabular-nums font-bold">{money(calc.remainingBalance)}</td></tr>
+                  </tbody>
+                </table>
+                <p className="text-xs text-slate-400 mt-2">The liability amount above is auto-set to the remaining balance as months paid updates.</p>
+                <button onClick={() => setRow({ loan: null })} className="text-xs text-red-500 hover:underline mt-2">Remove loan calculator</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
   <div className="space-y-2">
     {rows.map((r, i) => (
@@ -3132,7 +3210,7 @@ export default function App() {
             <MoneyRows rows={client.assets.personal} onChange={l => updateDeep("assets", { personal: l })} namePlaceholder="e.g. Motor vehicle" />
           </SectionCard>
           <SectionCard title={"Liabilities — " + money(d.totalLiab)} right={<button onClick={() => update({ liabilities: [...client.liabilities, { id: uid(), name: "", amount: "" }] })} className="text-sm text-purple-800 hover:underline">+ Add liability</button>}>
-            <MoneyRows rows={client.liabilities} onChange={l => update({ liabilities: l })} namePlaceholder="e.g. Personal loan" />
+            <LiabilityRows rows={client.liabilities} onChange={l => update({ liabilities: l })} />
             <div className="mt-2 text-sm text-slate-600">Net worth: <b className="text-purple-900">{money(d.netWorth)}</b></div>
           </SectionCard>
           <div className="grid md:grid-cols-2 gap-5 items-start">
