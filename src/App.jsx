@@ -771,7 +771,7 @@ const MoneyRows = ({ rows, onChange, namePlaceholder }) => (
   </div>
 );
 
-// standard amortization: monthly repayment, remaining balance after k months paid
+// standard (reducing-balance) amortization: monthly repayment, remaining balance after k months paid
 const amortize = (principal, annualRatePct, termYears, monthsPaid) => {
   const P = num(principal), r = num(annualRatePct) / 100 / 12, n = Math.round(num(termYears) * 12);
   const k = Math.min(Math.max(Math.round(num(monthsPaid)), 0), n);
@@ -785,6 +785,66 @@ const amortize = (principal, annualRatePct, termYears, monthsPaid) => {
   return { monthly, totalInterest, total, monthsRemaining: n - k, remainingBalance: Math.max(0, remainingBalance) };
 };
 
+// flat/simple-interest loan (car loans): interest = principal x rate x term, spread evenly over the term
+const simpleLoan = (principal, annualRatePct, termYears, monthsPaid) => {
+  const P = num(principal), rate = num(annualRatePct) / 100, term = num(termYears), n = Math.round(term * 12);
+  const k = Math.min(Math.max(Math.round(num(monthsPaid)), 0), n);
+  if (P <= 0 || n <= 0) return { monthly: 0, totalInterest: 0, total: 0, monthsRemaining: 0, remainingBalance: 0 };
+  const totalInterest = P * rate * term;
+  const total = P + totalInterest;
+  const monthly = total / n;
+  return { monthly, totalInterest, total, monthsRemaining: n - k, remainingBalance: Math.max(0, total - monthly * k) };
+};
+
+// HP Plus / AITAB Flexi split car loan: capital is fixed-split 70/30 across two tranches with
+// independent rates/terms. Tranche A's interest is levied on the FULL car price (the standard
+// HP-Plus mechanic — capital repayment only covers 70%, the rest balloons into tranche B); tranche
+// B's interest is levied only on its own 30% balloon capital.
+const CAR_SPLIT_PCT_A = 0.7;
+const carSplitLoan = (carPrice, rateA, termYearsA, monthsPaidA, rateB, termYearsB, monthsPaidB) => {
+  const P = num(carPrice);
+  const capitalA = P * CAR_SPLIT_PCT_A, capitalB = P * (1 - CAR_SPLIT_PCT_A);
+  const nA = Math.round(num(termYearsA) * 12), nB = Math.round(num(termYearsB) * 12);
+  const kA = Math.min(Math.max(Math.round(num(monthsPaidA)), 0), nA);
+  const kB = Math.min(Math.max(Math.round(num(monthsPaidB)), 0), nB);
+  const totalInterestA = P * (num(rateA) / 100) * num(termYearsA);
+  const totalInterestB = capitalB * (num(rateB) / 100) * num(termYearsB);
+  const totalA = capitalA + totalInterestA, totalB = capitalB + totalInterestB;
+  const monthlyA = nA > 0 ? totalA / nA : 0, monthlyB = nB > 0 ? totalB / nB : 0;
+  return {
+    capitalA, capitalB,
+    a: { totalInterest: totalInterestA, total: totalA, monthly: monthlyA, monthsRemaining: nA - kA, remainingBalance: Math.max(0, totalA - monthlyA * kA) },
+    b: { totalInterest: totalInterestB, total: totalB, monthly: monthlyB, monthsRemaining: nB - kB, remainingBalance: Math.max(0, totalB - monthlyB * kB) },
+    grandTotal: totalA + totalB,
+    combinedRemaining: Math.max(0, totalA - monthlyA * kA) + Math.max(0, totalB - monthlyB * kB),
+  };
+};
+
+const LOAN_TYPES = [
+  { id: "amortized", label: "Amortized (Personal / Housing)" },
+  { id: "carSimple", label: "Car Loan (simple interest)" },
+  { id: "carSplit", label: "Car Loan — HP Plus / AITAB Flexi (split)" },
+];
+const loanDefaults = (type) => (
+  type === "carSplit"
+    ? { type, carPrice: "", rateA: "", termYearsA: "7", monthsPaidA: "0", rateB: "", termYearsB: "3", monthsPaidB: "0" }
+    : { type, principal: "", rate: "", termYears: "", monthsPaid: "0" }
+);
+
+const BreakdownTable = ({ rows }) => (
+  <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+    <thead><tr className="bg-indigo-500 text-white"><th colSpan={rows[0].cols.length + 1} className="text-left py-1.5 px-3 font-semibold">Breakdown</th></tr></thead>
+    <tbody>
+      {rows.map((row, i) => (
+        <tr key={i} className={(row.shade ? "bg-slate-100 " : "") + (row.dashed ? "border-y border-dashed border-orange-300 bg-orange-50 " : "") + (row.boxed ? "ring-2 ring-red-500 ring-inset " : "")}>
+          <td className="py-1.5 px-3 font-medium">{row.label}</td>
+          {row.cols.map((c, j) => <td key={j} className={"py-1.5 px-3 text-right tabular-nums " + (row.bold ? "font-bold " : "") + (row.dashed && j === row.cols.length - 1 ? "text-orange-600 " : "")}>{c}</td>)}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
 const LiabilityRows = ({ rows, onChange }) => {
   const [openId, setOpenId] = useState(null);
   return (
@@ -792,13 +852,47 @@ const LiabilityRows = ({ rows, onChange }) => {
       {rows.map((r, i) => {
         const rid = r.id || i;
         const hasLoan = !!r.loan;
+        const loanType = r.loan?.type || "amortized";
         const isOpen = openId === rid;
-        const calc = hasLoan ? amortize(r.loan.principal, r.loan.rate, r.loan.termYears, r.loan.monthsPaid) : null;
         const setRow = (patch) => { const l = [...rows]; l[i] = { ...r, ...patch }; onChange(l); };
         const setLoan = (patch) => {
           const loan = { ...r.loan, ...patch };
-          setRow({ loan, amount: amortize(loan.principal, loan.rate, loan.termYears, loan.monthsPaid).remainingBalance.toFixed(2) });
+          let remaining;
+          if (loan.type === "carSplit") remaining = carSplitLoan(loan.carPrice, loan.rateA, loan.termYearsA, loan.monthsPaidA, loan.rateB, loan.termYearsB, loan.monthsPaidB).combinedRemaining;
+          else if (loan.type === "carSimple") remaining = simpleLoan(loan.principal, loan.rate, loan.termYears, loan.monthsPaid).remainingBalance;
+          else remaining = amortize(loan.principal, loan.rate, loan.termYears, loan.monthsPaid).remainingBalance;
+          setRow({ loan, amount: remaining.toFixed(2) });
         };
+        let breakdownRows = null;
+        if (hasLoan && loanType === "carSplit") {
+          const c = carSplitLoan(r.loan.carPrice, r.loan.rateA, r.loan.termYearsA, r.loan.monthsPaidA, r.loan.rateB, r.loan.termYearsB, r.loan.monthsPaidB);
+          breakdownRows = [
+            { label: "Car Price", cols: [money(num(r.loan.carPrice)), money(c.grandTotal)], dashed: true },
+            { label: "Capital Repayment (70%/30%)", cols: [money(c.capitalA), money(c.capitalB)], shade: true },
+            { label: "Interest Rate", cols: [fmt(num(r.loan.rateA), 2) + "%", fmt(num(r.loan.rateB), 2) + "%"] },
+            { label: "Term", cols: [num(r.loan.termYearsA), num(r.loan.termYearsB)], shade: true },
+            { label: "Total Interest", cols: [money(c.a.totalInterest), money(c.b.totalInterest)] },
+            { label: "Total", cols: [money(c.a.total), money(c.b.total)], dashed: true, bold: true },
+            { label: "Monthly Repayment", cols: [money(c.a.monthly), money(c.b.monthly)], dashed: true, bold: true },
+            { label: "Months Paid", cols: [Math.round(num(r.loan.monthsPaidA)), Math.round(num(r.loan.monthsPaidB))], shade: true },
+            { label: "Months Remaining", cols: [c.a.monthsRemaining, c.b.monthsRemaining] },
+            { label: "Remaining Balance", cols: [money(c.a.remainingBalance), money(c.b.remainingBalance)], shade: true, boxed: true, bold: true },
+          ];
+        } else if (hasLoan) {
+          const calcFn = loanType === "carSimple" ? simpleLoan : amortize;
+          const calc = calcFn(r.loan.principal, r.loan.rate, r.loan.termYears, r.loan.monthsPaid);
+          breakdownRows = [
+            { label: loanType === "carSimple" ? "Car Price" : "Loan Amount", cols: [money(num(r.loan.principal))], shade: true },
+            { label: "Interest Rate", cols: [fmt(num(r.loan.rate), 2) + "%"] },
+            { label: "Term", cols: [num(r.loan.termYears)], shade: true },
+            { label: "Total Interest", cols: [money(calc.totalInterest)] },
+            { label: "Total", cols: [money(calc.total)], dashed: true, bold: true },
+            { label: "Monthly Repayment", cols: [money(calc.monthly)], dashed: true, bold: true },
+            { label: "Months Paid", cols: [Math.round(num(r.loan.monthsPaid))], shade: true },
+            { label: "Months Remaining", cols: [calc.monthsRemaining] },
+            { label: "Remaining Balance", cols: [money(calc.remainingBalance)], shade: true, boxed: true, bold: true },
+          ];
+        }
         return (
           <div key={rid} className="rounded-lg border border-slate-200 p-2">
             <div className="grid grid-cols-12 gap-2 items-center">
@@ -808,7 +902,7 @@ const LiabilityRows = ({ rows, onChange }) => {
               </div>
               <div className="col-span-1 flex items-center justify-center">
                 <button
-                  onClick={() => { if (hasLoan) { setOpenId(isOpen ? null : rid); } else { setRow({ loan: { principal: r.amount || "", rate: "", termYears: "", monthsPaid: "0" } }); setOpenId(rid); } }}
+                  onClick={() => { if (hasLoan) { setOpenId(isOpen ? null : rid); } else { setOpenId(isOpen ? null : rid); } }}
                   title="Loan calculator" className={"text-sm " + (hasLoan ? "text-purple-700" : "text-slate-400 hover:text-purple-700")}
                 >🧮</button>
               </div>
@@ -816,30 +910,53 @@ const LiabilityRows = ({ rows, onChange }) => {
                 <button onClick={() => onChange(rows.filter((_, j) => j !== i))} className="text-red-500 text-sm">✕</button>
               </div>
             </div>
+            {!hasLoan && isOpen && (
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Choose a calculator type</div>
+                {LOAN_TYPES.map(lt => (
+                  <button key={lt.id} onClick={() => setRow({ loan: { ...loanDefaults(lt.id), ...(lt.id !== "carSplit" ? { principal: r.amount || "" } : {}) } })} className="block w-full text-left text-sm px-3 py-2 rounded-lg border border-slate-200 hover:border-purple-400 hover:bg-purple-50">
+                    {lt.label}
+                  </button>
+                ))}
+              </div>
+            )}
             {hasLoan && isOpen && (
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                  <Field label="Loan amount"><NumInput value={r.loan.principal} onChange={e => setLoan({ principal: e.target.value })} placeholder="$" /></Field>
-                  <Field label="Interest rate (%/yr)"><NumInput value={r.loan.rate} onChange={e => setLoan({ rate: e.target.value })} placeholder="4.25" /></Field>
-                  <Field label="Term (years)"><NumInput value={r.loan.termYears} onChange={e => setLoan({ termYears: e.target.value })} placeholder="25" /></Field>
-                  <Field label="Months paid"><NumInput value={r.loan.monthsPaid} onChange={e => setLoan({ monthsPaid: e.target.value })} placeholder="0" /></Field>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{LOAN_TYPES.find(lt => lt.id === loanType)?.label}</span>
+                  <button onClick={() => setRow({ loan: null })} className="text-xs text-red-500 hover:underline">Change / remove calculator</button>
                 </div>
-                <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
-                  <thead><tr className="bg-indigo-500 text-white"><th colSpan={2} className="text-left py-1.5 px-3 font-semibold">Breakdown</th></tr></thead>
-                  <tbody>
-                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Loan Amount</td><td className="py-1.5 px-3 text-right tabular-nums">{money(num(r.loan.principal))}</td></tr>
-                    <tr><td className="py-1.5 px-3 font-medium">Interest Rate</td><td className="py-1.5 px-3 text-right tabular-nums">{fmt(num(r.loan.rate), 2)}%</td></tr>
-                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Term</td><td className="py-1.5 px-3 text-right tabular-nums">{num(r.loan.termYears)}</td></tr>
-                    <tr><td className="py-1.5 px-3 font-medium">Total Interest</td><td className="py-1.5 px-3 text-right tabular-nums">{money(calc.totalInterest)}</td></tr>
-                    <tr className="bg-orange-50 border-y border-dashed border-orange-300"><td className="py-1.5 px-3 font-medium">Total</td><td className="py-1.5 px-3 text-right tabular-nums font-bold text-orange-600">{money(calc.total)}</td></tr>
-                    <tr className="bg-orange-50 border-b border-dashed border-orange-300"><td className="py-1.5 px-3 font-medium">Monthly Repayment</td><td className="py-1.5 px-3 text-right tabular-nums font-bold">{money(calc.monthly)}</td></tr>
-                    <tr className="bg-slate-100"><td className="py-1.5 px-3 font-medium">Months Paid</td><td className="py-1.5 px-3 text-right tabular-nums">{Math.round(num(r.loan.monthsPaid))}</td></tr>
-                    <tr><td className="py-1.5 px-3 font-medium">Months Remaining</td><td className="py-1.5 px-3 text-right tabular-nums">{calc.monthsRemaining}</td></tr>
-                    <tr className="bg-slate-100 ring-2 ring-red-500 ring-inset"><td className="py-1.5 px-3 font-medium">Remaining Balance</td><td className="py-1.5 px-3 text-right tabular-nums font-bold">{money(calc.remainingBalance)}</td></tr>
-                  </tbody>
-                </table>
+                {loanType === "carSplit" ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-1">
+                      <Field label="Car price"><NumInput value={r.loan.carPrice} onChange={e => setLoan({ carPrice: e.target.value })} placeholder="$" /></Field>
+                      <div />
+                      <div />
+                      <div />
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-1">
+                      <Field label="Rate — 7yr tranche (%/yr)"><NumInput value={r.loan.rateA} onChange={e => setLoan({ rateA: e.target.value })} placeholder="3.8" /></Field>
+                      <Field label="Term A (years)"><NumInput value={r.loan.termYearsA} onChange={e => setLoan({ termYearsA: e.target.value })} placeholder="7" /></Field>
+                      <Field label="Months paid A"><NumInput value={r.loan.monthsPaidA} onChange={e => setLoan({ monthsPaidA: e.target.value })} placeholder="0" /></Field>
+                      <div />
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                      <Field label="Rate — 3yr tranche (%/yr)"><NumInput value={r.loan.rateB} onChange={e => setLoan({ rateB: e.target.value })} placeholder="4.75" /></Field>
+                      <Field label="Term B (years)"><NumInput value={r.loan.termYearsB} onChange={e => setLoan({ termYearsB: e.target.value })} placeholder="3" /></Field>
+                      <Field label="Months paid B"><NumInput value={r.loan.monthsPaidB} onChange={e => setLoan({ monthsPaidB: e.target.value })} placeholder="0" /></Field>
+                      <div />
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    <Field label={loanType === "carSimple" ? "Car price" : "Loan amount"}><NumInput value={r.loan.principal} onChange={e => setLoan({ principal: e.target.value })} placeholder="$" /></Field>
+                    <Field label="Interest rate (%/yr)"><NumInput value={r.loan.rate} onChange={e => setLoan({ rate: e.target.value })} placeholder="4.25" /></Field>
+                    <Field label="Term (years)"><NumInput value={r.loan.termYears} onChange={e => setLoan({ termYears: e.target.value })} placeholder="25" /></Field>
+                    <Field label="Months paid"><NumInput value={r.loan.monthsPaid} onChange={e => setLoan({ monthsPaid: e.target.value })} placeholder="0" /></Field>
+                  </div>
+                )}
+                <BreakdownTable rows={breakdownRows} />
                 <p className="text-xs text-slate-400 mt-2">The liability amount above is auto-set to the remaining balance as months paid updates.</p>
-                <button onClick={() => setRow({ loan: null })} className="text-xs text-red-500 hover:underline mt-2">Remove loan calculator</button>
               </div>
             )}
           </div>
