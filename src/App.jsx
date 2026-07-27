@@ -966,6 +966,80 @@ const LiabilityRows = ({ rows, onChange }) => {
   );
 };
 
+// projected future value of an invested asset: current value compounds at the growth rate, plus
+// a regular annual contribution (assumed made at the end of each year) compounding alongside it
+const investmentGrowth = (current, contribution, years, ratePct) => {
+  const P = num(current), C = num(contribution), n = num(years), r = num(ratePct) / 100;
+  if (n <= 0) return { futureValue: P, totalContributions: 0, totalGrowth: 0 };
+  const fvCurrent = P * Math.pow(1 + r, n);
+  const fvContrib = r > 0 ? C * ((Math.pow(1 + r, n) - 1) / r) : C * n;
+  const totalContributions = C * n;
+  const futureValue = fvCurrent + fvContrib;
+  return { futureValue, totalContributions, totalGrowth: futureValue - P - totalContributions };
+};
+
+const InvestedAssetRows = ({ rows, onChange }) => {
+  const [openId, setOpenId] = useState(null);
+  return (
+    <div className="space-y-2">
+      {rows.map((a, i) => {
+        const rid = a.id || i;
+        const hasGrowth = !!a.growth;
+        const isOpen = openId === rid;
+        const setRow = (patch) => { const l = [...rows]; l[i] = { ...a, ...patch }; onChange(l); };
+        const setGrowth = (patch) => {
+          const growth = { ...a.growth, ...patch };
+          const { futureValue } = investmentGrowth(a.current, growth.contribution, growth.years, growth.rate);
+          setRow({ growth, future: futureValue.toFixed(2) });
+        };
+        const calc = hasGrowth ? investmentGrowth(a.current, a.growth.contribution, a.growth.years, a.growth.rate) : null;
+        const breakdownRows = hasGrowth ? [
+          { label: "Current Value", cols: [money(num(a.current))], shade: true },
+          { label: "Annual Contribution", cols: [money(num(a.growth.contribution))] },
+          { label: "Period (Years)", cols: [num(a.growth.years)], shade: true },
+          { label: "Annualised Growth", cols: [fmt(num(a.growth.rate), 2) + "%"] },
+          { label: "Total Contributions", cols: [money(calc.totalContributions)], shade: true },
+          { label: "Total Growth", cols: [money(calc.totalGrowth)] },
+          { label: "Projected Future Value", cols: [money(calc.futureValue)], shade: true, boxed: true, bold: true },
+        ] : null;
+        return (
+          <div key={rid} className="rounded-lg border border-slate-200 p-2">
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-5"><Input value={a.name} onChange={e => setRow({ name: e.target.value })} placeholder="e.g. SPK" /></div>
+              <div className="col-span-3"><NumInput value={a.current} onChange={e => setRow({ current: e.target.value })} /></div>
+              <div className="col-span-3">
+                <NumInput value={a.future} disabled={hasGrowth} onChange={e => setRow({ future: e.target.value })} className={hasGrowth ? "bg-slate-50 text-slate-500" : ""} />
+              </div>
+              <div className="col-span-1 flex items-center justify-center gap-1">
+                <button
+                  onClick={() => { if (hasGrowth) { setOpenId(isOpen ? null : rid); } else { setRow({ growth: { contribution: "", years: "", rate: "" } }); setOpenId(rid); } }}
+                  title="Future value calculator" className={"text-sm " + (hasGrowth ? "text-purple-700" : "text-slate-400 hover:text-purple-700")}
+                >🧮</button>
+                <button onClick={() => onChange(rows.filter((_, j) => j !== i))} className="text-red-500 text-sm">✕</button>
+              </div>
+            </div>
+            {hasGrowth && isOpen && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Future value calculator</span>
+                  <button onClick={() => setRow({ growth: null })} className="text-xs text-red-500 hover:underline">Remove calculator</button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                  <Field label="Annual contribution"><NumInput value={a.growth.contribution} onChange={e => setGrowth({ contribution: e.target.value })} placeholder="$" /></Field>
+                  <Field label="Period (years)"><NumInput value={a.growth.years} onChange={e => setGrowth({ years: e.target.value })} placeholder="10" /></Field>
+                  <Field label="Annualised growth (%/yr)"><NumInput value={a.growth.rate} onChange={e => setGrowth({ rate: e.target.value })} placeholder="6" /></Field>
+                </div>
+                <BreakdownTable rows={breakdownRows} />
+                <p className="text-xs text-slate-400 mt-2">The future value above is auto-set to the projected value as inputs change.</p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
   <div className="space-y-2">
     {rows.map((r, i) => (
@@ -3308,16 +3382,7 @@ export default function App() {
             <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
               <div className="col-span-5">Asset</div><div className="col-span-3">Current value</div><div className="col-span-3">Future value (proj.)</div><div className="col-span-1"></div>
             </div>
-            <div className="space-y-2">
-              {client.assets.invested.map((a, i) => (
-                <div key={a.id || i} className="grid grid-cols-12 gap-2">
-                  <div className="col-span-5"><Input value={a.name} onChange={e => { const inv = [...client.assets.invested]; inv[i] = { ...a, name: e.target.value }; updateDeep("assets", { invested: inv }); }} placeholder="e.g. SPK" /></div>
-                  <div className="col-span-3"><NumInput value={a.current} onChange={e => { const inv = [...client.assets.invested]; inv[i] = { ...a, current: e.target.value }; updateDeep("assets", { invested: inv }); }} /></div>
-                  <div className="col-span-3"><NumInput value={a.future} onChange={e => { const inv = [...client.assets.invested]; inv[i] = { ...a, future: e.target.value }; updateDeep("assets", { invested: inv }); }} /></div>
-                  <div className="col-span-1 flex items-center"><button onClick={() => updateDeep("assets", { invested: client.assets.invested.filter((_, j) => j !== i) })} className="text-red-500 text-sm">✕</button></div>
-                </div>
-              ))}
-            </div>
+            <InvestedAssetRows rows={client.assets.invested} onChange={l => updateDeep("assets", { invested: l })} />
           </SectionCard>
           <SectionCard title={"Liquid assets (cash & equivalents) — " + money(d.cash)} right={<button onClick={() => updateDeep("assets", { liquid: [...client.assets.liquid, { id: uid(), name: "", amount: "" }] })} className="text-sm text-purple-800 hover:underline">+ Add asset</button>}>
             <MoneyRows rows={client.assets.liquid} onChange={l => updateDeep("assets", { liquid: l })} namePlaceholder="e.g. Savings account" />
