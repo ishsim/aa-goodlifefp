@@ -168,7 +168,7 @@ const EXPENSE_GROUPS = [
 ];
 
 const defaultExpenses = () => Object.fromEntries(
-  EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), label, amount: "", note: "" }))])
+  EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), key: k, label, amount: "", note: "" }))])
 );
 
 const blankClient = () => ({
@@ -244,6 +244,30 @@ function migrate(c) {
       })),
     ];
   }
+  // Plan types were reworked so each one maps onto an Income Allocation row. SPK is a
+  // savings vehicle rather than an insurance plan, so those rows move to the portfolio;
+  // the generic "Insurance Plan" has no clear successor and is left for the advisor to re-pick.
+  const PLAN_TYPE_RENAMES = {
+    "Whole Life": "Whole Life / Critical Illness",
+    "Solitaire PA": "Accident & Hospitalisation",
+    "Insurance Plan": "",
+  };
+  const spkPlans = m.existingPlans.filter(p => p.planType === "SPK");
+  if (spkPlans.length) {
+    m.existingPlans = m.existingPlans.filter(p => p.planType !== "SPK");
+    m.existingInvestments = [
+      ...m.existingInvestments,
+      ...spkPlans.map(p => ({
+        id: p.id || uid(), type: "SPK", description: p.planName || "SPK",
+        insured: p.insured || "self", owner: "self",
+        policyDate: p.policyDate || "", policyExpiry: p.policyExpiry || "", startAge: p.fromAge || "",
+        allocation: p.allocation || p.monthly || "", allocationFreq: p.allocationFreq || "monthly",
+        notes: p.notes || "",
+      })),
+    ];
+  }
+  m.existingPlans = m.existingPlans.map(p =>
+    PLAN_TYPE_RENAMES[p.planType] !== undefined ? { ...p, planType: PLAN_TYPE_RENAMES[p.planType] } : p);
   // Single Category + Coverage $ became a repeatable coverage breakdown (a plan can now
   // carry coverage in several granular categories at once)
   const OLD_CATEGORY_TO_COVERAGES = {
@@ -321,8 +345,19 @@ function migrate(c) {
   m.products = renameCoverages(m.products);
   const oldExp = c.expenses || {};
   if (!EXPENSE_GROUPS.every(g => Array.isArray(oldExp[g.id]))) {
-    m.expenses = Object.fromEntries(EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), label, amount: oldExp[k] != null ? String(oldExp[k]) : "", note: "" }))]));
+    m.expenses = Object.fromEntries(EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), key: k, label, amount: oldExp[k] != null ? String(oldExp[k]) : "", note: "" }))]));
   }
+  // Expense rows gained a stable key so plan premiums know which row to feed; match the
+  // default rows back up by their (still editable) label.
+  EXPENSE_GROUPS.forEach(g => {
+    const rows = m.expenses[g.id];
+    if (!Array.isArray(rows)) return;
+    m.expenses[g.id] = rows.map(r => {
+      if (r.key) return r;
+      const hit = g.items.find(([, label]) => label === r.label);
+      return hit ? { ...r, key: hit[0] } : r;
+    });
+  });
   const a = c.assets || {};
   m.assets = { ...b.assets, ...a };
   if (!Array.isArray(m.assets.liquid)) m.assets.liquid = [
@@ -385,6 +420,26 @@ function projectFV(o, fallbackYears) {
   return cur * growth + (r > 0 ? annContrib * ((growth - 1) / r) : annContrib * n);
 }
 
+// Total monthly premium each Income Allocation row picks up from the plans on file.
+// Plan type decides the row (see EXISTING_PLAN_TYPES), and every frequency is normalised
+// to a monthly figure so quarterly/annual premiums compare like for like.
+function planPremiumsByExpenseKey(c) {
+  const out = {};
+  (c.existingPlans || []).forEach(p => {
+    const meta = planTypeMeta(p.planType);
+    if (!meta) return;
+    const monthly = freqMonthlyEquiv(p.allocation ?? p.monthly, p.allocationFreq);
+    if (monthly > 0) out[meta.expenseKey] = (out[meta.expenseKey] || 0) + monthly;
+  });
+  return out;
+}
+// A typed figure always wins; a blank row falls back to what the plans imply.
+function expenseRowAmount(row, planPremiums) {
+  const typed = String(row.amount ?? "").trim();
+  if (typed !== "") return num(typed);
+  return row.key ? (planPremiums[row.key] || 0) : 0;
+}
+
 function compute(c) {
   const allowTotal = (c.income.allowances || []).reduce((s, a) => s + num(a.amount), 0);
   const othersTotal = (c.income.others || []).reduce((s, a) => s + num(a.amount), 0);
@@ -392,10 +447,13 @@ function compute(c) {
   const gross = num(c.income.basic) + allowTotal + othersTotal + bonusMonthly;
   const spk = num(c.income.basic) * num(c.income.spkPct) / 100;
   const net = gross - spk;
+  // premiums already committed by the plans on file, keyed by the Income Allocation row
+  // they belong to — these fill in any row the advisor hasn't typed a figure into
+  const planPremiums = planPremiumsByExpenseKey(c);
   const groupTotals = {};
   let totalExpenses = 0;
   EXPENSE_GROUPS.forEach(g => {
-    const t = (c.expenses[g.id] || []).reduce((s, row) => s + num(row.amount), 0);
+    const t = (c.expenses[g.id] || []).reduce((s, row) => s + expenseRowAmount(row, planPremiums), 0);
     groupTotals[g.id] = t; totalExpenses += t;
   });
   const surplus = net - totalExpenses;
@@ -503,7 +561,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
 function buildClaudePrompt(c, d) {
@@ -1351,7 +1409,18 @@ const OBJECTIVE_PRESETS = ["Children's savings", "Hajj / Umrah", "House purchase
 // ---------- Current Coverage editor ----------
 // "Investment" plan type/category was removed — those entries belong in the
 // Existing Investment Portfolio section instead (see migrate()).
-const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity", "SPK", "Solitaire PA"];
+// Each plan type belongs to an Income Allocation bucket and feeds one specific row there,
+// so a premium captured once under Current Coverage also lands in the 4-3-2-1 allocation.
+// `expenseKey` matches the keys in EXPENSE_GROUPS.
+const EXISTING_PLAN_TYPES = [
+  { type: "Whole Life / Critical Illness", group: "protection", expenseKey: "lifeCI" },
+  { type: "Accident & Hospitalisation", group: "protection", expenseKey: "accHosp" },
+  { type: "Term", group: "protection", expenseKey: "term" },
+  { type: "Special Life", group: "protection", expenseKey: "special" },
+  { type: "Endowment", group: "savings", expenseKey: "investments" },
+  { type: "Retirement Annuity", group: "savings", expenseKey: "retirement" },
+];
+const planTypeMeta = (t) => EXISTING_PLAN_TYPES.find(p => p.type === t) || null;
 // a plan can carry coverage in several of these at once (e.g. a combined whole-life +
 // CI plan has both "Death" and "Health (Major Critical Illness)" entries) — see the
 // coverage-breakdown rows on ExistingPlanRow
@@ -1376,7 +1445,7 @@ const CATEGORY_BUCKET = {
 const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay"];
-const INVESTMENT_TYPES = ["Unit Trust", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
 // investment tagged the same way merges into that category's row on the Overview timeline
 const INVESTMENT_CATEGORIES = ["Investment Portfolio", "Retirement", "Child Savings", "Education", "Emergency Fund", "Property", "Others"];
@@ -1423,7 +1492,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
           <label className="text-xs text-slate-500">Plan type</label>
           <select value={row.planType || ""} onChange={e => set("planType", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <option value="">Select…</option>
-            {EXISTING_PLAN_TYPES.map(t => <option key={t}>{t}</option>)}
+            {EXISTING_PLAN_TYPES.map(t => <option key={t.type}>{t.type}</option>)}
           </select>
         </div>
         <div className="col-span-4">
@@ -3676,15 +3745,24 @@ export default function App() {
                 <div className="col-span-4">Item</div><div className="col-span-2">$/month</div><div className="col-span-2 text-right">$/year</div><div className="col-span-3">Remarks (if any)</div><div className="col-span-1"></div>
               </div>
               <div className="space-y-2">
-                {(client.expenses[g.id] || []).map((row, i) => (
+                {(client.expenses[g.id] || []).map((row, i) => {
+                  // premiums from Current Coverage fill this row unless a figure is typed over them
+                  const fromPlans = row.key ? (d.planPremiums[row.key] || 0) : 0;
+                  const effective = expenseRowAmount(row, d.planPremiums);
+                  const usingPlans = fromPlans > 0 && String(row.amount ?? "").trim() === "";
+                  return (
                   <div key={row.id || i} className="grid grid-cols-12 gap-2">
                     <div className="col-span-4"><Input value={row.label} onChange={e => { const list = [...client.expenses[g.id]]; list[i] = { ...row, label: e.target.value }; updateDeep("expenses", { [g.id]: list }); }} placeholder="Item" /></div>
-                    <div className="col-span-2"><NumInput value={row.amount} onChange={e => { const list = [...client.expenses[g.id]]; list[i] = { ...row, amount: e.target.value }; updateDeep("expenses", { [g.id]: list }); }} /></div>
-                    <div className="col-span-2 text-right text-xs text-slate-500 tabular-nums self-center">{money(num(row.amount) * 12)}/yr</div>
+                    <div className="col-span-2">
+                      <NumInput value={row.amount} onChange={e => { const list = [...client.expenses[g.id]]; list[i] = { ...row, amount: e.target.value }; updateDeep("expenses", { [g.id]: list }); }} placeholder={fromPlans > 0 ? fmt(fromPlans, 2) : ""} className={usingPlans ? "bg-purple-50 border-purple-200" : ""} />
+                      {fromPlans > 0 && <div className="text-[11px] text-purple-700 mt-0.5">{usingPlans ? "from plans on file" : "plans on file: " + money(fromPlans, 2)}</div>}
+                    </div>
+                    <div className="col-span-2 text-right text-xs text-slate-500 tabular-nums self-center">{money(effective * 12)}/yr</div>
                     <div className="col-span-3"><Input value={row.note} onChange={e => { const list = [...client.expenses[g.id]]; list[i] = { ...row, note: e.target.value }; updateDeep("expenses", { [g.id]: list }); }} placeholder="Remarks (if any)" /></div>
                     <div className="col-span-1 flex items-center"><button onClick={() => updateDeep("expenses", { [g.id]: client.expenses[g.id].filter((_, j) => j !== i) })} className="text-red-500 text-sm">✕</button></div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </SectionCard>
           ))}
