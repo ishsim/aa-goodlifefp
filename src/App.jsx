@@ -41,6 +41,21 @@ const calcAge = (dob) => {
   if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--;
   return a;
 };
+// how old the insured person was on a given date — lets policy dates drive the age fields
+const ageAtDate = (dob, when) => {
+  if (!dob || !when) return "";
+  const b = new Date(dob), d = new Date(when);
+  if (isNaN(b) || isNaN(d)) return "";
+  let a = d.getFullYear() - b.getFullYear();
+  const m = d.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && d.getDate() < b.getDate())) a--;
+  return a >= 0 ? a : "";
+};
+const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
+// A policy's dates are the source of truth for its ages; the old hand-typed age fields
+// stay as a fallback so plans captured before dates existed still render.
+const policyStartAge = (row, dob) => { const a = ageAtDate(dob, row.policyDate); return a !== "" ? a : num(row.startAge ?? row.fromAge); };
+const policyPremiumEndAge = (row, dob) => { const a = ageAtDate(dob, row.policyExpiry); return a !== "" ? a : num(row.premiumEndsAge ?? row.payUntilAge); };
 const initials = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return parts.length ? parts.map(w => w[0].toUpperCase()).join(".") + "." : "";
@@ -1384,9 +1399,17 @@ function Collapsible({ title, defaultOpen = true, right, children }) {
   );
 }
 
-function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
+function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob = "" }) {
   const [adv, setAdv] = useState(false);
   const set = (k, v) => onChange({ ...row, [k]: v });
+  // ages on this row are read off the policy dates, using whoever the plan insures
+  const insuredDob = (!row.insured || row.insured === "self") ? clientDob : (dependents.find(dp => dp.id === row.insured)?.dob || "");
+  const ageNote = (derived, legacy, lead) => {
+    if (derived !== "") return lead + " age " + derived;
+    if (!insuredDob) return "add the insured's date of birth to derive the age";
+    if (num(legacy) > 0) return "currently age " + num(legacy) + " — set a date to replace";
+    return "";
+  };
   const coverages = row.coverages || [];
   const setCoverages = (next) => set("coverages", next);
   const setCoverage = (i, k, v) => setCoverages(coverages.map((c, j) => j === i ? { ...c, [k]: v } : c));
@@ -1452,9 +1475,15 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
       </div>
 
       <div className="grid grid-cols-12 gap-2 mt-3">
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">From age</label>
-          <NumInput value={row.fromAge || ""} onChange={e => set("fromAge", e.target.value)} />
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Policy date</label>
+          <Input type="date" value={row.policyDate || ""} onChange={e => set("policyDate", e.target.value)} />
+          <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyDate), row.fromAge, "starts at")}</div>
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Policy expiry</label>
+          <Input type="date" value={row.policyExpiry || ""} onChange={e => set("policyExpiry", e.target.value)} />
+          <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyExpiry), row.premiumEndsAge, "premiums end at")}</div>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">To age</label>
@@ -1470,11 +1499,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
             {ALLOCATION_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
         </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Premium ends age</label>
-          <NumInput value={row.premiumEndsAge || ""} onChange={e => set("premiumEndsAge", e.target.value)} />
-        </div>
-        <div className="col-span-2 flex items-end">
+        <div className="col-span-12 flex items-end">
           <button onClick={() => setAdv(a => !a)} className="text-xs text-purple-700 hover:underline">{adv ? "− Hide advanced" : "+ Advanced"}</button>
         </div>
         {adv && <>
@@ -1492,7 +1517,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [] }) {
   );
 }
 
-function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clientAge = null }) {
+function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clientAge = null, clientDob = "" }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
   const rates = row.returnRates || [];
   const monthlyEquiv = freqMonthlyEquiv(row.allocation, row.allocationFreq);
@@ -1501,6 +1526,14 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
     const dep = dependents.find(d => d.id === row.insured);
     return dep && dep.dob && calcAge(dep.dob) !== "" ? num(calcAge(dep.dob)) : null;
   })();
+  // ages are read off the policy dates against whoever the plan is held for
+  const insuredDob = (!row.insured || row.insured === "self") ? clientDob : (dependents.find(dp => dp.id === row.insured)?.dob || "");
+  const ageNote = (derived, legacy, lead) => {
+    if (derived !== "") return lead + " age " + derived;
+    if (!insuredDob) return "add date of birth to derive the age";
+    if (num(legacy) > 0) return "currently age " + num(legacy) + " — set a date to replace";
+    return "";
+  };
   const setRates = (next) => set("returnRates", next);
   const setRate = (gi, k, v) => setRates(rates.map((g, i) => i === gi ? { ...g, [k]: v } : g));
   const addRate = () => setRates([...rates, { id: uid(), rate: "", horizons: [{ id: uid(), years: "", projectedValueOverride: "" }] }]);
@@ -1546,9 +1579,15 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
         <div className="col-span-1 flex items-end justify-end">
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Age started</label>
-          <NumInput value={row.startAge || ""} onChange={e => set("startAge", e.target.value)} />
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Policy date</label>
+          <Input type="date" value={row.policyDate || ""} onChange={e => set("policyDate", e.target.value)} />
+          <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyDate), row.startAge, "starts at")}</div>
+        </div>
+        <div className="col-span-3">
+          <label className="text-xs text-slate-500">Policy expiry</label>
+          <Input type="date" value={row.policyExpiry || ""} onChange={e => set("policyExpiry", e.target.value)} />
+          <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyExpiry), row.payUntilAge, "pay until")}</div>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">To age</label>
@@ -1567,10 +1606,6 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
           <select value={row.allocationFreq || "monthly"} onChange={e => set("allocationFreq", e.target.value)} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
             {ALLOCATION_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Pay until age</label>
-          <NumInput value={row.payUntilAge || ""} onChange={e => set("payUntilAge", e.target.value)} />
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-slate-200">
@@ -1645,6 +1680,7 @@ function CurrentCoverageSection({ client, update }) {
               key={row.id || i}
               row={row}
               dependents={client.dependents || []}
+              clientDob={client.dob}
               onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
               onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
             />
@@ -1664,6 +1700,7 @@ function CurrentCoverageSection({ client, update }) {
               row={row}
               dependents={client.dependents || []}
               clientAge={num(calcAge(client.dob))}
+              clientDob={client.dob}
               onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
               onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
             />
@@ -1887,13 +1924,14 @@ function CoverageTimelinePanel({ client, printMode = false }) {
 
   // everyone a plan can insure: the client plus each dependent, each with a colour
   const insuredList = useMemo(() => [
-    { id: "self", name: client.name || "Client", age: clientAge || null, color: INSURED_COLORS[0] },
+    { id: "self", name: client.name || "Client", age: clientAge || null, dob: client.dob, color: INSURED_COLORS[0] },
     ...(client.dependents || []).map((dep, i) => ({
       id: dep.id, name: dep.name || "Dependent " + (i + 1),
       age: dep.dob && calcAge(dep.dob) !== "" ? num(calcAge(dep.dob)) : null,
+      dob: dep.dob,
       color: INSURED_COLORS[(i + 1) % INSURED_COLORS.length],
     })),
-  ], [client.dependents, client.name, clientAge]);
+  ], [client.dependents, client.name, client.dob, clientAge]);
   const insuredById = (id) => insuredList.find(p => p.id === id) || insuredList[0];
   // bars sit on the CLIENT's age axis: shift each insured person's ages by the age gap
   const offsetOf = (who) => (who.age != null && clientAge > 0 ? clientAge - who.age : 0);
@@ -1906,14 +1944,15 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     // Illness, …), each labelled with that bucket's representative coverage amount.
     // Reused in Recommended mode too, so current coverage can be compared against proposals.
     const buildPlanItems = () => (client.existingPlans || []).flatMap((p, i) => {
-        const start = Math.max(0, Math.min(num(p.startAge ?? p.fromAge), TIMELINE_MAX_AGE));
+        const dob = insuredById(p.insured || "self").dob;
+        const start = Math.max(0, Math.min(policyStartAge(p, dob), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
         const end = Math.max(Math.min(rawEnd > 0 ? rawEnd : TIMELINE_MAX_AGE, TIMELINE_MAX_AGE), start);
         const who = insuredById(p.insured || "self");
         const stepAge = num(p.stepDownAge), stepAmt = num(p.stepDownAmount);
         const hasStep = stepAge > start && stepAge < end && stepAmt > 0;
         const allocAmt = num(p.allocation ?? p.monthly);
-        const premEnd = num(p.premiumEndsAge);
+        const premEnd = policyPremiumEndAge(p, dob);
         const label = p.planName || p.planType || "Existing plan";
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
@@ -1932,11 +1971,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Plan type", p.planType], ["Policy number", p.policyNumber],
+            ["Policy date", fmtDate(p.policyDate)],
             ...covs.map(c => [c.category, money(num(c.amount))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
             ["Steps down", hasStep ? "to " + money(stepAmt) + " at age " + stepAge : ""],
             ["Allocation", allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : ""],
-            ["Premium ends", premEnd > 0 ? "age " + premEnd : ""],
+            ["Premium ends", premEnd > 0 ? "age " + premEnd + (p.policyExpiry ? " (" + fmtDate(p.policyExpiry) + ")" : "") : ""],
             ["Notes", p.notes],
           ].filter(([, v]) => v),
         }));
@@ -1945,7 +1985,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     if (mode === "current") {
       const plans = buildPlanItems();
       const invs = (client.existingInvestments || []).map((r, i) => {
-        const start = Math.max(0, Math.min(num(r.startAge), TIMELINE_MAX_AGE));
+        const invDob = insuredById(r.insured || "self").dob;
+        const start = Math.max(0, Math.min(policyStartAge(r, invDob), TIMELINE_MAX_AGE));
         const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
         // flatten rate groups → individual horizon points for the headline figure + details list
         const horizons = (r.returnRates || []).flatMap(g => (g.horizons || []).map(h => ({
@@ -1958,7 +1999,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const end = toAgeSet ? Math.min(num(r.toAge), TIMELINE_MAX_AGE) : Math.min(start + (maxYears > 0 ? maxYears : TIMELINE_MAX_AGE - start), TIMELINE_MAX_AGE);
         const who = insuredById(r.insured || "self");
         const owner = insuredById(r.owner || "self");
-        const payUntil = num(r.payUntilAge);
+        const payUntil = policyPremiumEndAge(r, invDob);
         return {
           id: r.id || "inv" + i,
           origin: "current",
@@ -1970,10 +2011,11 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Policy owner", owner.name], ["Type", r.type], ["Category", r.category],
+            ["Policy date", fmtDate(r.policyDate)],
             ["Coverage ages", start + " – " + end],
             ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
             ["Allocation", num(r.allocation) > 0 ? money(num(r.allocation), 2) + " / " + freqLabel(r.allocationFreq).toLowerCase() : ""],
-            ["Pay until", payUntil > 0 ? "age " + payUntil : ""],
+            ["Pay until", payUntil > 0 ? "age " + payUntil + (r.policyExpiry ? " (" + fmtDate(r.policyExpiry) + ")" : "") : ""],
             ...horizons.map(h => [h.rate + "% p.a. @ " + h.years + " yrs", money(h.projected)]),
             ["Notes", r.notes],
           ].filter(([, v]) => v),
@@ -3369,7 +3411,7 @@ export default function App() {
               <div key={person.id} style={{ breakInside: "avoid" }}>
                 <h3>{person.name}{person.age !== "" ? " (" + person.age + ")" : ""}</h3>
                 <table>
-                  <thead><tr><th>Plan</th><th>Policy No.</th><th>Coverage</th><th className="tnum">Allocation</th></tr></thead>
+                  <thead><tr><th>Plan</th><th>Policy No.</th><th>Policy Date</th><th>Coverage</th><th className="tnum">Allocation</th></tr></thead>
                   <tbody>
                     {plans.map((p, i) => {
                       const covs = (p.coverages || []).filter(c => c.category && num(c.amount) > 0);
@@ -3378,6 +3420,7 @@ export default function App() {
                         <tr key={p.id || i}>
                           <td><b>{p.planName || p.planType || "Existing plan"}</b>{p.planType ? <div className="text-xs text-slate-500">{p.planType}</div> : null}</td>
                           <td>{p.policyNumber || "—"}</td>
+                          <td>{fmtDate(p.policyDate) || "—"}</td>
                           <td>{covs.length ? covs.map((c, j) => <div key={j}>{c.category}: {money(num(c.amount))}</div>) : "—"}</td>
                           <td className="tnum">{allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : "—"}</td>
                         </tr>
