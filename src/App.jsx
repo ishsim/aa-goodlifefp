@@ -1979,7 +1979,10 @@ function InsuranceNeedsDetailTables({ tables, setField, plans, personId }) {
 }
 
 function InsuranceNeedsSummary({ client, update }) {
-  const plans = client.existingPlans || [];
+  // Lapsed and surrendered policies pay out nothing, so they must not close a coverage gap.
+  // APL and ETI policies are still in force — their cover counts even though no premium is
+  // leaving the client's pocket.
+  const plans = useMemo(() => (client.existingPlans || []).filter(p => !statusIsDead(p.status)), [client.existingPlans]);
   const clientAge = num(calcAge(client.dob));
   const overrides = client.insuranceNeedsOverrides || {};
   const detailTables = client.insuranceDetailTables || {};
