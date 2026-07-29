@@ -427,7 +427,8 @@ function planPremiumsByExpenseKey(c) {
   const out = {};
   (c.existingPlans || []).forEach(p => {
     const meta = planTypeMeta(p.planType);
-    if (!meta) return;
+    // lapsed/surrendered policies are gone, and APL/ETI premiums aren't paid out of pocket
+    if (!meta || !statusPaysPremium(p.status)) return;
     const monthly = freqMonthlyEquiv(p.allocation ?? p.monthly, p.allocationFreq);
     if (monthly > 0) out[meta.expenseKey] = (out[meta.expenseKey] || 0) + monthly;
   });
@@ -1421,6 +1422,21 @@ const EXISTING_PLAN_TYPES = [
   { type: "Retirement Annuity", group: "savings", expenseKey: "retirement" },
 ];
 const planTypeMeta = (t) => EXISTING_PLAN_TYPES.find(p => p.type === t) || null;
+const POLICY_STATUSES = [
+  ["active", "Active"],
+  ["apl", "APL — premium on loan"],
+  ["eti", "ETI — extended term"],
+  ["lapsed", "Lapsed"],
+  ["surrendered", "Surrendered"],
+];
+// Only an active policy is money still leaving the client's pocket each month: under APL the
+// premium is funded by a loan against cash value, and ETI is paid-up.
+const statusPaysPremium = (s) => (s || "active") === "active";
+// Lapsed and surrendered cover no longer stands — kept on the timeline as history, greyed out.
+const statusIsDead = (s) => s === "lapsed" || s === "surrendered";
+const statusLabel = (s) => (POLICY_STATUSES.find(([id]) => id === (s || "active")) || POLICY_STATUSES[0])[1];
+// Savings/wealth vehicles are drawn with a hatch + accumulation gradient rather than a solid bar
+const isSavingsPlanType = (t) => planTypeMeta(t)?.group === "savings";
 // a plan can carry coverage in several of these at once (e.g. a combined whole-life +
 // CI plan has both "Death" and "Health (Major Critical Illness)" entries) — see the
 // coverage-breakdown rows on ExistingPlanRow
@@ -1495,13 +1511,20 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
             {EXISTING_PLAN_TYPES.map(t => <option key={t.type}>{t.type}</option>)}
           </select>
         </div>
-        <div className="col-span-4">
+        <div className="col-span-3">
           <label className="text-xs text-slate-500">Plan name</label>
           <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Policy number</label>
           <Input value={row.policyNumber || ""} onChange={e => set("policyNumber", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Status</label>
+          <select value={row.status || "active"} onChange={e => set("status", e.target.value)}
+            className={"w-full rounded-lg border px-2 py-1.5 text-sm " + (statusIsDead(row.status) ? "border-slate-400 bg-slate-200 text-slate-600" : statusPaysPremium(row.status) ? "border-slate-300 bg-white" : "border-amber-300 bg-amber-50 text-amber-900")}>
+            {POLICY_STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Insured</label>
@@ -1554,13 +1577,21 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
           <Input type="date" value={row.policyExpiry || ""} onChange={e => set("policyExpiry", e.target.value)} />
           <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyExpiry), row.premiumEndsAge, "premiums end at")}</div>
         </div>
+        {row.planType === "Retirement Annuity" && (
+          <div className="col-span-3">
+            <label className="text-xs text-slate-500">Payout starts at age</label>
+            <NumInput value={row.payoutStartAge || ""} onChange={e => set("payoutStartAge", e.target.value)} placeholder="60" />
+            <div className="text-[11px] text-slate-400 mt-0.5">annuity income begins</div>
+          </div>
+        )}
         <div className="col-span-2">
-          <label className="text-xs text-slate-500">To age</label>
+          <label className="text-xs text-slate-500">{row.planType === "Retirement Annuity" ? "Payout to age" : "To age"}</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Allocation $</label>
           <NumInput value={row.allocation || ""} onChange={e => set("allocation", e.target.value)} />
+          {!statusPaysPremium(row.status) && <div className="text-[11px] text-amber-700 mt-0.5">not counted in Income Allocation</div>}
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Frequency</label>
@@ -2037,9 +2068,15 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           covShort: kfmt(Math.max(...covs.map(c => num(c.amount)))),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
+          status: p.status || "active",
+          savings: isSavingsPlanType(p.planType),
+          // a deferred annuity reads in three acts: pay in, wait, then draw income
+          payoutStart: p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? num(p.payoutStartAge) : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
-            ["Plan type", p.planType], ["Policy number", p.policyNumber],
+            ["Plan type", p.planType], ["Status", statusLabel(p.status)],
+            ["Policy number", p.policyNumber],
+            ["Annuity payout", p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? "age " + num(p.payoutStartAge) + " – " + end : ""],
             ["Policy date", fmtDate(p.policyDate)],
             ...covs.map(c => [c.category, money(num(c.amount))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
@@ -2075,7 +2112,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           label: r.description || r.type || "Investment",
           category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
           covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
-          stepAge: null, stepAmt: null,
+          stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
           premStart: payUntil > start ? start : null, premEnd: payUntil > start ? payUntil : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
@@ -2116,6 +2153,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         origin: "recommended",
         label: p.label, start, end, insured: who, offset: offsetOf(who),
         stepAge: hasStep ? 65 : null, stepAmt: hasStep ? baseTotal : null,
+        status: "active", savings: p.category !== "Risk Management",
+        payoutStart: p.key === "RS" && num(p.retirementAge) > 0 ? num(p.retirementAge) : null,
         premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
         details: [
           ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
@@ -2269,6 +2308,60 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     );
   };
 
+  // Savings vehicles get a hatch + accumulation gradient keyed to the insured's own colour,
+  // so hue still says "who" while texture says "this is wealth, not protection".
+  const savingsDefs = useMemo(() => {
+    const seen = [...new Set(insuredList.map(p => p.color))];
+    return seen.map(c => {
+      const id = "sv" + c.replace("#", "");
+      return (
+        <React.Fragment key={id}>
+          <linearGradient id={id + "g"} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={c} stopOpacity="0.45" />
+            <stop offset="100%" stopColor={c} stopOpacity="1" />
+          </linearGradient>
+          <pattern id={id + "h"} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill={c} opacity="0.28" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke={c} strokeWidth="2.5" opacity="0.9" />
+          </pattern>
+        </React.Fragment>
+      );
+    });
+  }, [insuredList]);
+  const svFill = (color, kind) => "url(#sv" + color.replace("#", "") + (kind === "hatch" ? "h" : "g") + ")";
+
+  // A deferred annuity is drawn as: hatched premium bar → thin deferral connector →
+  // wedge that widens across the payout years (dividends building) → terminal-dividend diamond.
+  const annuityShape = (p, y, opacity, common) => {
+    const payC = p.payoutStart + p.offset, endC = p.end + p.offset;
+    const premTo = p.premEnd != null ? Math.min(p.premEnd, p.payoutStart) : p.payoutStart;
+    const gPrem = clipX(p.start + p.offset, premTo + p.offset);
+    const gGap = clipX(premTo + p.offset, payC);
+    const gPay = clipX(payC, endC);
+    const midY = y + LANE_H / 2;
+    return (
+      <g key={p.id}>
+        {gPrem && <rect x={gPrem.x0} y={y + LANE_H * 0.3} width={gPrem.w} height={LANE_H * 0.4} rx="2"
+          fill={svFill(p.insured.color, "hatch")} opacity={opacity} {...common} />}
+        {gGap && gGap.w > 2 && <line x1={gGap.x0} y1={midY} x2={gGap.x0 + gGap.w} y2={midY}
+          stroke={p.insured.color} strokeWidth="1.5" strokeDasharray="2 3" opacity={opacity * 0.8} pointerEvents="none" />}
+        {gPay && (
+          <polygon
+            points={`${gPay.x0},${midY - LANE_H * 0.18} ${gPay.x0 + gPay.w},${y} ${gPay.x0 + gPay.w},${y + LANE_H} ${gPay.x0},${midY + LANE_H * 0.18}`}
+            fill={svFill(p.insured.color, "grad")} opacity={opacity} {...common} />
+        )}
+        {gPay && Math.abs(gPay.x0 + gPay.w - x(endC)) < 1 && (
+          <g pointerEvents="none">
+            <rect x={x(endC) - 4} y={midY - 4} width="8" height="8" transform={`rotate(45 ${x(endC)} ${midY})`}
+              fill="#f59e0b" stroke="#fff" strokeWidth="1" />
+          </g>
+        )}
+        {gPrem && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gPrem, y)}
+        {gPay && gPay.w > 46 && <text x={gPay.x0 + 5} y={midY + 3} fontSize="8" fill="#fff" fontWeight="600" pointerEvents="none">payout</text>}
+      </g>
+    );
+  };
+
   const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
   return (
@@ -2297,6 +2390,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       ) : (
         <>
         <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
+          <defs>{savingsDefs}</defs>
           <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
           {ticks.map(t => (
             <g key={t}>
@@ -2341,16 +2435,23 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                         // in Recommended mode, current-origin bars are muted with a dashed
                         // outline so they read as "already in force" behind the proposal
                         const isMutedCurrent = mode === "recommended" && p.origin === "current";
-                        const opacity = active ? 1 : isMutedCurrent ? 0.5 : mode === "current" ? 0.65 : 0.85;
-                        const stroke = selected?.id === p.id ? "#0f172a" : (isMutedCurrent ? "#64748b" : "none");
-                        const dash = isMutedCurrent ? "3 2" : undefined;
+                        // a lapsed or surrendered policy stays visible as history, but reads as
+                        // grey and washed out so it can never be mistaken for live cover
+                        const dead = statusIsDead(p.status);
+                        const opacity = dead ? (active ? 0.6 : 0.38) : active ? 1 : isMutedCurrent ? 0.5 : mode === "current" ? 0.65 : 0.85;
+                        const stroke = selected?.id === p.id ? "#0f172a" : dead ? "#94a3b8" : (isMutedCurrent ? "#64748b" : "none");
+                        const dash = dead ? "4 3" : isMutedCurrent ? "3 2" : undefined;
+                        const fill = dead ? "#94a3b8" : p.savings ? svFill(p.insured.color, "grad") : p.insured.color;
+                        if (p.payoutStart != null && p.payoutStart > p.start && !dead) {
+                          return annuityShape(p, y, opacity, common);
+                        }
                         if (p.stepAge != null) {
                           const stepC = p.stepAge + p.offset;
                           const g1 = clipX(cs, stepC), g2 = clipX(stepC, ce);
                           return (
                             <g key={p.id}>
-                              {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
-                              {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={p.insured.color} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
+                              {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
+                              {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={fill} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
                               {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
                               {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
                               {premBracket(p, y)}
@@ -2361,7 +2462,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                         if (!g) return null;
                         return (
                           <g key={p.id}>
-                            <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={p.insured.color} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
+                            <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
                             {barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
                           </g>
@@ -2429,6 +2530,18 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           <span className="inline-flex items-center gap-1.5">
             <svg width="26" height="12"><rect x="0" y="1" width="13" height="10" rx="2" fill="#94a3b8" /><rect x="13" y="3.5" width="13" height="5" rx="2" fill="#94a3b8" opacity="0.6" /></svg>
             coverage steps down
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <svg width="26" height="12"><defs><linearGradient id="lgsv" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#51037c" stopOpacity="0.45" /><stop offset="100%" stopColor="#51037c" /></linearGradient></defs><rect x="0" y="1.5" width="26" height="9" rx="2" fill="url(#lgsv)" /></svg>
+            savings / wealth plan
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <svg width="30" height="12"><rect x="0" y="4" width="9" height="4" rx="1" fill="#51037c" opacity="0.5" /><line x1="9" y1="6" x2="14" y2="6" stroke="#51037c" strokeWidth="1.5" strokeDasharray="2 2" /><polygon points="14,4.5 24,1 24,11 14,7.5" fill="url(#lgsv)" /><rect x="24" y="3" width="6" height="6" transform="rotate(45 27 6)" fill="#f59e0b" /></svg>
+            annuity: premiums → payout → terminal dividend
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="2" fill="#94a3b8" opacity="0.38" stroke="#94a3b8" strokeDasharray="4 3" /></svg>
+            lapsed / surrendered
           </span>
           {items.some(it => it.premStart != null) && (
             <span className="inline-flex items-center gap-1.5">
