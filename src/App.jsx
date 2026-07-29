@@ -292,6 +292,18 @@ function migrate(c) {
         label: p.label || tpl.label || "",
       };
     });
+  // Two coverage categories were renamed: any policy covering early stages also covers
+  // major stages, and the old "minor" tier is really hospitalisation & surgery cover.
+  // Applies to both in-force plans and quoted plans.
+  const COVERAGE_RENAMES = {
+    "Health (Early-Intermediate Stage)": "Health (Early-Major Critical Illness)",
+    "Health (Minor)": "Health (Hospitalisation & Surgery)",
+  };
+  const renameCoverages = (list) => (list || []).map(p => Array.isArray(p.coverages)
+    ? { ...p, coverages: p.coverages.map(cv => COVERAGE_RENAMES[cv.category] ? { ...cv, category: COVERAGE_RENAMES[cv.category] } : cv) }
+    : p);
+  m.existingPlans = renameCoverages(m.existingPlans);
+  m.products = renameCoverages(m.products);
   const oldExp = c.expenses || {};
   if (!EXPENSE_GROUPS.every(g => Array.isArray(oldExp[g.id]))) {
     m.expenses = Object.fromEntries(EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), label, amount: oldExp[k] != null ? String(oldExp[k]) : "", note: "" }))]));
@@ -1330,7 +1342,7 @@ const EXISTING_PLAN_TYPES = ["Insurance Plan", "Whole Life", "Retirement Annuity
 // coverage-breakdown rows on ExistingPlanRow
 const PLAN_COVERAGE_CATEGORIES = [
   "Death", "Disability",
-  "Health (Major Critical Illness)", "Health (Early-Intermediate Stage)", "Health (Minor)",
+  "Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)",
   "Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)",
   "Retirement", "Child Savings", "Others",
 ];
@@ -1338,7 +1350,9 @@ const PLAN_COVERAGE_CATEGORIES = [
 // row a plan's coverage appears on, and the Total Insurance Needs auto-totals
 const CATEGORY_BUCKET = {
   "Death": "Death & Disability", "Disability": "Death & Disability",
-  "Health (Major Critical Illness)": "Critical Illness", "Health (Early-Intermediate Stage)": "Critical Illness", "Health (Minor)": "Critical Illness",
+  "Health (Major Critical Illness)": "Critical Illness", "Health (Early-Major Critical Illness)": "Critical Illness",
+  // hospitalisation & surgery cover belongs with the other hospital benefits, not with CI
+  "Health (Hospitalisation & Surgery)": "Hospital Stay",
   "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
   "Hospitalisation (Accident)": "Hospital Stay",
   "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
@@ -1685,7 +1699,7 @@ const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "
 // categories into the three points of coverage — a plan with both a "Death" and a
 // "Health (Major Critical Illness)" entry counts toward both Life and Health
 const NEEDS_TRIANGLE_GROUPS = [
-  { key: "health", label: "Health Benefits", categories: ["Health (Major Critical Illness)", "Health (Early-Intermediate Stage)", "Health (Minor)"], corner: { x: 108, y: 96 } },
+  { key: "health", label: "Health Benefits", categories: ["Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)"], corner: { x: 108, y: 96 } },
   { key: "life", label: "Life Protection", categories: ["Death", "Disability"], corner: { x: 352, y: 96 } },
   { key: "accident", label: "Accident Coverage", categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)"], corner: { x: 230, y: 344 } },
 ];
@@ -1784,11 +1798,11 @@ function InsuranceNeedsDetailTables({ tables, setField, plans, personId }) {
       <table className="w-full border-collapse h-fit">
         <thead>
           <tr><th className={th} colSpan={3}>Health Benefits</th></tr>
-          <tr><th className={subhead + " text-center"}>Minor</th><th className={subhead + " text-center"}>Early</th><th className={subhead + " text-center"}>Major</th></tr>
+          <tr><th className={subhead + " text-center"}>Hosp. &amp; Surgery</th><th className={subhead + " text-center"}>Early-Major</th><th className={subhead + " text-center"}>Major</th></tr>
         </thead>
         <tbody><tr>
-          <td className={td}><TCell value={t.health?.minor} onChange={e => setField("health.minor", e.target.value)} placeholder={autoFor(["Health (Minor)"])} align="center" /></td>
-          <td className={td}><TCell value={t.health?.early} onChange={e => setField("health.early", e.target.value)} placeholder={autoFor(["Health (Early-Intermediate Stage)"])} align="center" /></td>
+          <td className={td}><TCell value={t.health?.minor} onChange={e => setField("health.minor", e.target.value)} placeholder={autoFor(["Health (Hospitalisation & Surgery)"])} align="center" /></td>
+          <td className={td}><TCell value={t.health?.early} onChange={e => setField("health.early", e.target.value)} placeholder={autoFor(["Health (Early-Major Critical Illness)"])} align="center" /></td>
           <td className={td}><TCell value={t.health?.major} onChange={e => setField("health.major", e.target.value)} placeholder={autoFor(["Health (Major Critical Illness)"])} align="center" /></td>
         </tr></tbody>
       </table>
