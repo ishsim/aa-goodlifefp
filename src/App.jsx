@@ -70,18 +70,74 @@ const PLAN_LIBRARY = {
   RS: { name: "Guaranteed Annuity Income — Retirement Saver (IV)" , body: "Retirement Saver (IV) is an endowment annuity insurance policy designed to provide a guaranteed monthly stream of retirement income from your chosen Retirement Age, plus coverage against death. It is a participating policy with non-guaranteed dividends.\n\n• Choose Retirement Age of 55, 60 or 65; pay premiums as a single payment or until 5 years before Retirement Age; receive Retirement Income for a 15-year payout period.\n• Retirement Income — paid monthly over the selected payout period, starting one month after the policy anniversary following your Retirement Age.\n• Monthly Dividends — declared yearly and credited monthly; once credited, they form part of the guaranteed benefits. Withdraw them or leave to accumulate interest.\n• Terminal Dividend — non-guaranteed, payable upon claim, maturity or surrender.\n• Maturity Benefit — the final income payout plus accumulated dividends and rewards, after deducting amounts owing." },
 };
 
-const DEFAULT_PRODUCTS = [
-  { key: "GPP", label: "Whole Life Critical Illness Coverage + 2x coverage before Age 65", category: "Risk Management", coverage: "$90,000 ($180,000)", monthly: 386.81, annual: 4446, returns: "Cash value: Age 65 $57,324 · Age 70 $76,484 · Age 83 $120,845", tier: "optional", include: false, planImages: [] },
-  { key: "PA", label: "Comprehensive Accident Coverage", category: "Risk Management", coverage: "$100,000", monthly: 24.57, annual: 282.51, returns: "No returns", tier: "recommended", include: false, planImages: [] },
-  { key: "MSCC", label: "Comprehensive Cancer Coverage", category: "Risk Management", coverage: "$100,000", monthly: 63.34, annual: 728, returns: "No returns", tier: "recommended", include: false, planImages: [] },
-  { key: "ASCC", label: "Absolute Critical Cover — Value Plan (to Age 65)", category: "Risk Management", coverage: "$100,000", monthly: 0, annual: 0, returns: "No returns", tier: "recommended", include: false, insuredBy: "self", cciOption: "65", planImages: [] },
-  { key: "ASCC", label: "Absolute Critical Cover — Value Plan (to Age 75)", category: "Risk Management", coverage: "$100,000", monthly: 0, annual: 0, returns: "No returns", tier: "recommended", include: false, insuredBy: "self", cciOption: "75", planImages: [] },
-  { key: "ASCC", label: "Absolute Critical Cover — Life Plan (to Age 100)", category: "Risk Management", coverage: "$100,000", monthly: 0, annual: 0, returns: "", tier: "recommended", include: false, insuredBy: "self", cciOption: "100", planImages: [] },
-  { key: "HI", label: "Daily Hospitalisation Income Pay-out" , category: "Risk Management", coverage: "$100/day", monthly: 25.6, annual: 294, returns: "No returns", tier: "recommended", include: false, planImages: [] },
-  { key: "STP", label: "Income Protection: Death, Disability + Critical Illness", category: "Risk Management", coverage: "$500,000 / $120,000 CI", monthly: 106.79, annual: 1227.5, returns: "No returns", tier: "optional", include: false, planImages: [] },
-  { key: "ILP", label: "Investment with Unit Trusts — Growth Fund", category: "Goal Planning", coverage: "$15,000 SA", monthly: 250, annual: 3000, returns: "Projection at 4–8%: Age 50 $35,300–45,700 · Age 60 $74,400–122,500 · Age 68 $113,500–228,100", tier: "future", include: false, planImages: [] },
-  { key: "RS", label: "Guaranteed Annuity for Retirement (60–75) — $500/month", category: "Retirement Planning", coverage: "$500/month for 15 yrs", monthly: 327.99, annual: 3770, returns: "Capital $82,940 · Income $90,000 · Dividends $48,715 · Terminal $56,055", tier: "future", include: false, planImages: [] },
+// Templates the advisor picks from when adding a plan to a person's quotation table.
+// Each entry is a starting point — every field stays editable on the instance afterwards.
+// `covers` seeds the coverage breakdown; amounts are the figures previously baked into
+// the old free-text `coverage` string.
+const PRODUCT_CATALOGUE = [
+  { key: "GPP", label: "Whole Life Critical Illness Coverage + 2x coverage before Age 65", category: "Risk Management", monthly: 386.81, annual: 4446, returns: "Cash value: Age 65 $57,324 · Age 70 $76,484 · Age 83 $120,845", tier: "optional",
+    covers: [["Death", "90000"], ["Health (Major Critical Illness)", "90000"]], endAge: "100", stepsDown: true, boostedAmount: "180000" },
+  { key: "PA", label: "Comprehensive Accident Coverage", category: "Risk Management", monthly: 24.57, annual: 282.51, returns: "No returns", tier: "recommended",
+    covers: [["Death (Accident)", "100000"], ["Disability (Accident)", "100000"]] },
+  { key: "MSCC", label: "Comprehensive Cancer Coverage", category: "Risk Management", monthly: 63.34, annual: 728, returns: "No returns", tier: "recommended",
+    covers: [["Health (Major Critical Illness)", "100000"]] },
+  { key: "ASCC", label: "Absolute Critical Cover", category: "Risk Management", monthly: 0, annual: 0, returns: "No returns", tier: "recommended", cciOption: "65",
+    covers: [["Health (Major Critical Illness)", "100000"]] },
+  { key: "HI", label: "Daily Hospitalisation Income Pay-out", category: "Risk Management", monthly: 25.6, annual: 294, returns: "No returns", tier: "recommended",
+    covers: [["Hospitalisation (Accident)", "100"]] },
+  { key: "STP", label: "Income Protection: Death, Disability + Critical Illness", category: "Risk Management", monthly: 106.79, annual: 1227.5, returns: "No returns", tier: "optional",
+    covers: [["Death", "500000"], ["Disability", "500000"], ["Health (Major Critical Illness)", "120000"]] },
+  { key: "ILP", label: "Investment with Unit Trusts — Growth Fund", category: "Goal Planning", monthly: 250, annual: 3000, returns: "Projection at 4–8%: Age 50 $35,300–45,700 · Age 60 $74,400–122,500 · Age 68 $113,500–228,100", tier: "future",
+    covers: [["Others", "15000"]] },
+  { key: "RS", label: "Guaranteed Annuity for Retirement", category: "Retirement Planning", monthly: 327.99, annual: 3770, returns: "Capital $82,940 · Income $90,000 · Dividends $48,715 · Terminal $56,055", tier: "future",
+    covers: [["Retirement", "500"]], retirementAge: "60", monthlyIncome: "500" },
 ];
+// ASCC's coverage option doubles as its coverage end age
+const ASCC_OPTIONS = [["65", "Value Plan (to Age 65)"], ["75", "Value Plan (to Age 75)"], ["100", "Life Plan (to Age 100)"]];
+const RETIREMENT_AGES = ["55", "60", "65"];
+const newProduct = (key, insuredBy = "self") => {
+  const t = PRODUCT_CATALOGUE.find(p => p.key === key) || PRODUCT_CATALOGUE[0];
+  const { covers, ...rest } = t;
+  return {
+    ...rest, id: uid(), insuredBy, include: true, planImages: [],
+    coverages: (covers || []).map(([category, amount]) => ({ id: uid(), category, amount })),
+    startAge: "", endAge: t.endAge || "", premiumEndsAge: "",
+  };
+};
+// how a plan's coverage reads in report tables and timeline tooltips
+const planCoverageRows = (p) => {
+  const rows = (p.coverages || []).filter(c => c.category && num(c.amount) > 0);
+  if (p.key === "RS" && num(p.monthlyIncome) > 0) {
+    return [{ id: "rs", category: "Retirement income", amount: p.monthlyIncome, display: money(num(p.monthlyIncome)) + "/month" + (p.retirementAge ? " from age " + p.retirementAge : "") }];
+  }
+  return rows.map(c => ({ ...c, display: money(num(c.amount)) + (p.key === "HI" ? "/day" : "") }));
+};
+const planCoverageText = (p) => {
+  const rows = planCoverageRows(p);
+  if (!rows.length) return p.coverage || "";
+  return rows.map(c => c.category + ": " + c.display).join(" · ");
+};
+// The same product can be quoted for several people, but its explanation page only needs
+// to appear once — collapse to one entry per product, gathering every instance's images.
+const uniqueExplanations = (selected) => {
+  const byKey = new Map();
+  (selected || []).forEach(p => {
+    const seen = byKey.get(p.key);
+    if (seen) seen.planImages = [...seen.planImages, ...(p.planImages || [])];
+    else byKey.set(p.key, { key: p.key, label: p.label, planImages: [...(p.planImages || [])] });
+  });
+  return [...byKey.values()];
+};
+// the small print under a plan's name: how long it covers, and how long premiums run
+const planTermText = (p) => {
+  const bits = [];
+  const start = num(p.startAge), end = num(p.endAge) || num(p.cciOption);
+  if (start > 0 && end > 0) bits.push("Cover age " + start + "–" + end);
+  else if (end > 0) bits.push("Cover to age " + end);
+  if (num(p.premiumEndsAge) > 0) bits.push("premiums to age " + num(p.premiumEndsAge));
+  if (p.stepsDown && num(p.boostedAmount) > 0) bits.push("boosted to " + money(num(p.boostedAmount)) + " before 65");
+  return bits.join(" · ");
+};
 
 const TIER_META = {
   recommended: { label: "Recommended", note: "fits within the agreed budget", cls: "bg-blue-50 border-blue-300", chip: "bg-blue-600 text-white" },
@@ -123,7 +179,8 @@ const blankClient = () => ({
   existingInvestments: [],
   insuranceNeedsOverrides: {},
   insuranceDetailTables: {},
-  products: DEFAULT_PRODUCTS.map(p => ({ ...p, insuredBy: "self" })),
+  // recommended plans are added per insured person — starts empty, built up in step 6
+  products: [],
   budgetNote: "approximately $100 per month",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
   // Annual Review report — separate narrative from the first-time client report above
@@ -208,20 +265,33 @@ function migrate(c) {
     }
     return row;
   });
-  // Sync products: add any new DEFAULT_PRODUCTS entries missing from saved client
-  const existingProds = Array.isArray(c.products) ? c.products : [];
-  const mergedProds = DEFAULT_PRODUCTS.map(def => {
-    // match by key + cciOption (for ASCC variants) or just key
-    const saved = existingProds.find(p =>
-      p.key === def.key && (def.cciOption ? p.cciOption === def.cciOption : !p.cciOption)
-    );
-    if (saved) {
-      // preserve all saved fields but ensure new fields exist
-      return { ...def, ...saved, planImages: saved.planImages || [], insuredBy: saved.insuredBy || "self" };
-    }
-    return { ...def }; // brand new product — add with defaults
-  });
-  m.products = mergedProds;
+  // Recommended plans used to be a fixed catalogue of every product with an include flag;
+  // they are now per-insured instances the advisor adds. Keep only what was actually ticked
+  // (the untouched catalogue rows carried no client-specific information), give each an id,
+  // and convert the old free-text `coverage` string into a structured coverage breakdown.
+  m.products = (Array.isArray(c.products) ? c.products : [])
+    .filter(p => p && p.include)
+    .map(p => {
+      const { covers, ...tpl } = PRODUCT_CATALOGUE.find(t => t.key === p.key) || {};
+      let coverages = Array.isArray(p.coverages) ? p.coverages : null;
+      if (!coverages) {
+        // seed from the template's categories, using the old headline figure where we can
+        // parse one out of strings like "$90,000 ($180,000)" or "$500,000 / $120,000 CI"
+        const headline = String(p.coverage || "").replace(/[,$]/g, "").match(/\d+(\.\d+)?/);
+        coverages = (covers || []).map(([category, amount]) => ({
+          id: uid(), category, amount: headline ? headline[0] : amount,
+        }));
+      }
+      return {
+        ...tpl, ...p,
+        id: p.id || uid(),
+        insuredBy: p.insuredBy || "self",
+        planImages: p.planImages || [],
+        coverages,
+        startAge: p.startAge ?? "", endAge: p.endAge ?? (tpl.endAge || ""), premiumEndsAge: p.premiumEndsAge ?? "",
+        label: p.label || tpl.label || "",
+      };
+    });
   const oldExp = c.expenses || {};
   if (!EXPENSE_GROUPS.every(g => Array.isArray(oldExp[g.id]))) {
     m.expenses = Object.fromEntries(EXPENSE_GROUPS.map(g => [g.id, g.items.map(([k, label]) => ({ id: uid(), label, amount: oldExp[k] != null ? String(oldExp[k]) : "", note: "" }))]));
@@ -361,7 +431,19 @@ function compute(c) {
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
   const rtMonthlyAnnuity = num(rt.years) > 0 ? rtProjected / (num(rt.years) * 12) : 0;
   // products
-  const selected = c.products.filter(p => p.include);
+  const selected = (c.products || []).filter(p => p.include);
+  // one quotation table per insured person — client first, then each dependent that
+  // actually has a plan quoted for them
+  const insuredGroups = [
+    { id: "self", name: c.name || "Client", relationship: "" },
+    ...(c.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "" })),
+  ].map(person => {
+    const items = selected
+      .filter(p => (p.insuredBy || "self") === person.id)
+      // pre-rendered strings so the DOCX exporter doesn't need the display helpers
+      .map(p => ({ ...p, coverageText: planCoverageText(p), termText: planTermText(p) }));
+    return { ...person, items, monthly: items.reduce((s, p) => s + num(p.monthly), 0), annual: items.reduce((s, p) => s + num(p.annual), 0) };
+  }).filter(g => g.items.length);
   const premMonthly = selected.reduce((s, p) => s + num(p.monthly), 0);
   const premAnnual = selected.reduce((s, p) => s + num(p.annual), 0);
   const assetPie = [
@@ -394,7 +476,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, premMonthly, premAnnual };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual };
 }
 
 function buildClaudePrompt(c, d) {
@@ -426,7 +508,7 @@ function buildClaudePrompt(c, d) {
     `  • Shortfall: ${money(Math.round(d.rtShortfall), 0)}`,
     `  • Expected monthly annuity: ${money(Math.round(d.rtMonthlyAnnuity), 0)}`,
     `- Recommended plans:`,
-    ...d.selected.map(p => `  • ${p.label} — coverage: ${p.coverage}, monthly premium: ${money(p.monthly, 0)}`),
+    ...d.selected.map(p => `  • ${p.label} — coverage: ${planCoverageText(p)}, monthly premium: ${money(p.monthly, 0)}`),
     `- Other objectives:`,
     ...(c.otherObjectives || []).filter(o => o.name).length
       ? (c.otherObjectives || []).filter(o => o.name).map(o => `  • ${o.name}: target ${money(num(o.target), 0)}, ${num(o.years)} years — ${o.note || ""}`)
@@ -1039,6 +1121,190 @@ const InvestedAssetRows = ({ rows, onChange }) => {
     </div>
   );
 };
+
+// One quoted plan inside a person's plan-quotation table. Mirrors the Current Coverage
+// editor (coverage breakdown, coverage term, premium-ends age) so the recommended side of
+// the Overview timeline can be built from the same shape as the in-force side.
+const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions }) => {
+  const setP = (patch) => onChange({ ...p, ...patch });
+  const setCov = (j, patch) => { const cs = [...(p.coverages || [])]; cs[j] = { ...cs[j], ...patch }; setP({ coverages: cs }); };
+  const covTotal = (p.coverages || []).reduce((s, c) => s + num(c.amount), 0);
+  // the headline sum assured is the largest single category, not the sum of them —
+  // Death $90k + Critical Illness $90k is $90k of cover, not $180k
+  const covPeak = Math.max(0, ...(p.coverages || []).map(c => num(c.amount)));
+  return (
+    <div className={"rounded-xl border-2 p-4 " + (p.include ? TIER_META[p.tier].cls : "border-slate-200 bg-slate-50 opacity-70")}>
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+        <label className="flex items-center gap-2 font-semibold text-slate-800">
+          <input type="checkbox" checked={p.include} onChange={e => setP({ include: e.target.checked })} className="w-4 h-4 accent-purple-700" title="Untick to keep the plan on file but leave it out of the report" />
+          <span className="text-xs bg-slate-200 rounded px-1.5 py-0.5">{p.key}</span> {p.label}
+        </label>
+        <div className="flex items-center gap-2">
+          <select value={p.tier} onChange={e => setP({ tier: e.target.value })} className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
+            <option value="recommended">Recommended (in budget)</option>
+            <option value="optional">Worth considering (outside budget)</option>
+            <option value="future">Future option</option>
+          </select>
+          <select value={p.insuredBy || "self"} onChange={e => setP({ insuredBy: e.target.value })} title="Move this plan to another person's table" className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
+            {insuredOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <button onClick={onRemove} className="text-red-500 text-sm px-1">✕</button>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-12 gap-3">
+        <div className="md:col-span-6"><Field label="Plan label (as shown in report)"><Input value={p.label} onChange={e => setP({ label: e.target.value })} /></Field></div>
+        {p.key === "ASCC" && (
+          <div className="md:col-span-3"><Field label="Coverage option">
+            <select value={p.cciOption || "65"} onChange={e => setP({ cciOption: e.target.value, endAge: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+              {ASCC_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Field></div>
+        )}
+        {p.key === "RS" && (<>
+          <div className="md:col-span-3"><Field label="Retirement age">
+            <select value={p.retirementAge || "60"} onChange={e => setP({ retirementAge: e.target.value, startAge: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+              {RETIREMENT_AGES.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </Field></div>
+          <div className="md:col-span-3"><Field label="Monthly retirement income" hint="Drives the coverage shown in the report"><NumInput value={p.monthlyIncome} onChange={e => setP({ monthlyIncome: e.target.value })} placeholder="500" /></Field></div>
+        </>)}
+      </div>
+
+      {p.key !== "RS" && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coverage breakdown{covTotal > 0 ? " — total " + money(covTotal) : ""}</span>
+            <button onClick={() => setP({ coverages: [...(p.coverages || []), { id: uid(), category: "", amount: "" }] })} className="text-xs text-purple-800 hover:underline">+ Add category</button>
+          </div>
+          {(p.coverages || []).length === 0 && <div className="text-xs text-slate-400 mb-2">No categories yet — add one to record what this plan pays out on.</div>}
+          <div className="space-y-2">
+            {(p.coverages || []).map((c, j) => (
+              <div key={c.id || j} className="grid grid-cols-12 gap-2">
+                <div className="col-span-7">
+                  <select value={c.category || ""} onChange={e => setCov(j, { category: e.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+                    <option value="">Select…</option>
+                    {PLAN_COVERAGE_CATEGORIES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-4"><NumInput value={c.amount} onChange={e => setCov(j, { amount: e.target.value })} placeholder="$" /></div>
+                <div className="col-span-1 flex items-center"><button onClick={() => setP({ coverages: (p.coverages || []).filter((_, k) => k !== j) })} className="text-red-500 text-sm">✕</button></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-12 gap-3 mt-3">
+        <div className="md:col-span-2"><Field label="Coverage from age" hint="Blank = current age"><NumInput value={p.startAge} onChange={e => setP({ startAge: e.target.value })} /></Field></div>
+        <div className="md:col-span-2"><Field label="Coverage to age"><NumInput value={p.endAge} onChange={e => setP({ endAge: e.target.value })} /></Field></div>
+        <div className="md:col-span-3"><Field label="Premium ends at age" hint="Premium payment period"><NumInput value={p.premiumEndsAge} onChange={e => setP({ premiumEndsAge: e.target.value })} /></Field></div>
+        <div className="md:col-span-2"><Field label="$/mo"><NumInput value={p.monthly} onChange={e => setP({ monthly: e.target.value })} /></Field></div>
+        <div className="md:col-span-2"><Field label="$/yr"><NumInput value={p.annual} onChange={e => setP({ annual: e.target.value })} /></Field></div>
+      </div>
+
+      {p.key === "GPP" && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-white/60 p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={!!p.stepsDown} onChange={e => setP({ stepsDown: e.target.checked })} className="w-4 h-4 accent-purple-700" />
+            Coverage is boosted before age 65, then steps down
+          </label>
+          {p.stepsDown && (
+            <div className="grid md:grid-cols-3 gap-3 mt-2">
+              <Field label="Boosted amount (before 65)" hint={"Steps down to " + money(covPeak) + " after age 65"}>
+                <NumInput value={p.boostedAmount} onChange={e => setP({ boostedAmount: e.target.value })} placeholder="180000" />
+              </Field>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3">
+        <Field label="Projected returns note" hint="Shown in the report's Projected returns column — blank lines start a new paragraph.">
+          <TextArea rows={4} value={p.returns} onChange={e => setP({ returns: e.target.value })} />
+        </Field>
+      </div>
+
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Images for this plan (appear in report after this plan's explanation)</span>
+          <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+              const reader = new FileReader();
+              reader.onload = ev => onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, dataUrl: ev.target.result, caption: "" }] });
+              reader.readAsDataURL(file);
+            });
+            e.target.value = "";
+          }} /></label>
+        </div>
+        {(p.planImages || []).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
+        {(p.planImages || []).length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {(p.planImages || []).map((img, j) => (
+              <div key={img.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+                <img src={img.dataUrl} alt={img.name} className="w-full h-20 object-contain bg-slate-50" />
+                <div className="p-1.5">
+                  <Input value={img.caption} onChange={e => { const imgs = [...(p.planImages || [])]; imgs[j] = { ...img, caption: e.target.value }; setP({ planImages: imgs }); }} placeholder="Caption (optional)" className="text-xs" />
+                  <button onClick={() => setP({ planImages: (p.planImages || []).filter((_, k) => k !== j) })} className="text-red-500 text-xs mt-1">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// One plan-quotation table per insured person, sub-grouped by planning category.
+// Shared by the full report and the annual review report so both read identically.
+const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
+  <>
+    {groups.map(g => (
+      <div key={g.id} style={{ breakInside: "avoid" }}>
+        <h3>{g.name}{g.relationship ? " (" + g.relationship + ")" : ""}</h3>
+        {["Risk Management", "Goal Planning", "Retirement Planning"]
+          .map(cat => ({ cat, items: g.items.filter(p => p.category === cat) }))
+          .filter(c => c.items.length)
+          .map(c => (
+            <table key={c.cat}>
+              <thead><tr><th colSpan={5} style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>{c.cat}</th></tr>
+                <tr><th>Plan</th><th>Coverage</th><th className="tnum">Monthly</th><th className="tnum">Annual</th><th>Projected returns</th></tr></thead>
+              <tbody>{c.items.map(p => {
+                const term = planTermText(p);
+                return (
+                  <tr key={p.id}>
+                    <td>
+                      <b>{p.label}</b>
+                      <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>
+                      {term && <div className="text-xs text-slate-500 mt-1">{term}</div>}
+                    </td>
+                    <td>{planCoverageRows(p).map((cv, k) => <div key={k}>{cv.category}: {cv.display}</div>)}</td>
+                    <td className="tnum">{money(num(p.monthly), 2)}</td>
+                    <td className="tnum">{money(num(p.annual), 2)}</td>
+                    <td className="text-xs">{(p.returns || "").split(/\n+|\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          ))}
+        {groups.length > 1 && (
+          <table><tbody><tr>
+            <td className="font-semibold">Subtotal — {g.name}</td>
+            <td className="tnum font-semibold">{money(g.monthly, 2)} / month · {money(g.annual, 2)} / year</td>
+          </tr></tbody></table>
+        )}
+      </div>
+    ))}
+    {groups.length > 0 && (
+      <table><tbody><tr>
+        <td className="font-bold">Total of plans shown</td>
+        <td className="tnum font-bold">{money(grandMonthly, 2)} / month · {money(grandAnnual, 2)} / year</td>
+      </tr></tbody></table>
+    )}
+  </>
+);
 
 const NoteAmountRows = ({ rows, onChange, notePlaceholder }) => (
   <div className="space-y-2">
@@ -1705,27 +1971,58 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     // recommended mode: layer current plans (muted) under the recommended products
     // (highlighted) so the advisor can see how the proposal stacks against what's
     // already in force, category row by category row
-    const recommended = (client.products || []).filter(p => p.include).map((p, i) => {
+    // Recommended plans are bucketed by their coverage breakdown exactly like in-force
+    // plans, so a proposal lands on the same row as the cover it is meant to top up.
+    const recommended = (client.products || []).filter(p => p.include).flatMap((p, i) => {
       const who = insuredById(p.insuredBy || "self");
       const baseAge = who.age != null ? who.age : clientAge;
-      const start = Math.max(0, Math.min(p.startAge != null ? num(p.startAge) : baseAge, TIMELINE_MAX_AGE));
-      let end = p.endAge != null ? num(p.endAge) : num(p.cciOption);
+      const start = Math.max(0, Math.min(num(p.startAge) > 0 ? num(p.startAge) : baseAge, TIMELINE_MAX_AGE));
+      let end = num(p.endAge) || num(p.cciOption);
       if (!end) end = (RECO_END_AGE[p.key] || (() => TIMELINE_MAX_AGE))(start);
       end = Math.min(Math.max(end, start), TIMELINE_MAX_AGE);
-      return {
-        id: "reco-" + p.key + (p.cciOption || "") + i,
+      const premEnd = num(p.premiumEndsAge);
+      // GPP-style boost: the bar carries the boosted sum until 65, then drops to the
+      // plan's own breakdown total
+      const baseTotal = Math.max(0, ...(p.coverages || []).map(c => num(c.amount)));
+      const boosted = p.stepsDown && num(p.boostedAmount) > baseTotal ? num(p.boostedAmount) : 0;
+      const hasStep = boosted > 0 && start < 65 && end > 65;
+      const covRows = planCoverageRows(p);
+      const common = {
         origin: "recommended",
-        label: p.label, category: p.category || "Others", start, end, insured: who, offset: offsetOf(who),
-        covShort: (p.coverage || "").split("(")[0].trim(),
-        stepAge: null, stepAmt: null, premStart: null, premEnd: null,
+        label: p.label, start, end, insured: who, offset: offsetOf(who),
+        stepAge: hasStep ? 65 : null, stepAmt: hasStep ? baseTotal : null,
+        premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
         details: [
           ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
           ["Tier", TIER_META[p.tier] ? TIER_META[p.tier].label : ""],
-          ["Coverage", p.coverage], ["Coverage ages", start + " – " + end + " (own age)"],
+          ...covRows.map(c => [c.category, c.display]),
+          ["Boosted until 65", boosted > 0 ? money(boosted) + " → " + money(baseTotal) + " after 65" : ""],
+          ["Coverage ages", start + " – " + end + " (own age)"],
+          ["Premium ends", premEnd > 0 ? "age " + premEnd : ""],
           ["Premium", num(p.monthly) > 0 ? money(num(p.monthly), 2) + "/mo · " + money(num(p.annual), 2) + "/yr" : ""],
           ["Projected returns", p.returns],
         ].filter(([, v]) => v),
       };
+      // an annuity has no coverage breakdown — it sits on the Retirement row on its own
+      if (p.key === "RS") {
+        return [{ ...common, id: "reco-" + p.id + "-RS", category: "Retirement", covShort: money(num(p.monthlyIncome)) + "/mo" }];
+      }
+      const byBucket = new Map();
+      (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
+        const bucket = CATEGORY_BUCKET[c.category] || "Others";
+        if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+        byBucket.get(bucket).push(c);
+      });
+      if (byBucket.size === 0) return [];
+      return [...byBucket.entries()].map(([bucket, covs]) => {
+        const peak = Math.max(...covs.map(c => num(c.amount)));
+        return {
+          ...common,
+          id: "reco-" + (p.id || i) + "-" + bucket,
+          category: bucket,
+          covShort: kfmt(boosted > 0 ? boosted : peak) + (p.key === "HI" ? "/day" : ""),
+        };
+      });
     });
     return [...buildPlanItems(), ...recommended];
   }, [mode, client.existingPlans, client.existingInvestments, client.products, clientAge, insuredList]);
@@ -1758,7 +2055,13 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           if (!byCat.has(it.category)) byCat.set(it.category, []);
           byCat.get(it.category).push(it);
         }
-        rows = [...byCat.entries()].map(([category, plans]) => ({ category, plans }));
+        // keep the same bucket order as the Current view so the two modes read alike
+        rows = [...byCat.entries()]
+          .map(([category, plans]) => ({ category, plans }))
+          .sort((a, b) => {
+            const ia = EXISTING_PLAN_CATEGORIES.indexOf(a.category), ib = EXISTING_PLAN_CATEGORIES.indexOf(b.category);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+          });
       }
       return { person, rows };
     }).filter(s => s.rows.length > 0);
@@ -2114,6 +2417,11 @@ export default function App() {
 
   const client = clients.find(c => c.id === activeId) || null;
   const d = useMemo(() => client ? compute(client) : null, [client]);
+  // everyone a plan can be quoted for — one plan-quotation table per entry in step 6
+  const quoteTargets = useMemo(() => client ? [
+    { id: "self", name: client.name || "Client", relationship: "" },
+    ...(client.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "" })),
+  ] : [], [client]);
 
   const update = (patch) => {
     setClients(prev => {
@@ -2495,7 +2803,6 @@ export default function App() {
     }
     return { main: <div>{mainEls}</div>, limitations: limitationsEl };
   };
-    const grouped = ["Risk Management", "Goal Planning", "Retirement Planning"].map(cat => ({ cat, items: d.selected.filter(p => p.category === cat) })).filter(g => g.items.length);
     return (
       <div className="bg-slate-200 min-h-screen">
         <style>{`
@@ -2586,7 +2893,7 @@ export default function App() {
                 ...(n.actionPlan ? ["Action Plan"] : []),
                 "4.1 Recommended Plans",
               ] },
-              ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", sub: d.selected.map((p, i) => (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label)) }] : []),
+              ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", sub: uniqueExplanations(d.selected).map((p, i) => (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label)) }] : []),
               { num: d.selected.length ? "6." : "5.", title: "Conclusion", sub: ["Client Acknowledgement"] },
             ];
             return (
@@ -2777,23 +3084,7 @@ export default function App() {
             <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
             <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
           </tbody></table>
-          {grouped.map(g => (
-            <div key={g.cat}>
-              <h3>{g.cat}</h3>
-              <table>
-                <thead><tr><th>Plan</th><th>Coverage</th><th className="tnum">Monthly</th><th className="tnum">Annual</th><th>Projected returns</th></tr></thead>
-                <tbody>{g.items.map(p => (
-                  <tr key={p.key}>
-                    <td><b>{p.label}</b><div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div></td>
-                    <td>{p.coverage}</td><td className="tnum">{money(num(p.monthly), 2)}</td><td className="tnum">{money(num(p.annual), 2)}</td><td className="text-xs">{(p.returns || "").split(/\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          ))}
-          {d.selected.length > 0 && (
-            <table><tbody><tr><td className="font-bold">Total of plans shown</td><td className="tnum font-bold">{money(d.premMonthly, 2)} / month · {money(d.premAnnual, 2)} / year</td></tr></tbody></table>
-          )}
+          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} />
           {d.net > 0 && (() => {
             const protGuide = d.net * 0.1, savGuide = d.net * 0.2;
             const protSel = d.selected.filter(p => p.category === "Risk Management").reduce((s, p) => s + num(p.monthly), 0);
@@ -2832,10 +3123,10 @@ export default function App() {
           <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
-            {d.selected.map((p, i) => {
+            {uniqueExplanations(d.selected).map((p, i) => {
               const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
               return (
-                <div key={p.key + i} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
+                <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {(p.planImages||[]).length > 0 && (
@@ -2970,7 +3261,6 @@ export default function App() {
       }
       return { main: <div>{mainEls}</div>, limitations: limitationsEl };
     };
-    const grouped = ["Risk Management", "Goal Planning", "Retirement Planning"].map(cat => ({ cat, items: d.selected.filter(p => p.category === cat) })).filter(g => g.items.length);
     // one block per insured person who has at least one existing plan
     const reviewPersons = [
       { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
@@ -3139,31 +3429,15 @@ export default function App() {
             <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
             <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
           </tbody></table>
-          {grouped.length === 0 && <p className="italic text-slate-400">No recommended plans selected yet — tick plans to include in the Recommended Plans step.</p>}
-          {grouped.map(g => (
-            <div key={g.cat}>
-              <h3>{g.cat}</h3>
-              <table>
-                <thead><tr><th>Plan</th><th>Coverage</th><th className="tnum">Monthly</th><th className="tnum">Annual</th><th>Projected returns</th></tr></thead>
-                <tbody>{g.items.map(p => (
-                  <tr key={p.key}>
-                    <td><b>{p.label}</b><div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div></td>
-                    <td>{p.coverage}</td><td className="tnum">{money(num(p.monthly), 2)}</td><td className="tnum">{money(num(p.annual), 2)}</td><td className="text-xs">{(p.returns || "").split(/\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          ))}
-          {d.selected.length > 0 && (
-            <table><tbody><tr><td className="font-bold">Total of plans shown</td><td className="tnum font-bold">{money(d.premMonthly, 2)} / month · {money(d.premAnnual, 2)} / year</td></tr></tbody></table>
-          )}
+          {d.insuredGroups.length === 0 && <p className="italic text-slate-400">No recommended plans yet — add them in the Recommended Plans step.</p>}
+          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} />
 
           {/* 7. Explanation of Recommendations */}
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>Explanation of Recommendations</h2>
-            {d.selected.map((p, i) => {
+            {uniqueExplanations(d.selected).map((p, i) => {
               const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
               return (
-                <div key={p.key + i} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
+                <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {(p.planImages || []).length > 0 && (
@@ -3517,76 +3791,40 @@ export default function App() {
             <Field label="Client's indicated monthly budget (appears in the report legend)">
               <Input value={client.budgetNote} onChange={e => update({ budgetNote: e.target.value })} />
             </Field>
-            <div className="space-y-3 mt-4">
-              {client.products.map((p, i) => (
-                <div key={p.key} className={"rounded-xl border-2 p-4 transition-shadow " + (p.include ? TIER_META[p.tier].cls + " ring-2 ring-purple-600 shadow-md" : "border-slate-200 bg-slate-50 opacity-70")}>
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <label className="flex items-center gap-2 font-semibold text-slate-800">
-                      <input type="checkbox" checked={p.include} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, include: e.target.checked }; update({ products: ps }); }} className="w-4 h-4 accent-purple-700" />
-                      <span className="text-xs bg-slate-200 rounded px-1.5 py-0.5">{p.key}</span> {p.label}
-                    </label>
-                    <select value={p.tier} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, tier: e.target.value }; update({ products: ps }); }} className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
-                      <option value="recommended">Recommended (in budget)</option>
-                      <option value="optional">Worth considering (outside budget)</option>
-                      <option value="future">Future option</option>
-                    </select>
-                  </div>
-                  {p.include && (
-                    <>
-                    <div className="grid md:grid-cols-12 gap-3 mt-3">
-                      <div className="md:col-span-3"><Field label="Plan label (as shown in report)"><Input value={p.label} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, label: e.target.value }; update({ products: ps }); }} /></Field></div>
-                      <div className="md:col-span-1"><Field label="To be insured">
-                        <select value={p.insuredBy||"self"} onChange={e => { const ps=[...client.products]; ps[i]={...p,insuredBy:e.target.value}; update({products:ps}); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
-                          <option value="self">Self</option>
-                          {(client.dependents||[]).map(d => <option key={d.id} value={d.id}>{d.name||"(unnamed)"}{d.relationship?" ("+d.relationship+")":""}</option>)}
-                        </select>
-                      </Field></div>
-                      <div className="md:col-span-2"><Field label="Coverage"><Input value={p.coverage} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, coverage: e.target.value }; update({ products: ps }); }} /></Field></div>
-                      <div className="md:col-span-1"><Field label="$/mo"><NumInput value={p.monthly} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, monthly: e.target.value }; update({ products: ps }); }} /></Field></div>
-                      <div className="md:col-span-1"><Field label="$/yr"><NumInput value={p.annual} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, annual: e.target.value }; update({ products: ps }); }} /></Field></div>
-                      <div className="md:col-span-4"><Field label="Projected returns note" hint={p.key==="ASCC" && p.cciOption !== "100" ? "Tip: returns note only applies to the Age 100 (whole-of-life) option" : ""}>
-                        <Input value={p.returns} onChange={e => { const ps = [...client.products]; ps[i] = { ...p, returns: e.target.value }; update({ products: ps }); }} placeholder={p.key==="ASCC" && p.cciOption !== "100" ? "No returns for term options" : ""} disabled={p.key==="ASCC" && p.cciOption !== "100"} />
-                      </Field></div>
-                    </div>
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Images for this plan (appear in report after this plan's explanation)</span>
-                        <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                          const files = Array.from(e.target.files);
-                          files.forEach(file => {
-                            const reader = new FileReader();
-                            reader.onload = ev => {
-                              const ps = [...client.products];
-                              ps[i] = { ...ps[i], planImages: [...(ps[i].planImages||[]), { id: uid(), name: file.name, dataUrl: ev.target.result, caption: "" }] };
-                              update({ products: ps });
-                            };
-                            reader.readAsDataURL(file);
-                          });
-                          e.target.value = "";
-                        }} /></label>
-                      </div>
-                      {(p.planImages||[]).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
-                      {(p.planImages||[]).length > 0 && (
-                        <div className="grid grid-cols-3 gap-2">
-                          {(p.planImages||[]).map((img, j) => (
-                            <div key={img.id} className="border border-slate-200 rounded-lg overflow-hidden">
-                              <img src={img.dataUrl} alt={img.name} className="w-full h-20 object-contain bg-slate-50" />
-                              <div className="p-1.5">
-                                <Input value={img.caption} onChange={e => { const ps=[...client.products]; const imgs=[...(ps[i].planImages||[])]; imgs[j]={...img,caption:e.target.value}; ps[i]={...ps[i],planImages:imgs}; update({products:ps}); }} placeholder="Caption (optional)" className="text-xs" />
-                                <button onClick={() => { const ps=[...client.products]; ps[i]={...ps[i],planImages:(ps[i].planImages||[]).filter((_,k)=>k!==j)}; update({products:ps}); }} className="text-red-500 text-xs mt-1">Remove</button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-400 mt-3">Each selected plan automatically brings its full explanation page (from your product library) into the report.</p>
+            <p className="text-xs text-slate-500 mt-3">Plans are quoted per insured person. Each person below becomes its own quotation table in the report, and its own set of bars on the Overview timeline's Recommended view.</p>
           </SectionCard>
+          {quoteTargets.map(person => {
+            const mine = client.products.filter(p => (p.insuredBy || "self") === person.id);
+            const inc = mine.filter(p => p.include);
+            return (
+              <SectionCard
+                key={person.id}
+                title={person.name + (person.relationship ? " (" + person.relationship + ")" : "")}
+                right={<div className="flex items-center gap-3">
+                  {inc.length > 0 && <span className="text-sm text-slate-500">{money(inc.reduce((s, p) => s + num(p.monthly), 0), 2)}/mo · {money(inc.reduce((s, p) => s + num(p.annual), 0), 2)}/yr</span>}
+                  <select value="" onChange={e => { if (!e.target.value) return; update({ products: [...client.products, newProduct(e.target.value, person.id)] }); }} className="text-sm rounded-lg border border-purple-300 text-purple-800 font-semibold px-2 py-1 bg-white">
+                    <option value="">+ Add plan…</option>
+                    {PRODUCT_CATALOGUE.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                </div>}
+              >
+                {mine.length === 0
+                  ? <div className="text-sm text-slate-400">No plans quoted for {person.name} yet — add one above.</div>
+                  : <div className="space-y-3">
+                      {mine.map(p => (
+                        <RecommendedPlanCard
+                          key={p.id}
+                          p={p}
+                          insuredOptions={quoteTargets}
+                          onChange={next => update({ products: client.products.map(x => x.id === p.id ? next : x) })}
+                          onRemove={() => update({ products: client.products.filter(x => x.id !== p.id) })}
+                        />
+                      ))}
+                    </div>}
+              </SectionCard>
+            );
+          })}
+          <p className="text-xs text-slate-400 mt-3">Each selected plan automatically brings its full explanation page (from your product library) into the report.</p>
         </>)}
 
         {step === 6 && (<>

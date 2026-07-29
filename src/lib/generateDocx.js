@@ -342,22 +342,31 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     [{ text: d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target", bold: true }, { text: money(Math.max(0, d.ef3 - d.cash)), bold: true, color: d.cash >= d.ef3 ? PURPLE : RED, align: AlignmentType.RIGHT }],
   ], [5400, 3600]));
 
+  // one quotation table per insured person, sub-grouped by planning category
   const cats = ["Risk Management", "Goal Planning", "Retirement Planning"];
-  cats.forEach(cat => {
-    const items = d.selected.filter(p => p.category === cat);
-    if (!items.length) return;
-    children.push(H2(cat));
-    children.push(buildTable(
-      ["Plan", "Coverage", "Monthly", "Annual", "Projected returns"],
-      items.map(p => [
-        { text: p.label + (tierMeta?.[p.tier] ? "  [" + tierMeta[p.tier].label + "]" : ""), bold: true },
-        p.coverage || "",
-        { text: money(num(p.monthly), 2), align: AlignmentType.RIGHT },
-        { text: money(num(p.annual), 2), align: AlignmentType.RIGHT },
-        p.returns || "",
-      ]),
-      [2800, 1600, 1300, 1300, 2000],
-    ));
+  const groups = d.insuredGroups || [];
+  groups.forEach(g => {
+    children.push(H2(g.name + (g.relationship ? " (" + g.relationship + ")" : "")));
+    cats.forEach(cat => {
+      const items = g.items.filter(p => p.category === cat);
+      if (!items.length) return;
+      children.push(buildTable(
+        [cat, "Coverage", "Monthly", "Annual", "Projected returns"],
+        items.map(p => [
+          { text: p.label + (tierMeta?.[p.tier] ? "  [" + tierMeta[p.tier].label + "]" : "") + (p.termText ? "\n" + p.termText : ""), bold: true },
+          p.coverageText || "",
+          { text: money(num(p.monthly), 2), align: AlignmentType.RIGHT },
+          { text: money(num(p.annual), 2), align: AlignmentType.RIGHT },
+          p.returns || "",
+        ]),
+        [2800, 1600, 1300, 1300, 2000],
+      ));
+    });
+    if (groups.length > 1) {
+      children.push(buildTable([], [
+        [{ text: "Subtotal — " + g.name, bold: true }, { text: money(g.monthly, 2) + " / month · " + money(g.annual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
+      ], [5400, 3600]));
+    }
   });
   if (d.selected.length) {
     children.push(buildTable([], [
@@ -369,7 +378,9 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
   if (d.selected.length) {
     children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(H1("5. Explanation of Plan Options"));
-    d.selected.forEach((p, i) => {
+    // one explanation per product, even when it is quoted for several people
+    const seen = new Set();
+    d.selected.filter(p => !seen.has(p.key) && seen.add(p.key)).forEach((p, i) => {
       const meta = planLibrary?.[p.key];
       children.push(H2((i + 1) + ". " + (meta ? meta.name : p.label)));
       if (meta) children.push(...renderPlanBody(meta.body));
