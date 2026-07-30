@@ -1462,6 +1462,9 @@ const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Per
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay"];
 const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+// SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
+// serviced salary — much smaller than the lump sum, so the bar narrows past this age.
+const SPK_PAYOUT_AGE = 60;
 // intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
 // investment tagged the same way merges into that category's row on the Overview timeline
 const INVESTMENT_CATEGORIES = ["Investment Portfolio", "Retirement", "Child Savings", "Education", "Emergency Fund", "Property", "Others"];
@@ -2116,6 +2119,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
           covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
           stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
+          lumpSumAge: r.type === "SPK" && end > SPK_PAYOUT_AGE ? SPK_PAYOUT_AGE : null,
           premStart: payUntil > start ? start : null, premEnd: payUntil > start ? payUntil : null,
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
@@ -2291,6 +2295,20 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       {txt.length > Math.floor(g.w / 5.3) ? txt.slice(0, Math.floor(g.w / 5.3) - 1) + "…" : txt}
     </text>
   );
+  // White-on-fill is unreadable over a hatch or the light end of an accumulation gradient,
+  // so savings bars label themselves with dark glyphs carrying a white halo instead.
+  const haloLabel = (txt, g, y, dy) => {
+    if (g.w <= 46) return null;
+    const max = Math.floor(g.w / 5.1);
+    const t = txt.length > max ? txt.slice(0, max - 1) + "…" : txt;
+    const ty = y + (dy == null ? LANE_H / 2 + 3 : dy);
+    return (
+      <g pointerEvents="none">
+        <text x={g.x0 + 5} y={ty} fontSize="8.5" fontWeight="700" fill="none" stroke="#fff" strokeWidth="3" strokeLinejoin="round">{t}</text>
+        <text x={g.x0 + 5} y={ty} fontSize="8.5" fontWeight="700" fill="#3a1955">{t}</text>
+      </g>
+    );
+  };
   // premium/contribution commitment: a small two-ended black bracket sitting in a thin
   // strip along the top of the bar (not through its middle) so it never covers the label.
   // A thin white halo behind the black stroke keeps it crisp against the darker fills.
@@ -2359,8 +2377,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
               fill="#f59e0b" stroke="#fff" strokeWidth="1" />
           </g>
         )}
-        {gPrem && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gPrem, y)}
-        {gPay && gPay.w > 46 && <text x={gPay.x0 + 5} y={midY + 3} fontSize="8" fill="#fff" fontWeight="600" pointerEvents="none">payout</text>}
+        {gPrem && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gPrem, y)}
+        {gPay && gPay.w > 46 && haloLabel("payout", gPay, y)}
       </g>
     );
   };
@@ -2448,6 +2466,25 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                         if (p.payoutStart != null && p.payoutStart > p.start && !dead) {
                           return annuityShape(p, y, opacity, common);
                         }
+                        // SPK: accumulate to 60, lump sum at 60, then a slimmer fixed annuity
+                        if (p.lumpSumAge != null && !dead) {
+                          const cutC = p.lumpSumAge + p.offset;
+                          const gA = clipX(cs, cutC), gB = clipX(cutC, ce);
+                          const midY = y + LANE_H / 2;
+                          return (
+                            <g key={p.id}>
+                              {gA && <rect x={gA.x0} y={y} width={gA.w} height={LANE_H} rx="4" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" {...common} />}
+                              {gB && <rect x={gB.x0} y={midY - LANE_H * 0.22} width={gB.w} height={LANE_H * 0.44} rx="2" fill={fill} opacity={opacity * 0.9} stroke={stroke} strokeWidth="1.5" {...common} />}
+                              {clipX(cutC, cutC) && (
+                                <rect x={x(cutC) - 4.5} y={midY - 4.5} width="9" height="9" transform={`rotate(45 ${x(cutC)} ${midY})`}
+                                  fill="#f59e0b" stroke="#fff" strokeWidth="1" pointerEvents="none" />
+                              )}
+                              {gA && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gA, y)}
+                              {gB && gB.w > 60 && haloLabel("annuity", gB, y)}
+                              {premBracket(p, y)}
+                            </g>
+                          );
+                        }
                         if (p.stepAge != null) {
                           const stepC = p.stepAge + p.offset;
                           const g1 = clipX(cs, stepC), g2 = clipX(stepC, ce);
@@ -2466,7 +2503,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                         return (
                           <g key={p.id}>
                             <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
-                            {barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
+                            {(p.savings && !dead ? haloLabel : barLabel)(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
                           </g>
                         );
@@ -2540,7 +2577,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           </span>
           <span className="inline-flex items-center gap-1">
             <svg width="30" height="12"><rect x="0" y="4" width="9" height="4" rx="1" fill="#51037c" opacity="0.5" /><line x1="9" y1="6" x2="14" y2="6" stroke="#51037c" strokeWidth="1.5" strokeDasharray="2 2" /><polygon points="14,4.5 24,1 24,11 14,7.5" fill="url(#lgsv)" /><rect x="24" y="3" width="6" height="6" transform="rotate(45 27 6)" fill="#f59e0b" /></svg>
-            annuity: premiums → payout → terminal dividend
+            annuity: premiums → payout → lump sum / terminal dividend
           </span>
           <span className="inline-flex items-center gap-1">
             <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="2" fill="#94a3b8" opacity="0.38" stroke="#94a3b8" strokeDasharray="4 3" /></svg>
