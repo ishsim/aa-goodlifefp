@@ -56,9 +56,11 @@ const fmtDate = (s) => { if (!s) return ""; const d = new Date(s); return isNaN(
 // stay as a fallback so plans captured before dates existed still render.
 const policyStartAge = (row, dob) => { const a = ageAtDate(dob, row.policyDate); return a !== "" ? a : num(row.startAge ?? row.fromAge); };
 const policyPremiumEndAge = (row, dob) => { const a = ageAtDate(dob, row.policyExpiry); return a !== "" ? a : num(row.premiumEndsAge ?? row.payUntilAge); };
-const initials = (name) => {
+// Privacy mode keeps the shape of the name — "Charma Maidin" reads as "C***** M*****" —
+// which is far easier to recognise at a glance than bare initials while still masking it.
+const maskedName = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
-  return parts.length ? parts.map(w => w[0].toUpperCase()).join(".") + "." : "";
+  return parts.map(w => w[0].toUpperCase() + "*".repeat(Math.max(w.length - 1, 0))).join(" ");
 };
 const todayLong = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
@@ -2691,7 +2693,7 @@ export default function App() {
     const next = !privacy; setPrivacy(next);
     try { localStorage.setItem(PRIV_KEY, next ? "1" : "0"); } catch(_) {}
   };
-  const displayName = (name, fallback) => (privacy ? (initials(name) || fallback) : (name || fallback));
+  const displayName = (name, fallback) => (privacy ? (maskedName(name) || fallback) : (name || fallback));
 
   const client = clients.find(c => c.id === activeId) || null;
   const d = useMemo(() => client ? compute(client) : null, [client]);
@@ -2918,8 +2920,8 @@ export default function App() {
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-serif text-xl text-purple-900">Clients</h2>
           <div className="flex items-center gap-2">
-            <button onClick={togglePrivacy} title={privacy ? "Showing initials only — tap to show full names" : "Showing full names — tap to show initials only"} className={"text-sm px-3 py-2 rounded-lg border " + (privacy ? "bg-purple-900 text-white border-purple-900" : "border-slate-300 text-slate-600 hover:bg-slate-50 bg-white")}>
-              {privacy ? "🔒 Initials only" : "👁 Full names"}
+            <button onClick={togglePrivacy} title={privacy ? "Names are masked — tap to show them in full" : "Showing full names — tap to mask them"} className={"text-sm px-3 py-2 rounded-lg border " + (privacy ? "bg-purple-900 text-white border-purple-900" : "border-slate-300 text-slate-600 hover:bg-slate-50 bg-white")}>
+              {privacy ? "🔒 Names masked" : "👁 Full names"}
             </button>
             <button onClick={exportAll} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬇ Export all</button>
             <button onClick={() => fileInputRef.current?.click()} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 bg-white">⬆ Import clients</button>
@@ -2948,7 +2950,7 @@ export default function App() {
             No clients yet. Start a new client to begin the fact-find.
           </div>
         )}
-        {/* Match against the real name/occupation even while privacy mode shows only initials */}
+        {/* Match against the real name/occupation even while privacy mode masks the display */}
         {(() => {
           const q = clientQuery.trim().toLowerCase();
           const visible = q
