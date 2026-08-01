@@ -1858,21 +1858,17 @@ function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
     const isOverridden = raw != null && raw !== "";
     return { ...g, auto, value: isOverridden ? num(raw) : auto, isOverridden, raw };
   });
-  const total = values.reduce((s, v) => s + v.value, 0);
-  const W = 460, H = 440, CENTER = { x: 230, y: 214 }, R_CENTER = 58, R_CORNER = 48;
+  // Deliberately no combined figure: Health, Life and Accident cover answer different
+  // questions and pay out on different events, so adding them into one "total" would
+  // overstate what the client is actually protected for.
+  const W = 460, H = 440, CENTER = { x: 230, y: 214 }, R_CORNER = 48;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: "block", margin: "0 auto", fontFamily: "inherit" }}>
       <polygon points={values.map(v => v.corner.x + "," + v.corner.y).join(" ")} fill="#f5f0fa" stroke="#d8b4fe" strokeWidth="2" />
-      {values.map(v => <line key={v.key} x1={CENTER.x} y1={CENTER.y} x2={v.corner.x} y2={v.corner.y} stroke="#d8b4fe" strokeWidth="2" />)}
-      <circle cx={CENTER.x} cy={CENTER.y} r={R_CENTER} fill={BRAND.primary} />
-      <text x={CENTER.x} y={CENTER.y - 12} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">TOTAL</text>
-      <text x={CENTER.x} y={CENTER.y + 1} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">INSURANCE</text>
-      <text x={CENTER.x} y={CENTER.y + 14} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#fff" letterSpacing="0.03em">NEEDS</text>
-      <text x={CENTER.x} y={CENTER.y + 32} textAnchor="middle" fontSize="10" fill="#e9d5ff">{money(total)}</text>
       {values.map(v => {
-        // corners below the hub put their label under the whole node instead of above,
-        // so it never collides with the center circle
+        // the lower corner carries its label beneath the node so it stays clear of the
+        // triangle's edges; the upper two sit above
         const below = v.corner.y > CENTER.y;
         const labelY = below ? v.corner.y + R_CORNER + 46 : v.corner.y - R_CORNER - 10;
         return (
