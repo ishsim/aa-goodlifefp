@@ -413,6 +413,33 @@ async function deleteClientRow(id) {
   if (error) { console.error("delete failed", error); throw error; }
 }
 
+// ---------- plan image storage ----------
+// Uploaded diagrams/illustrations for a recommended plan used to be embedded as base64
+// inside the client's JSON record, so editing any field re-wrote every image byte along
+// with it. They now live in the "plan-images" storage bucket instead — the client record
+// only keeps a {id, name, path, caption} pointer, and images are fetched on demand via a
+// short-lived signed URL (the bucket is private, scoped per advisor by folder).
+const PLAN_IMAGES_BUCKET = "plan-images";
+async function uploadPlanImage(file, clientId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${user.id}/${clientId}/${uid()}-${safeName}`;
+  const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file);
+  if (error) throw error;
+  return path;
+}
+async function deletePlanImage(path) {
+  if (!path) return;
+  try { await supabase.storage.from(PLAN_IMAGES_BUCKET).remove([path]); }
+  catch (e) { console.error("plan image delete failed", e); } // best-effort — never block removing it from the plan
+}
+async function signedPlanImageUrl(path) {
+  const { data, error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 // ---------- derived figures ----------
 // future value of a current amount + fixed monthly contribution, at r% p.a. over n years
 function projectFV(o, fallbackYears) {
@@ -1213,7 +1240,7 @@ const InvestedAssetRows = ({ rows, onChange }) => {
 // One quoted plan inside a person's plan-quotation table. Mirrors the Current Coverage
 // editor (coverage breakdown, coverage term, premium-ends age) so the recommended side of
 // the Overview timeline can be built from the same shape as the in-force side.
-const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions }) => {
+const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }) => {
   const setP = (patch) => onChange({ ...p, ...patch });
   const setCov = (j, patch) => { const cs = [...(p.coverages || [])]; cs[j] = { ...cs[j], ...patch }; setP({ coverages: cs }); };
   const covTotal = (p.coverages || []).reduce((s, c) => s + num(c.amount), 0);
@@ -1316,14 +1343,17 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions }) => {
       <div className="mt-3 border-t border-slate-100 pt-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Images for this plan (appear in report after this plan's explanation)</span>
-          <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+          <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
             const files = Array.from(e.target.files);
-            files.forEach(file => {
-              const reader = new FileReader();
-              reader.onload = ev => onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, dataUrl: ev.target.result, caption: "" }] });
-              reader.readAsDataURL(file);
-            });
             e.target.value = "";
+            for (const file of files) {
+              try {
+                const path = await uploadPlanImage(file, clientId);
+                onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, path, caption: "" }] });
+              } catch (err) {
+                toast.error("Image upload failed: " + (err?.message || err));
+              }
+            }
           }} /></label>
         </div>
         {(p.planImages || []).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
@@ -1331,10 +1361,10 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions }) => {
           <div className="grid grid-cols-3 gap-2">
             {(p.planImages || []).map((img, j) => (
               <div key={img.id} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-                <img src={img.dataUrl} alt={img.name} className="w-full h-20 object-contain bg-slate-50" />
+                <PlanImage img={img} alt={img.name} className="w-full h-20 object-contain bg-slate-50" />
                 <div className="p-1.5">
                   <Input value={img.caption} onChange={e => { const imgs = [...(p.planImages || [])]; imgs[j] = { ...img, caption: e.target.value }; setP({ planImages: imgs }); }} placeholder="Caption (optional)" className="text-xs" />
-                  <button onClick={() => setP({ planImages: (p.planImages || []).filter((_, k) => k !== j) })} className="text-red-500 text-xs mt-1">Remove</button>
+                  <button onClick={() => { deletePlanImage(img.path); setP({ planImages: (p.planImages || []).filter((_, k) => k !== j) }); }} className="text-red-500 text-xs mt-1">Remove</button>
                 </div>
               </div>
             ))}
@@ -1815,6 +1845,20 @@ function CurrentCoverageSection({ client, update }) {
     </>
   );
 }
+
+// Renders a plan image from either shape: legacy embedded base64 (img.dataUrl, shown
+// immediately) or a storage path (img.path, resolved to a short-lived signed URL first).
+const PlanImage = ({ img, ...imgProps }) => {
+  const [url, setUrl] = useState(img.dataUrl || null);
+  useEffect(() => {
+    if (img.dataUrl || !img.path) return;
+    let cancelled = false;
+    signedPlanImageUrl(img.path).then(u => { if (!cancelled) setUrl(u); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [img.dataUrl, img.path]);
+  if (!url) return <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 bg-slate-50">Loading…</div>;
+  return <img src={url} {...imgProps} />;
+};
 
 const Stat = ({ label, value, accent, gold }) => (
   <div className={"rounded-lg px-4 py-3 " + (accent ? "bg-purple-900 text-white" : gold ? "bg-amber-100 border border-amber-400" : "bg-slate-50 border border-slate-200")}>
@@ -3432,7 +3476,7 @@ export default function App() {
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
                         <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16, textAlign: "center" }}>
-                          <img src={img.dataUrl} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
+                          <PlanImage img={img} alt={img.caption||img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
                           {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
                         </div>
                       ))}
@@ -3744,7 +3788,7 @@ export default function App() {
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
                         <div key={img.id} style={{ breakInside: "avoid", marginBottom: 16, textAlign: "center" }}>
-                          <img src={img.dataUrl} alt={img.caption || img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
+                          <PlanImage img={img} alt={img.caption || img.name} style={{ maxWidth: "100%", border: "1px solid #e2e8f0", borderRadius: 6, display: "inline-block" }} />
                           {img.caption && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, textAlign: "center", fontStyle: "italic" }}>{img.caption}</div>}
                         </div>
                       ))}
@@ -4124,6 +4168,7 @@ export default function App() {
                         <RecommendedPlanCard
                           key={p.id}
                           p={p}
+                          clientId={client.id}
                           insuredOptions={quoteTargets}
                           onChange={next => update({ products: client.products.map(x => x.id === p.id ? next : x) })}
                           onRemove={() => update({ products: client.products.filter(x => x.id !== p.id) })}
