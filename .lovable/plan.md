@@ -1,45 +1,28 @@
-# Plan: Persist clients in Supabase
+# Fix: login fails with "Failed to fetch"
 
-## 1. Enable Lovable Cloud
-Activate Lovable Cloud (Supabase) on the project. No auth required — single shared tool, all clients visible to whoever has the link.
+## What's actually wrong
 
-## 2. Database
-Create one migration with a `clients` table:
+This is not an app-code bug. Your login code is fine — the backend itself is not answering.
 
-- `id text primary key`
-- `data jsonb not null`
-- `updated_at timestamptz not null default now()`
+Verified just now from outside the browser:
 
-Grants + RLS (single-user public tool, no login):
-- `GRANT SELECT, INSERT, UPDATE, DELETE ON public.clients TO anon, authenticated;`
-- `GRANT ALL ON public.clients TO service_role;`
-- Enable RLS, add a permissive policy `USING (true) WITH CHECK (true)` for `anon, authenticated` (mirrors the existing localStorage behavior — anyone with the link reads/writes).
+- Auth sign-in endpoint: times out (gateway reports the backend origin never completed the request)
+- Database REST endpoint: same timeout
+- Backend metrics: request timed out entirely
 
-## 3. Storage layer in `src/App.jsx`
-Replace the three localStorage helpers with async Supabase calls using the browser client (`@/integrations/supabase/client`):
+The status check reports the backend as "up", but every real request to it times out. That mismatch — reported healthy, actually unreachable — is what makes the browser show `TypeError: Failed to fetch` on the sign-in and token-refresh calls. So yes: the "Cloud instance needs attention" notice and your login failure are the same problem.
 
-- `loadClients()` → `select('*').order('updated_at', { ascending: false })`, return `rows.map(r => migrate(r.data))`.
-- `saveClient(c)` → `upsert({ id: c.id, data: c, updated_at: new Date().toISOString() })` (one row at a time — simpler and avoids rewriting unrelated rows).
-- `removeClient(id)` → `delete().eq('id', id)`.
+## Plan
 
-Refactor callers:
-- Initial `useEffect` becomes `await loadClients()` then `setClients(...)`; `setLoaded(true)` runs in `finally`.
-- `update(patch)` computes `next` synchronously, calls `setClients`, and fires `saveClient(updated)` for the single touched client.
-- `newClient()` inserts via `saveClient(c)` then prepends locally.
-- `removeClient(id)` awaits delete, then updates local state.
-- The "Save" button (`persist`) re-upserts the active client only and toggles `saveState`.
+1. Restart the backend instance (requires your approval when I run it). This is the standard recovery for an instance that reports healthy but stops completing requests.
+2. Poll the backend status until it reports healthy again, then re-test the auth and database endpoints directly to confirm they return real responses instead of timeouts.
+3. Have you retry sign-in in the preview and confirm it works.
+4. If the endpoints still time out after the restart, report that back rather than patching around it — at that point it needs platform support, not a code change.
 
-The `PRIV_KEY` privacy toggle stays in localStorage (UI preference, not data).
+## What I will not change
 
-## 4. Loading UI
-While `loaded === false`, render a centered spinner (`Loader2` from `lucide-react`, already available) instead of the client list / editor. Surface Supabase errors via the existing `sonner` toast.
+No changes to `src/routes/auth.tsx`, the backend client, auth middleware, or any feature code. Nothing in the app needs editing for this, and edits would only obscure the real cause.
 
-## 5. Out of scope
-- No auth, no per-user filtering.
-- No realtime sync between tabs (can be added later if needed).
-- Report generation, narrative, docx export are untouched.
+## Note on the repeated errors in your logs
 
-## Technical notes
-- Use `import { supabase } from "@/integrations/supabase/client"` directly from the React component — fine for this no-auth public tool; avoids server-fn boilerplate.
-- Run the existing `migrate()` transform on each loaded row so older shapes still upgrade.
-- Use `c.updated` (ms epoch already on the client object) to also set `updated_at` for accurate ordering.
+The console shows a token-refresh call retrying every 20 seconds and failing each time. That's the client trying to renew an expired session against the unreachable backend — it will stop on its own once the backend responds again.
