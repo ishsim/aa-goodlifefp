@@ -2699,11 +2699,30 @@ export default function App() {
     ...(client.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "" })),
   ] : [], [client]);
 
+  // Autosave used to fire a full-record write on every keystroke. Batching rapid edits
+  // and writing once after a short pause cuts that down drastically — especially for
+  // clients carrying uploaded plan images, where every write re-sends those bytes too.
+  const saveTimerRef = useRef(null);
+  const pendingSaveRef = useRef(null);
+  const flushPendingSave = () => {
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    const pending = pendingSaveRef.current;
+    if (pending) {
+      pendingSaveRef.current = null;
+      saveClient(pending).catch(e => toast.error("Save failed: " + (e?.message || e)));
+    }
+  };
+  useEffect(() => () => flushPendingSave(), []); // flush on unmount so a last edit is never dropped
+
   const update = (patch) => {
     setClients(prev => {
       const next = prev.map(c => c.id === activeId ? { ...c, ...patch, updated: Date.now() } : c);
       const updated = next.find(c => c.id === activeId);
-      if (updated) saveClient(updated).catch(e => toast.error("Save failed: " + (e?.message || e)));
+      if (updated) {
+        pendingSaveRef.current = updated;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(flushPendingSave, 1000);
+      }
       return next;
     });
   };
@@ -2711,6 +2730,10 @@ export default function App() {
 
   const persist = async () => {
     if (!client) return;
+    // an explicit save always writes the freshest client state itself, so just drop
+    // the pending debounced save rather than firing it and then saving again right after
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    pendingSaveRef.current = null;
     setSaveState("saving");
     const ok = await saveClient(client);
     setSaveState(ok ? "saved" : "error");
