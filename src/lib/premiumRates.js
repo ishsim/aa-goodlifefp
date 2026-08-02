@@ -376,6 +376,12 @@ const MSCC_RATES = {
   ],
 };
 
+// Products with no rate table of their own but which still carry optional benefits the
+// advisor selects — the choice drives which benefit tables appear in the report.
+export const PLAN_RIDERS = {
+  STP: [{ key: "ci", label: "Critical Illness supplementary benefit" }],
+};
+
 // Which rating inputs each product actually needs — drives what the editor asks for.
 export const RATED_PRODUCTS = {
   PA:  { tiers: 4, needs: ["age", "occClass"], riders: [

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
-import { quotePremium, RATED_PRODUCTS, benefitsFor } from "@/lib/premiumRates";
+import { quotePremium, RATED_PRODUCTS, PLAN_RIDERS, benefitsFor } from "@/lib/premiumRates";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2, RefreshCw } from "lucide-react";
@@ -78,7 +78,87 @@ const EDU_SECTIONS = [
 ];
 
 const PLAN_LIBRARY = {
-  GPP: { name: "Whole Life Critical Illness — Guaranteed Protect Plus", body: "Guaranteed Protect Plus is a limited-premium whole life policy providing protection against death up to age 100 and total & permanent disability up to age 70, with premium payment terms of 15 or 20 years (this proposal uses 20 years). It is a participating policy, allowing you to share in the performance of the participating fund through non-guaranteed bonuses.\n\n• Death Benefit — pays the Insured Amount plus bonuses, less amounts owing.\n• TPD Benefit — lump sum of the Insured Amount plus bonuses before age 70.\n• Minimum Death/Critical Illness Benefit — boosts coverage to 2× the insured amount up to age 65.\n• Maturity Benefit — lump sum of Insured Amount plus bonuses at age 100.\n• Bonuses — Reversionary Bonus and Terminal Bonus.\n• Option to Purchase Additional Insurance — buy new coverage without evidence of insurability on key life events (18th birthday, marriage, birth/adoption of a child, death of spouse).\n• Early Critical Protector Life (ECPL) — covers 150 medical conditions across severity stages (42 Early + 35 Intermediate + 73 Major), plus a Special Conditions benefit covering 15 conditions at 20% of the ECPL insured amount (max 5 claims).\n\nA win-win policy offering both protection and returns: a lump sum is available when there is a need to claim, easing financial burden if the unforeseen occurs, and a guaranteed surrender amount plus cash bonuses is available as a savings return (breakeven around year 25–30).\n\nPlan Limitations:\n∴ The 2× boosted coverage ends at the 65th birthday.\n∴ Once a critical illness claim is made, the plan terminates unless total insured amount (including booster) exceeds $250,000.\n∴ 90-day waiting period applies to most critical illnesses." },
+  GPP: { name: "Whole Life Critical Illness — Guaranteed Protect Plus", body: "Guaranteed Protect Plus is a limited-premium whole life policy providing protection against death up to age 100 and total & permanent disability up to age 70, with premium payment terms of 15 or 20 years (this proposal uses 20 years). It is a participating policy, allowing you to share in the performance of the participating fund through non-guaranteed bonuses.\n\n• Death Benefit — pays the Insured Amount plus bonuses, less amounts owing.\n• TPD Benefit — lump sum of the Insured Amount plus bonuses before age 70.\n• Minimum Death/Critical Illness Benefit — boosts coverage to 2× the insured amount up to age 65.\n• Maturity Benefit — lump sum of Insured Amount plus bonuses at age 100.\n• Bonuses — Reversionary Bonus and Terminal Bonus.\n• Option to Purchase Additional Insurance — buy new coverage without evidence of insurability on key life events (18th birthday, marriage, birth/adoption of a child, death of spouse).\n• Early Critical Protector Life (ECPL) — covers 150 medical conditions across severity stages (42 Early + 35 Intermediate + 73 Major), plus a Special Conditions benefit covering 15 conditions at 20% of the ECPL insured amount (max 5 claims).\n\nA win-win policy offering both protection and returns: a lump sum is available when there is a need to claim, easing financial burden if the unforeseen occurs, and a guaranteed surrender amount plus cash bonuses is available as a savings return (breakeven around year 25–30).\n\nPlan Limitations:\n∴ The 2× boosted coverage ends at the 65th birthday.\n∴ Once a critical illness claim is made, the plan terminates unless total insured amount (including booster) exceeds $250,000.\n∴ 90-day waiting period applies to most critical illnesses.", tables: [
+    { caption: "Multi-stage conditions covered — Early Critical Protector Life",
+      head: ["No", "Early Stage (42 Conditions)", "Intermediate Stage (35 Conditions)", "Major Stage (73 Conditions)"],
+      widths: ["5%", "31.6%", "31.7%", "31.7%"],
+      dense: true,
+      rows: [
+        ["1", "N/A", "N/A", "Acquired Brain Damage"],
+        ["2", "Acute Ulcerative Colitis", "N/A", "Acute Severe Ulcerative Colitis"],
+        ["3", "N/A", "N/A", "Addison disease or Autoimmune Adrenalitis"],
+        ["4", "N/A", "N/A", "Adrenalectomy for Adrenal Adenoma"],
+        ["5", "Diagnosis of Dementia including Alzheimer's Disease", "Moderately Severe Alzheimer's Disease", "Alzheimer's Disease / Severe Dementia"],
+        ["6", "N/A", "N/A", "Angioplasty & Other Invasive Treatment for Coronary Artery"],
+        ["7", "Surgical Removal of Pituitary Tumour", ["Surgical Removal of Pituitary Tumour (by Open Craniotomy)", "Surgical Removal of Pituitary Tumour (by Transsphenoidal/Transnasal Hypophysectomy)"], "Benign Brain Tumour"],
+        ["8", "Biliary Atresia (on diagnosis)", "N/A", "Biliary Atresia having undergone Liver transplantation"],
+        ["9", "Irreversible Loss of Sight in One Eye", "Optic Nerve Atrophy with low vision", "Blindness (Irreversible Loss of Sight)"],
+        ["10", "N/A", "N/A", "Brain Surgery"],
+        ["11", "N/A", "N/A", "Chronic Auto-Immune Hepatitis"],
+        ["12", "Acute Necrohemorrhagic Pancreatitis", "Acute Necrohemorrhagic Pancreatitis with Pancreatectomy", "Chronic Relapsing Pancreatitis"],
+        ["13", "Coma for 48 hours", ["Coma for 72 hours", "Severe Epilepsy"], "Coma"],
+        ["14", "Keyhole Coronary Bypass Surgery or Coronary Artery Atherectomy or Myocardial Laser Revascularisation or Enhanced External Counterpulsation", "N/A", "Coronary Artery By-pass Surgery"],
+        ["15", "Less Severe Creutzfeldt-Jakob Disease", "Moderately Severe Creutzfeldt-Jakob Disease", "Creutzfeldt-Jakob Disease"],
+        ["16", ["Partial Loss of Hearing", "Cavernous Sinus Thrombosis Surgery"], "Cochlear Implant Surgery", "Deafness (Irreversible Loss of Hearing)"],
+        ["17", "N/A", "N/A", "Ebola"],
+        ["18", "N/A", "N/A", "Elephantiasis"],
+        ["19", "Surgical Removal of One Kidney", "Chronic Kidney Disease", "End Stage Kidney Failure"],
+        ["20", "Liver Surgery", "Liver Cirrhosis", "End Stage Liver Failure"],
+        ["21", ["Severe Asthma", "Insertion of a Vena Cava Filter"], "Surgical Removal of One Lung", "End Stage Lung Disease"],
+        ["22", ["Biliary Tract Reconstruction Surgery", "Hepatitis with Cirrhosis"], "Chronic Primary Sclerosing Cholangitis", "Fulminant Hepatitis"],
+        ["23", "N/A", "N/A", "Generalized Tetanus"],
+        ["24", ["Cardiac Pacemaker Insertion", "Pericardiectomy"], ["Cardiac Defibrillator Insertion", "Early Cardiomyopathy"], "Heart Attack of Specified Severity"],
+        ["25", "HIV due to Assault or Occupationally Acquired HIV", "HIV due to Organ Transplant", "HIV Due to Blood Transfusion and Occupationally Acquired HIV"],
+        ["26", "Early Parkinson's Disease", "Moderately Severe Parkinson's Disease", "Idiopathic Parkinson's Disease"],
+        ["27", "Less Severe Infective Endocarditis", "N/A", "Infective Endocarditis"],
+        ["28", "N/A", "N/A", "Insulin Dependent Diabetes Mellitus"],
+        ["29", "Reversible Aplastic Anaemia", "Myelodysplastic Syndrome or Myelofibrosis", "Irreversible Aplastic Anaemia"],
+        ["30", "Permanent (or Temporary) Tracheostomy", "Loss of Speech (other than injury or illness to the vocal cords)", "Irreversible Loss of Speech"],
+        ["31", "N/A", "N/A", "Juvenile Huntington Disease"],
+        ["32", "Loss of Independent Existence (Early Stage)", "N/A", "Loss of Independent Existence"],
+        ["33", "Mild Severe Burns", "Moderately Severe Burns", "Major Burns"],
+        ["34", ["Carcinoma in situ", "Early Prostate Cancer", "Early Thyroid Cancer", "Early Neuroendocrine Tumours", "Early Bladder Cancer", "Early Chronic Lymphocytic Leukaemia", "Early Melanoma", "Gastro-Intestinal Stromal Tumours", "Bone Marrow Malignancies"], "Carcinoma in situ of specified organs treated with Radical Surgery", "Major Cancer"],
+        ["35", ["Surgery for Subdural Haematoma", "Facial Reconstructive Surgery"], "Intermediate Stage Major Head Trauma", "Major Head Trauma"],
+        ["36", ["Small Bowel Transplant", "Corneal Transplant"], "Major Organ/Bone Marrow Transplant (on waitlist)", "Major Organ / Bone Marrow Transplantation"],
+        ["37", "N/A", "N/A", "Medically Acquired HIV infection"],
+        ["38", "N/A", "N/A", "Medullary Cystic Disease"],
+        ["39", "Peripheral Neuropathy", "Early Motor Neurone Disease", "Motor Neurone Disease"],
+        ["40", "N/A", "N/A", "Multiple Root of Branchial Plexus Injury"],
+        ["41", "Early Multiple Sclerosis", "Mild Multiple Sclerosis", "Multiple Sclerosis"],
+        ["42", "Spinal Cord Disease or Injury resulting in Bowel and Bladder Dysfunction", "Moderate Muscular Dystrophy", "Muscular Dystrophy"],
+        ["43", "N/A", "N/A", "Necrotising Fasciitis"],
+        ["44", "N/A", "N/A", "Occupationally Acquired Hepatitis B or C"],
+        ["45", "Percutaneous Valvuloplasty or Valvotomy", "Percutaneous Valve Replacement or Device Repair", "Open Chest Heart Valve Surgery"],
+        ["46", "Large Asymptomatic Aortic Aneurysm", "Minimally Invasive Surgery to Aorta", "Open Chest Surgery to Aorta"],
+        ["47", "N/A", "N/A", "Osteogenesis Imperfecta"],
+        ["48", "Early Stage Other Serious Coronary Artery Disease", "Intermediate Stage Other Serious Coronary Artery Disease", "Other Serious Coronary Artery Disease"],
+        ["49", "Loss of Use of One Limb", "Loss of use of One limb requiring Prosthesis", "Paralysis (Irreversible Loss of Use of Limbs)"],
+        ["50", "Severe Juvenile Rheumatoid Arthritis", "N/A", "Persistent Severe Juvenile Rheumatoid Arthritis"],
+        ["51", "Locked in Syndrome", "N/A", "Persistent Vegetative State (Apallic Syndrome)"],
+        ["52", "N/A", "N/A", "Pheochromocytoma"],
+        ["53", "N/A", "Moderately Severe Poliomyelitis", "Poliomyelitis"],
+        ["54", "Early Pulmonary Hypertension", "Secondary Pulmonary Hypertension", "Primary Pulmonary Hypertension"],
+        ["55", "Early Progressive Scleroderma", "Progressive Scleroderma with CREST syndrome", "Progressive Scleroderma"],
+        ["56", "Less Severe Progressive Supranuclear Palsy", "N/A", "Progressive Supranuclear Palsy"],
+        ["57", "N/A", "N/A", "Rabies"],
+        ["58", "N/A", "N/A", "Resection of the whole small intestine (duodenum, jejunum and ileum)"],
+        ["59", "Bacterial Meningitis with full recovery", "Mild Bacterial Meningitis", "Severe Bacterial Meningitis"],
+        ["60", "N/A", "N/A", "Severe Cardiomyopathy"],
+        ["61", "Less Severe Crohn's Disease", "N/A", "Severe Crohn's Disease"],
+        ["62", "N/A", "Severe Eisenmenger's Syndrome (Intermediate)", "Severe Eisenmenger's Syndrome"],
+        ["63", "Viral Encephalitis with full recovery", "Mild Viral Encephalitis", "Severe Encephalitis"],
+        ["64", "N/A", "N/A", "Severe Haemophilia"],
+        ["65", "N/A", "N/A", "Severe Myasthenia Gravis"],
+        ["66", "N/A", "N/A", "Severe Pulmonary Fibrosis"],
+        ["67", ["Brain Aneurysm Surgery (via Endovascular procedures)", "Brain Aneurysm Surgery (via Craniotomy)", "Cerebral Shunt Insertion"], "Carotid Artery Surgery", "Stroke with Permanent Neurological Deficit"],
+        ["68", "N/A", "N/A", "Surgery for Idiopathic Scoliosis"],
+        ["69", "Mild Systemic Lupus Erythematosus", "Moderate Severe Systemic Lupus Erythematosus with Lupus Nephritis", "Systemic Lupus Erythematosus with Lupus Nephritis"],
+        ["70", "N/A", "N/A", "Terminal Illness"],
+        ["71", "N/A", "N/A", "Tuberculosis Meningitis"],
+        ["72", "N/A", "N/A", "Type 1 Juvenile Spinal Muscular Atrophy"],
+        ["73", "N/A", "N/A", "Wilson's Disease"],
+      ] },
+  ] },
   PA: { name: "Comprehensive Accident Coverage — Solitaire Personal Accident", body: "• Covers Death, Total Permanent Disability and dismemberment due to accident at a very low premium.\n• Covers broken bones and burns up to $8,000.\n• Provides stability of lifestyle in case of loss of income or unexpected expenses arising from accidental death or disability.\n\nPlan Limitations:\n∴ As a standalone accident plan, coverage is payable only upon accidental causes.\n∴ If nothing should happen, the plan does not provide any return.", tables: [
     { caption: "Basic Benefits — Insured Amount (B$)",
       head: ["Benefit", "Plan 1", "Plan 2", "Plan 3", "Plan 4"],
@@ -137,7 +217,19 @@ const PLAN_LIBRARY = {
       ]] },
   ],
   tablesNote: "Further definitions can be found in the MultiStage Cancer Cover Product Summary." },
-  HI: { name: "Hospital Confinement Pay-Out — Hospital Income", body: "• Provides a cash payout for each day of hospital confinement (in Brunei Darussalam or overseas) due to injury or sickness.\n• Provides a get-well benefit after discharge.\n• Daily cash provision if required to undergo day surgery or recuperate as an outpatient following discharge.\n\nPlan Limitations:\n∴ As a standalone hospitalisation plan, coverage is payable only upon hospitalisation (admission to a hospital bed for at least 6 hours).\n∴ If nothing should happen, the plan does not provide any return." },
+  HI: { name: "Hospital Confinement Pay-Out — Hospital Income", body: "• Provides a cash payout for each day of hospital confinement (in Brunei Darussalam or overseas) due to injury or sickness.\n• Provides a get-well benefit after discharge.\n• Daily cash provision if required to undergo day surgery or recuperate as an outpatient following discharge.\n\nPlan Limitations:\n∴ As a standalone hospitalisation plan, coverage is payable only upon hospitalisation (admission to a hospital bed for at least 6 hours).\n∴ If nothing should happen, the plan does not provide any return.", tables: [
+    { caption: "Coverage — Insured Amount (B$)",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3"],
+      widths: ["46%", "18%", "18%", "18%"],
+      rows: [
+        ["Daily Hospital Income Benefit", "100/day", "200/day", "300/day"],
+        ["Intensive Care Unit Benefit", "300/day", "450/day", "750/day"],
+        ["Get Well Benefit", "200", "300", "400"],
+        ["Post-Hospitalisation Home Rest Benefit", "50/day", "100/day", "150/day"],
+        ["Day Surgery Income Benefit", "200/day", "350/day", "500/day"],
+        ["Death Benefit", "1,000", "1,000", "1,000"],
+      ] },
+  ] },
   SA: { name: "Comprehensive Accident & Specific Diseases Coverage — Star Armour", body: "AIA Star Armour is an accident and health plan for juveniles aged 16 and below at application, combining accident cover with protection against specific childhood diseases.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 pays the insured amount, with double indemnity if the accident happens during school activities, on public or private conveyance, or as a pedestrian.\n\u2022 Monthly Catastrophe Cash Benefit \u2014 a monthly payout for up to 20 years if a catastrophic disability results from an accident.\n\u2022 Medical Reimbursement (Accident & Disease) \u2014 reimburses treatment costs including nursing and ambulance charges, plus TCM/chiropractic up to 10% of the benefit.\n\u2022 Daily Hospital Income (Accident & Disease) \u2014 paid for each day of hospitalisation up to 180 days, doubled while in intensive care.\n\u2022 Recuperation Benefit \u2014 pays out on diagnosis of Dengue Fever or Hand, Foot & Mouth Disease.\n\u2022 Education Assurance Fund \u2014 pays out on accidental death of the policyowner, protecting the child\u2019s education.\n\u2022 Optional Child Critical Illnesses Benefit \u2014 available at B$30,000, B$50,000 or B$100,000, convertible later to a whole life or endowment policy without further underwriting.\n\nPlan Limitations:\n\u2234 Entry is limited to juveniles aged 16 and below.\n\u2234 Disease-related benefits apply only to the specific diseases named in the policy contract.\n\u2234 If nothing should happen, the plan does not provide any return.", tables: [
     { caption: "Basic Benefits — Sum Assured (B$)",
       head: ["Plan Type", "Plan 1", "Plan 2", "Plan 3"],
@@ -196,7 +288,14 @@ const PLAN_LIBRARY = {
         ["Dementia Care Reimbursement Benefit", "6,000", "10,000", "20,000"],
       ] },
   ], tablesNote: "The dementia option must be taken at the same plan type as the basic benefits, or lower." },
-  STP: { name: "Income Protection — Secure Term Plus", body: "• A term coverage plan providing high insurance coverage against death, total permanent disability and terminal illness for relatively low premiums.\n• Premiums are level for the initial 5, 10 or 20 years (this proposal locks in 20 years).\n• Acts as income protection to maintain your standard of living, and as credit protection against any liabilities.\n• Critical illness coverage is optional.\n• Convertible to a whole life plan in the future regardless of medical condition at that time — conversion is based on your health condition as of now.\n\nPlan Limitations:\n∴ Premiums become higher after the initial level-premium period." },
+  STP: { name: "Income Protection — Secure Term Plus", body: "• A term coverage plan providing high insurance coverage against death, total permanent disability and terminal illness for relatively low premiums.\n• Premiums are level for the initial 5, 10 or 20 years (this proposal locks in 20 years).\n• Acts as income protection to maintain your standard of living, and as credit protection against any liabilities.\n• Critical illness coverage is optional.\n• Convertible to a whole life plan in the future regardless of medical condition at that time — conversion is based on your health condition as of now.\n\nPlan Limitations:\n∴ Premiums become higher after the initial level-premium period.", tables: [
+    { caption: "Critical Illnesses covered under this supplementary benefit",
+      rider: "ci",
+      head: ["Covered conditions (1–22)", "Covered conditions (23–43)"],
+      widths: ["50%", "50%"],
+      dense: true,
+      rows: [[["1. Acute Necrohemorrhagic Pancreatitis", "2. Alzheimer's Disease / Severe Dementia", "3. Angioplasty & Other Invasive Treatment for Coronary Artery *", "4. Apallic Syndrome", "5. Aplastic Anaemia", "6. Bacterial Meningitis", "7. Benign Brain Tumour", "8. Blindness (Loss of Sight)", "9. Coma", "10. Coronary Artery By-pass Surgery", "11. Creutzfeld-Jacob Disease", "12. Deafness (Loss of Hearing)", "13. Elephantiasis", "14. End Stage Liver Failure", "15. End Stage Lung Disease", "16. Fulminant Hepatitis", "17. Heart Attack of Specified Severity", "18. Heart Valve Surgery", "19. HIV Due to Blood Transfusion and Occupationally Acquired HIV", "20. Kidney Failure", "21. Loss of Independent Existence", "22. Loss of Speech"], ["23. Major Burns", "24. Major Cancers", "25. Major Head Trauma", "26. Major Organ / Bone Marrow Transplantation", "27. Medullary Cystic Disease", "28. Motor Neurone Disease", "29. Multiple Sclerosis", "30. Muscular Dystrophy", "31. Necrotising Fasciitis", "32. Other Serious Coronary Artery Disease", "33. Paralysis (Loss of Use of Limbs)", "34. Parkinson's Disease", "35. Poliomyelitis", "36. Primary Pulmonary Hypertension", "37. Progressive Scleroderma", "38. Progressive Supranuclear Palsy", "39. Severe Myasthenia Gravis", "40. Stroke", "41. Surgery to Aorta", "42. Systemic Lupus Erythematosus with Lupus Nephritis", "43. Viral Encephalitis"]]] },
+  ], tablesNote: "* If the Insured undergoes Angioplasty & Other Invasive Treatment for Coronary Artery, we will pay 10% of the Insured Amount of this supplementary benefit (subject to a maximum of S$25,000). That benefit is payable once during the term of the supplementary benefit and ceases automatically upon payment, after which the Insured Amount of this supplementary benefit is reduced by the amount paid." },
   ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate." },
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday." },
   RS: { name: "Guaranteed Annuity Income — Retirement Saver (IV)" , body: "Retirement Saver (IV) is an endowment annuity insurance policy designed to provide a guaranteed monthly stream of retirement income from your chosen Retirement Age, plus coverage against death. It is a participating policy with non-guaranteed dividends.\n\n• Choose Retirement Age of 55, 60 or 65; pay premiums as a single payment or until 5 years before Retirement Age; receive Retirement Income for a 15-year payout period.\n• Retirement Income — paid monthly over the selected payout period, starting one month after the policy anniversary following your Retirement Age.\n• Monthly Dividends — declared yearly and credited monthly; once credited, they form part of the guaranteed benefits. Withdraw them or leave to accumulate interest.\n• Terminal Dividend — non-guaranteed, payable upon claim, maturity or surrender.\n• Maturity Benefit — the final income payout plus accumulated dividends and rewards, after deducting amounts owing." },
@@ -258,9 +357,15 @@ const planCoverageText = (p) => {
 const uniqueExplanations = (selected) => {
   const byKey = new Map();
   (selected || []).forEach(p => {
+    const on = Object.entries((p.rating || {}).riders || {}).filter(([, v]) => v).map(([k]) => k);
     const seen = byKey.get(p.key);
-    if (seen) seen.planImages = [...seen.planImages, ...(p.planImages || [])];
-    else byKey.set(p.key, { key: p.key, label: p.label, planImages: [...(p.planImages || [])] });
+    if (seen) {
+      seen.planImages = [...seen.planImages, ...(p.planImages || [])];
+      on.forEach(k => { seen.riders[k] = true; });
+    } else {
+      byKey.set(p.key, { key: p.key, label: p.label, planImages: [...(p.planImages || [])],
+        riders: Object.fromEntries(on.map(k => [k, true])) });
+    }
   });
   return [...byKey.values()];
 };
@@ -1435,6 +1540,23 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
         </>)}
       </div>
 
+      {!rateMeta && PLAN_RIDERS[p.key] && (
+        <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/60 p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-purple-800 mb-2">Optional benefits</div>
+          <div className="flex flex-wrap gap-4">
+            {PLAN_RIDERS[p.key].map(r => (
+              <label key={r.key} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={!!(rating.riders || {})[r.key]}
+                  onChange={e => setP({ rating: { ...rating, riders: { ...(rating.riders || {}), [r.key]: e.target.checked } } })}
+                  className="w-4 h-4 accent-purple-700" />
+                {r.label}
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">Selecting this adds the benefit's covered-conditions list to the plan explanation in the report.</p>
+        </div>
+      )}
+
       {rateMeta && (
         <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/60 p-3">
           <div className="flex items-center justify-between mb-2">
@@ -1610,9 +1732,9 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
 // Benefit tables attached to a plan's explanation (e.g. MSCC's insured amounts and its
 // early/intermediate/major stage definitions). Inherits the report's .rpt table styling so
 // the type matches the rest of the document; prose cells carry their own headings and lists.
-const PlanBodyTables = ({ tables, note }) => (
+const PlanBodyTables = ({ tables, note, riders = {} }) => (
   <div style={{ marginTop: 12 }}>
-    {(tables || []).map((tb, ti) => (
+    {(tables || []).filter(tb => !tb.rider || riders[tb.rider]).map((tb, ti) => (
       <div key={ti} style={{ breakInside: "avoid", marginBottom: 14 }}>
         {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 4 }}>{tb.caption}</div>}
         <table style={{ tableLayout: "fixed" }}>
@@ -1626,7 +1748,9 @@ const PlanBodyTables = ({ tables, note }) => (
               <td key={ci} colSpan={row.length === 1 && tb.head.length > 1 ? tb.head.length : undefined}
                 style={{ verticalAlign: "top", fontSize: tb.dense ? 11 : 12.5,
                          textAlign: ci === 0 || row.length === 1 ? "left" : (tb.align?.[ci] || "center") }}>
-                {Array.isArray(cell) ? cell.map((b, bi) => {
+                {Array.isArray(cell) && typeof cell[0] === "string"
+                  ? <ul style={{ margin: 0, paddingLeft: 14, listStyle: "disc" }}>{cell.map((li, li2) => <li key={li2} style={{ marginBottom: 1 }}>{li}</li>)}</ul>
+                  : Array.isArray(cell) ? cell.map((b, bi) => {
                   // {h} names a benefit (brand colour, matching the report's h3);
                   // {t} is an underlined sub-heading; {p} prose; {ul} a bullet list
                   if (b.h) return <div key={bi} style={{ fontWeight: 700, color: "#66229d", marginBottom: 2, marginTop: bi ? 5 : 0 }}>{b.h}</div>;
@@ -3739,7 +3863,7 @@ export default function App() {
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
-                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} />}
+                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
                   {(p.planImages||[]).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
@@ -4052,7 +4176,7 @@ export default function App() {
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
-                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} />}
+                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
                   {(p.planImages || []).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
