@@ -80,7 +80,31 @@ const EDU_SECTIONS = [
 const PLAN_LIBRARY = {
   GPP: { name: "Whole Life Critical Illness — Guaranteed Protect Plus", body: "Guaranteed Protect Plus is a limited-premium whole life policy providing protection against death up to age 100 and total & permanent disability up to age 70, with premium payment terms of 15 or 20 years (this proposal uses 20 years). It is a participating policy, allowing you to share in the performance of the participating fund through non-guaranteed bonuses.\n\n• Death Benefit — pays the Insured Amount plus bonuses, less amounts owing.\n• TPD Benefit — lump sum of the Insured Amount plus bonuses before age 70.\n• Minimum Death/Critical Illness Benefit — boosts coverage to 2× the insured amount up to age 65.\n• Maturity Benefit — lump sum of Insured Amount plus bonuses at age 100.\n• Bonuses — Reversionary Bonus and Terminal Bonus.\n• Option to Purchase Additional Insurance — buy new coverage without evidence of insurability on key life events (18th birthday, marriage, birth/adoption of a child, death of spouse).\n• Early Critical Protector Life (ECPL) — covers 150 medical conditions across severity stages (42 Early + 35 Intermediate + 73 Major), plus a Special Conditions benefit covering 15 conditions at 20% of the ECPL insured amount (max 5 claims).\n\nA win-win policy offering both protection and returns: a lump sum is available when there is a need to claim, easing financial burden if the unforeseen occurs, and a guaranteed surrender amount plus cash bonuses is available as a savings return (breakeven around year 25–30).\n\nPlan Limitations:\n∴ The 2× boosted coverage ends at the 65th birthday.\n∴ Once a critical illness claim is made, the plan terminates unless total insured amount (including booster) exceeds $250,000.\n∴ 90-day waiting period applies to most critical illnesses." },
   PA: { name: "Comprehensive Accident Coverage — Solitaire Personal Accident", body: "• Covers Death, Total Permanent Disability and dismemberment due to accident at a very low premium.\n• Covers broken bones and burns up to $8,000.\n• Provides stability of lifestyle in case of loss of income or unexpected expenses arising from accidental death or disability.\n\nPlan Limitations:\n∴ As a standalone accident plan, coverage is payable only upon accidental causes.\n∴ If nothing should happen, the plan does not provide any return." },
-  MSCC: { name: "Comprehensive Cancer Coverage — MultiStage Cancer Cover", body: "• A critical illness plan specially designed to provide coverage for Major Cancer at early, intermediate and major stages.\n• Acts as income protection so you have funding to continue your standard of living upon diagnosis.\n• Level premium for 20 years.\n\nPlan Limitations:\n∴ Cancer benefit is payable only once; the policy terminates upon diagnosis of any covered stage resulting in payout.\n∴ As a standalone cancer plan, coverage is payable only upon diagnosis of Major Cancer.\n∴ If nothing should happen, the plan does not provide any return." },
+  MSCC: { name: "Comprehensive Cancer Coverage — MultiStage Cancer Cover", body: "• A critical illness plan specially designed to provide coverage for Major Cancer at early, intermediate and major stages.\n• Acts as income protection so you have funding to continue your standard of living upon diagnosis.\n• Level premium for 20 years.\n\nPlan Limitations:\n∴ Cancer benefit is payable only once; the policy terminates upon diagnosis of any covered stage resulting in payout.\n∴ As a standalone cancer plan, coverage is payable only upon diagnosis of Cancer.\n∴ If nothing should happen, the plan does not provide any return.", tables: [
+    { caption: "Basic Benefits — Insured Amount (S$)",
+      head: ["No", "Basic Benefits", "Plan 1", "Plan 2", "Plan 3"],
+      widths: ["6%", "34%", "20%", "20%", "20%"],
+      align: ["center", "left", "right", "right", "right"],
+      rows: [["1", "Cancer Benefit", "$100,000", "$150,000", "$250,000"],
+             ["2", "Death Benefit", "$1,000", "$1,000", "$1,000"]] },
+    { caption: "What counts as a claim at each stage",
+      head: ["Early Stage", "Intermediate Stage", "Major Stage"],
+      widths: ["34%", "33%", "33%"],
+      prose: true,
+      rows: [[
+        [{ t: "Carcinoma in situ (CIS)" },
+         { p: "CIS means the focal autonomous new growth of carcinomatous cells confined to the cells in which it originated and has not yet result in invasion and destruction of surrounding tissues." },
+         { t: "EXCLUSIONS:" },
+         { ul: ["CIS of the skin and biliary system.", "Early Prostate Cancer", "Early Thyroid Cancer", "Early Neuroendocrine Tumours", "Early Bladder Cancer", "Early Chronic Lymphocytic Leukaemia", "Early Melanoma", "Gastro-Intestinal Stromal Tumours", "Bone Marrow Malignancies"] },
+         { p: "Diagnosis of the above early cancers must be established by histological evidence and confirmed by Specialist in the relevant field." }],
+        [{ t: "Carcinoma in situ of specified organs treated with Radical Surgery." },
+         { p: "Radical Surgery is defined as the total and complete removal or partial removal of one of the following organs as specified: breast, prostate, corpus uteri, ovary, fallopian tube, colon, or stomach." }],
+        [{ t: "Major Cancer" },
+         { p: "Malignant tumour positively diagnosed with histological confirmation." },
+         { p: "Also characterised by the uncontrolled growth of malignant cells with invasion and destruction of normal tissues." }],
+      ]] },
+  ],
+  tablesNote: "Further definitions can be found in the MultiStage Cancer Cover Product Summary." },
   HI: { name: "Hospital Confinement Pay-Out — Hospital Income", body: "• Provides a cash payout for each day of hospital confinement (in Brunei Darussalam or overseas) due to injury or sickness.\n• Provides a get-well benefit after discharge.\n• Daily cash provision if required to undergo day surgery or recuperate as an outpatient following discharge.\n\nPlan Limitations:\n∴ As a standalone hospitalisation plan, coverage is payable only upon hospitalisation (admission to a hospital bed for at least 6 hours).\n∴ If nothing should happen, the plan does not provide any return." },
   SA: { name: "Comprehensive Accident & Specific Diseases Coverage — Star Armour", body: "AIA Star Armour is an accident and health plan for juveniles aged 16 and below at application, combining accident cover with protection against specific childhood diseases.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 pays the insured amount, with double indemnity if the accident happens during school activities, on public or private conveyance, or as a pedestrian.\n\u2022 Monthly Catastrophe Cash Benefit \u2014 a monthly payout for up to 20 years if a catastrophic disability results from an accident.\n\u2022 Medical Reimbursement (Accident & Disease) \u2014 reimburses treatment costs including nursing and ambulance charges, plus TCM/chiropractic up to 10% of the benefit.\n\u2022 Daily Hospital Income (Accident & Disease) \u2014 paid for each day of hospitalisation up to 180 days, doubled while in intensive care.\n\u2022 Recuperation Benefit \u2014 pays out on diagnosis of Dengue Fever or Hand, Foot & Mouth Disease.\n\u2022 Education Assurance Fund \u2014 pays out on accidental death of the policyowner, protecting the child\u2019s education.\n\u2022 Optional Child Critical Illnesses Benefit \u2014 available at B$30,000, B$50,000 or B$100,000, convertible later to a whole life or endowment policy without further underwriting.\n\nPlan Limitations:\n\u2234 Entry is limited to juveniles aged 16 and below.\n\u2234 Disease-related benefits apply only to the specific diseases named in the policy contract.\n\u2234 If nothing should happen, the plan does not provide any return." },
   CPA: { name: "Comprehensive Accident & Dementia Coverage — Centurion PA", body: "AIA Centurion PA is a personal accident plan designed for individuals aged 40 to 80, providing 24/7 worldwide coverage through to age 100, with an optional dementia benefit group.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 with an additional dismemberment and burns benefit on top of the base amount.\n\u2022 Fractures Benefit \u2014 a dedicated payout for fractures, which become materially more likely with age.\n\u2022 Loss of Activities of Daily Living Benefit \u2014 pays out when an accident leaves the insured unable to perform daily activities.\n\u2022 Accidental Medical Reimbursement \u2014 including an extra reimbursement specifically for fractures, plus TCM/chiropractic and ambulance cover.\n\u2022 Daily Accidental Hospital Income and Post-Hospitalisation Home Care \u2014 support during recovery.\n\u2022 Mobility Aid and Home Modification Reimbursement \u2014 helps adapt the home after a disabling accident.\n\u2022 Optional Dementia Benefits Group \u2014 a lump sum on diagnosis of dementia plus a care reimbursement benefit; entry before age 70, covering to age 85.\n\nPlan Limitations:\n\u2234 Entry ages are 40 to 80; ages 81 and above are renewal only.\n\u2234 The dementia option must be the same plan tier as the basic benefits or lower, and terminates at age 85.\n\u2234 As an accident plan, the main benefits are payable only on accidental causes \u2014 the dementia group is the exception.\n\u2234 If nothing should happen, the plan does not provide any return." },
@@ -100,7 +124,7 @@ const PRODUCT_CATALOGUE = [
   { key: "PA", label: "Comprehensive Accident Coverage", category: "Risk Management", monthly: 24.57, annual: 282.51, returns: "No returns", tier: "recommended",
     covers: [["Death (Accident)", "100000"], ["Disability (Accident)", "100000"]] },
   { key: "MSCC", label: "Comprehensive Cancer Coverage", category: "Risk Management", monthly: 63.34, annual: 728, returns: "No returns", tier: "recommended",
-    covers: [["Health (Major Critical Illness)", "100000"]] },
+    covers: [["Health (Early-Major Critical Illness)", "100000"]] },
   { key: "ASCC", label: "Absolute Critical Cover", category: "Risk Management", monthly: 0, annual: 0, returns: "No returns", tier: "recommended", cciOption: "65",
     covers: [["Health (Major Critical Illness)", "100000"]] },
   { key: "HI", label: "Daily Hospitalisation Income Pay-out", category: "Risk Management", monthly: 25.6, annual: 294, returns: "No returns", tier: "recommended",
@@ -1495,6 +1519,38 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
 
 // One plan-quotation table per insured person, sub-grouped by planning category.
 // Shared by the full report and the annual review report so both read identically.
+// Benefit tables attached to a plan's explanation (e.g. MSCC's insured amounts and its
+// early/intermediate/major stage definitions). Inherits the report's .rpt table styling so
+// the type matches the rest of the document; prose cells carry their own headings and lists.
+const PlanBodyTables = ({ tables, note }) => (
+  <div style={{ marginTop: 12 }}>
+    {(tables || []).map((tb, ti) => (
+      <div key={ti} style={{ breakInside: "avoid", marginBottom: 14 }}>
+        {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 4 }}>{tb.caption}</div>}
+        <table style={{ tableLayout: "fixed" }}>
+          <thead><tr>{tb.head.map((h, k) => (
+            <th key={k} style={{ width: tb.widths?.[k], textAlign: tb.prose ? "left" : (tb.align?.[k] || "left") }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>{tb.rows.map((row, ri) => (
+            <tr key={ri}>{row.map((cell, ci) => (
+              <td key={ci} style={{ verticalAlign: "top", textAlign: tb.prose ? "left" : (tb.align?.[ci] || "left"), fontSize: tb.prose ? 11 : 12.5 }}>
+                {tb.prose
+                  ? (cell || []).map((b, bi) => {
+                      if (b.t) return <div key={bi} style={{ fontWeight: 700, textDecoration: "underline", marginBottom: 3, marginTop: bi ? 6 : 0 }}>{b.t}</div>;
+                      if (b.ul) return <ul key={bi} style={{ margin: "0 0 4px", paddingLeft: 14, listStyle: "disc" }}>{b.ul.map((li, li2) => <li key={li2} style={{ marginBottom: 1 }}>{li}</li>)}</ul>;
+                      return <p key={bi} style={{ margin: "0 0 5px", lineHeight: 1.45, textAlign: "left" }}>{b.p}</p>;
+                    })
+                  : cell}
+              </td>
+            ))}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+    ))}
+    {note && <p style={{ fontSize: 11, color: "#64748b", fontStyle: "italic", marginTop: -6 }}>Note: {note}</p>}
+  </div>
+);
+
 const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
   <>
     {groups.map(g => (
@@ -3590,6 +3646,7 @@ export default function App() {
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
+                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} />}
                   {(p.planImages||[]).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
@@ -3902,6 +3959,7 @@ export default function App() {
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
+                  {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} />}
                   {(p.planImages || []).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (

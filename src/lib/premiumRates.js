@@ -473,6 +473,9 @@ export const PLAN_BENEFITS = {
     },
   },
   HI: { base: [["Hospitalisation (Accident)", [100, 200, 300]]], riders: {} },
+  // MSCC pays across early, intermediate and major stages, so its cancer benefit sits under
+  // the Early-Major Critical Illness category rather than Major CI alone
+  MSCC: { base: [["Health (Early-Major Critical Illness)", [100000, 150000, 250000]]], riders: {} },
   SA: {
     base: [["Death (Accident)", [20000, 35000, 100000]],
            ["Reimbursement (Accident)", [1500, 3000, 5000]],
