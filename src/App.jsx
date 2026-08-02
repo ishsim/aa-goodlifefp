@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, LabelList } from "recharts";
 import logoAsset from "./assets/goodlife-logo.png.asset.json";
 import { generateDocx } from "@/lib/generateDocx";
+import { quotePremium, RATED_PRODUCTS, benefitsFor } from "@/lib/premiumRates";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2, RefreshCw } from "lucide-react";
@@ -81,6 +82,8 @@ const PLAN_LIBRARY = {
   PA: { name: "Comprehensive Accident Coverage — Solitaire Personal Accident", body: "• Covers Death, Total Permanent Disability and dismemberment due to accident at a very low premium.\n• Covers broken bones and burns up to $8,000.\n• Provides stability of lifestyle in case of loss of income or unexpected expenses arising from accidental death or disability.\n\nPlan Limitations:\n∴ As a standalone accident plan, coverage is payable only upon accidental causes.\n∴ If nothing should happen, the plan does not provide any return." },
   MSCC: { name: "Comprehensive Cancer Coverage — MultiStage Cancer Cover", body: "• A critical illness plan specially designed to provide coverage for Major Cancer at early, intermediate and major stages.\n• Acts as income protection so you have funding to continue your standard of living upon diagnosis.\n• Level premium for 20 years.\n\nPlan Limitations:\n∴ Cancer benefit is payable only once; the policy terminates upon diagnosis of any covered stage resulting in payout.\n∴ As a standalone cancer plan, coverage is payable only upon diagnosis of Major Cancer.\n∴ If nothing should happen, the plan does not provide any return." },
   HI: { name: "Hospital Confinement Pay-Out — Hospital Income", body: "• Provides a cash payout for each day of hospital confinement (in Brunei Darussalam or overseas) due to injury or sickness.\n• Provides a get-well benefit after discharge.\n• Daily cash provision if required to undergo day surgery or recuperate as an outpatient following discharge.\n\nPlan Limitations:\n∴ As a standalone hospitalisation plan, coverage is payable only upon hospitalisation (admission to a hospital bed for at least 6 hours).\n∴ If nothing should happen, the plan does not provide any return." },
+  SA: { name: "Comprehensive Accident & Specific Diseases Coverage — Star Armour", body: "AIA Star Armour is an accident and health plan for juveniles aged 16 and below at application, combining accident cover with protection against specific childhood diseases.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 pays the insured amount, with double indemnity if the accident happens during school activities, on public or private conveyance, or as a pedestrian.\n\u2022 Monthly Catastrophe Cash Benefit \u2014 a monthly payout for up to 20 years if a catastrophic disability results from an accident.\n\u2022 Medical Reimbursement (Accident & Disease) \u2014 reimburses treatment costs including nursing and ambulance charges, plus TCM/chiropractic up to 10% of the benefit.\n\u2022 Daily Hospital Income (Accident & Disease) \u2014 paid for each day of hospitalisation up to 180 days, doubled while in intensive care.\n\u2022 Recuperation Benefit \u2014 pays out on diagnosis of Dengue Fever or Hand, Foot & Mouth Disease.\n\u2022 Education Assurance Fund \u2014 pays out on accidental death of the policyowner, protecting the child\u2019s education.\n\u2022 Optional Child Critical Illnesses Benefit \u2014 available at B$30,000, B$50,000 or B$100,000, convertible later to a whole life or endowment policy without further underwriting.\n\nPlan Limitations:\n\u2234 Entry is limited to juveniles aged 16 and below.\n\u2234 Disease-related benefits apply only to the specific diseases named in the policy contract.\n\u2234 If nothing should happen, the plan does not provide any return." },
+  CPA: { name: "Comprehensive Accident & Dementia Coverage — Centurion PA", body: "AIA Centurion PA is a personal accident plan designed for individuals aged 40 to 80, providing 24/7 worldwide coverage through to age 100, with an optional dementia benefit group.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 with an additional dismemberment and burns benefit on top of the base amount.\n\u2022 Fractures Benefit \u2014 a dedicated payout for fractures, which become materially more likely with age.\n\u2022 Loss of Activities of Daily Living Benefit \u2014 pays out when an accident leaves the insured unable to perform daily activities.\n\u2022 Accidental Medical Reimbursement \u2014 including an extra reimbursement specifically for fractures, plus TCM/chiropractic and ambulance cover.\n\u2022 Daily Accidental Hospital Income and Post-Hospitalisation Home Care \u2014 support during recovery.\n\u2022 Mobility Aid and Home Modification Reimbursement \u2014 helps adapt the home after a disabling accident.\n\u2022 Optional Dementia Benefits Group \u2014 a lump sum on diagnosis of dementia plus a care reimbursement benefit; entry before age 70, covering to age 85.\n\nPlan Limitations:\n\u2234 Entry ages are 40 to 80; ages 81 and above are renewal only.\n\u2234 The dementia option must be the same plan tier as the basic benefits or lower, and terminates at age 85.\n\u2234 As an accident plan, the main benefits are payable only on accidental causes \u2014 the dementia group is the exception.\n\u2234 If nothing should happen, the plan does not provide any return." },
   STP: { name: "Income Protection — Secure Term Plus", body: "• A term coverage plan providing high insurance coverage against death, total permanent disability and terminal illness for relatively low premiums.\n• Premiums are level for the initial 5, 10 or 20 years (this proposal locks in 20 years).\n• Acts as income protection to maintain your standard of living, and as credit protection against any liabilities.\n• Critical illness coverage is optional.\n• Convertible to a whole life plan in the future regardless of medical condition at that time — conversion is based on your health condition as of now.\n\nPlan Limitations:\n∴ Premiums become higher after the initial level-premium period." },
   ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate." },
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday." },
@@ -102,6 +105,10 @@ const PRODUCT_CATALOGUE = [
     covers: [["Health (Major Critical Illness)", "100000"]] },
   { key: "HI", label: "Daily Hospitalisation Income Pay-out", category: "Risk Management", monthly: 25.6, annual: 294, returns: "No returns", tier: "recommended",
     covers: [["Hospitalisation (Accident)", "100"]] },
+  { key: "SA", label: "Comprehensive Accident & Specific Diseases Coverage", category: "Risk Management", monthly: 20.43, annual: 234.75, returns: "No returns", tier: "recommended",
+    covers: [["Death (Accident)", "35000"], ["Disability (Accident)", "35000"], ["Hospitalisation (Accident)", "50"]] },
+  { key: "CPA", label: "Comprehensive Accident & Dementia Coverage", category: "Risk Management", monthly: 33.67, annual: 387, returns: "No returns", tier: "recommended",
+    covers: [["Death (Accident)", "60000"], ["Disability (Accident)", "60000"], ["Hospitalisation (Accident)", "100"]] },
   { key: "STP", label: "Income Protection: Death, Disability + Critical Illness", category: "Risk Management", monthly: 106.79, annual: 1227.5, returns: "No returns", tier: "optional",
     covers: [["Death", "500000"], ["Disability", "500000"], ["Health (Major Critical Illness)", "120000"]] },
   { key: "ILP", label: "Investment with Unit Trusts — Growth Fund", category: "Goal Planning", monthly: 250, annual: 3000, returns: "Projection at 4–8%: Age 50 $35,300–45,700 · Age 60 $74,400–122,500 · Age 68 $113,500–228,100", tier: "future",
@@ -1242,6 +1249,33 @@ const InvestedAssetRows = ({ rows, onChange }) => {
 // the Overview timeline can be built from the same shape as the in-force side.
 const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }) => {
   const setP = (patch) => onChange({ ...p, ...patch });
+  // Products with an official rate table can price themselves from the insured's age (plus
+  // occupation class / gender / smoking status where the table needs them), so the advisor
+  // picks a plan tier and riders rather than typing premiums in by hand.
+  const rateMeta = RATED_PRODUCTS[p.key] || null;
+  const rating = p.rating || {};
+  const insuredAge = insuredOptions.find(o => o.id === (p.insuredBy || "self"))?.age;
+  const ratedAge = num(rating.ageOverride) > 0 ? num(rating.ageOverride)
+    : (num(insuredAge) > 0 ? num(insuredAge) + (rateMeta?.ageBasis === "next" ? 1 : 0) : 0);
+  const quote = rateMeta ? quotePremium(p.key, {
+    tier: rating.tier || 1, age: ratedAge, occClass: rating.occClass || "12",
+    gender: rating.gender || "male", smoker: !!rating.smoker, riders: rating.riders || {},
+  }) : null;
+  // one write: rating inputs and the premiums they produce move together
+  const setRating = (patch) => {
+    const next = { ...rating, ...patch, riders: { ...(rating.riders || {}), ...(patch.riders || {}) } };
+    const q = rateMeta ? quotePremium(p.key, {
+      tier: next.tier || 1,
+      age: num(next.ageOverride) > 0 ? num(next.ageOverride)
+        : (num(insuredAge) > 0 ? num(insuredAge) + (rateMeta.ageBasis === "next" ? 1 : 0) : 0),
+      occClass: next.occClass || "12", gender: next.gender || "male",
+      smoker: !!next.smoker, riders: next.riders || {},
+    }) : null;
+    // the tier drives the sum assured too, so rebuild the coverage breakdown alongside it
+    const rows = benefitsFor(p.key, next.tier || 1, next.riders || {});
+    const coverages = rows ? rows.map(r => ({ id: uid(), ...r })) : p.coverages;
+    onChange({ ...p, rating: next, coverages, ...(q ? { monthly: q.monthly, annual: q.annual } : {}) });
+  };
   const setCov = (j, patch) => { const cs = [...(p.coverages || [])]; cs[j] = { ...cs[j], ...patch }; setP({ coverages: cs }); };
   const covTotal = (p.coverages || []).reduce((s, c) => s + num(c.amount), 0);
   // the headline sum assured is the largest single category, not the sum of them —
@@ -1285,6 +1319,78 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
           <div className="md:col-span-3"><Field label="Monthly retirement income" hint="Drives the coverage shown in the report"><NumInput value={p.monthlyIncome} onChange={e => setP({ monthlyIncome: e.target.value })} placeholder="500" /></Field></div>
         </>)}
       </div>
+
+      {rateMeta && (
+        <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/60 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-purple-800">Premium from rate table</span>
+            <span className="text-[11px] text-slate-500">{rateMeta.source}</span>
+          </div>
+          <div className="grid md:grid-cols-4 gap-3">
+            <Field label="Plan tier">
+              <select value={rating.tier || 1} onChange={e => setRating({ tier: num(e.target.value) })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                {Array.from({ length: rateMeta.tiers }, (_, k) => <option key={k + 1} value={k + 1}>Plan {k + 1}</option>)}
+              </select>
+            </Field>
+            <Field label="Age used" hint={num(rating.ageOverride) > 0 ? "manual override" : (num(insuredAge) > 0 ? "from the insured's date of birth" : "add a date of birth, or type an age")}>
+              <NumInput value={rating.ageOverride ?? ""} onChange={e => setRating({ ageOverride: e.target.value })} placeholder={ratedAge > 0 ? String(ratedAge) : "age"} />
+            </Field>
+            {rateMeta.needs.includes("occClass") && (
+              <Field label="Occupational class">
+                <select value={rating.occClass || "12"} onChange={e => setRating({ occClass: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="12">Class 1 & 2</option>
+                  <option value="34">Class 3 & 4</option>
+                </select>
+              </Field>
+            )}
+            {rateMeta.needs.includes("gender") && (
+              <Field label="Gender">
+                <select value={rating.gender || "male"} onChange={e => setRating({ gender: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </Field>
+            )}
+            {rateMeta.needs.includes("smoker") && (
+              <Field label="Smoking status">
+                <select value={rating.smoker ? "1" : "0"} onChange={e => setRating({ smoker: e.target.value === "1" })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="0">Non-smoker</option>
+                  <option value="1">Smoker</option>
+                </select>
+              </Field>
+            )}
+          </div>
+          {rateMeta.riders.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+              {rateMeta.riders.map(r => (
+                <label key={r.key} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={!!(rating.riders || {})[r.key]} onChange={e => setRating({ riders: { [r.key]: e.target.checked } })} className="w-4 h-4 accent-purple-700" />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+          )}
+          {quote ? (
+            <div className="mt-2 text-sm">
+              <div className="flex flex-wrap gap-x-4 text-xs text-slate-600">
+                {quote.lines.map((l, k) => <span key={k}>{l.label}: {money(l.monthly, 2)}/mo</span>)}
+              </div>
+              <div className="font-semibold text-purple-900 mt-1">
+                {rateMeta.currency}{fmt(quote.monthly, 2)} / month · {rateMeta.currency}{fmt(quote.annual, 2)} / year
+                <span className="font-normal text-slate-500"> (semi-annual {rateMeta.currency}{fmt(quote.semiannual, 2)})</span>
+              </div>
+              {quote.notes.map((n, k) => <div key={k} className="text-xs text-amber-700 mt-0.5">{n}</div>)}
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-amber-700">
+              {ratedAge > 0
+                ? `No rate for age ${ratedAge} — this plan is rated for ages ${rateMeta.ageRange[0]}–${rateMeta.ageRange[1]}. Enter the premium manually below.`
+                : "Set the insured's date of birth (or type an age above) to price this plan automatically."}
+            </div>
+          )}
+          <p className="text-[11px] text-slate-500 mt-2">Rates are indicative — always confirm against a formal quotation before presenting to the client. Editing $/mo or $/yr below overrides this.</p>
+        </div>
+      )}
 
       {p.key !== "RS" && (
         <div className="mt-3">
@@ -2739,8 +2845,8 @@ export default function App() {
   const d = useMemo(() => client ? compute(client) : null, [client]);
   // everyone a plan can be quoted for — one plan-quotation table per entry in step 6
   const quoteTargets = useMemo(() => client ? [
-    { id: "self", name: client.name || "Client", relationship: "" },
-    ...(client.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "" })),
+    { id: "self", name: client.name || "Client", relationship: "", age: num(calcAge(client.dob)) },
+    ...(client.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "", age: num(calcAge(dep.dob)) })),
   ] : [], [client]);
 
   // Autosave used to fire a full-record write on every keystroke. Batching rapid edits
