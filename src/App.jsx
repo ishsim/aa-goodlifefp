@@ -1259,20 +1259,23 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
     : (num(insuredAge) > 0 ? num(insuredAge) + (rateMeta?.ageBasis === "next" ? 1 : 0) : 0);
   const quote = rateMeta ? quotePremium(p.key, {
     tier: rating.tier || 1, age: ratedAge, occClass: rating.occClass || "12",
-    gender: rating.gender || "male", smoker: !!rating.smoker, riders: rating.riders || {},
+    gender: rating.gender || "male", smoker: !!rating.smoker,
+    riders: rating.riders || {}, riderOpts: rating.riderOpts || {},
   }) : null;
   // one write: rating inputs and the premiums they produce move together
   const setRating = (patch) => {
-    const next = { ...rating, ...patch, riders: { ...(rating.riders || {}), ...(patch.riders || {}) } };
+    const next = { ...rating, ...patch,
+      riders: { ...(rating.riders || {}), ...(patch.riders || {}) },
+      riderOpts: { ...(rating.riderOpts || {}), ...(patch.riderOpts || {}) } };
     const q = rateMeta ? quotePremium(p.key, {
       tier: next.tier || 1,
       age: num(next.ageOverride) > 0 ? num(next.ageOverride)
         : (num(insuredAge) > 0 ? num(insuredAge) + (rateMeta.ageBasis === "next" ? 1 : 0) : 0),
       occClass: next.occClass || "12", gender: next.gender || "male",
-      smoker: !!next.smoker, riders: next.riders || {},
+      smoker: !!next.smoker, riders: next.riders || {}, riderOpts: next.riderOpts || {},
     }) : null;
     // the tier drives the sum assured too, so rebuild the coverage breakdown alongside it
-    const rows = benefitsFor(p.key, next.tier || 1, next.riders || {});
+    const rows = benefitsFor(p.key, next.tier || 1, next.riders || {}, next.riderOpts || {});
     const coverages = rows ? rows.map(r => ({ id: uid(), ...r })) : p.coverages;
     onChange({ ...p, rating: next, coverages, ...(q ? { monthly: q.monthly, annual: q.annual } : {}) });
   };
@@ -1363,10 +1366,19 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
           {rateMeta.riders.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
               {rateMeta.riders.map(r => (
-                <label key={r.key} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={!!(rating.riders || {})[r.key]} onChange={e => setRating({ riders: { [r.key]: e.target.checked } })} className="w-4 h-4 accent-purple-700" />
-                  {r.label}
-                </label>
+                <span key={r.key} className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={!!(rating.riders || {})[r.key]} onChange={e => setRating({ riders: { [r.key]: e.target.checked } })} className="w-4 h-4 accent-purple-700" />
+                    {r.label}
+                  </label>
+                  {r.options && (rating.riders || {})[r.key] && (
+                    <select value={(rating.riderOpts || {})[r.key] || rating.tier || 1}
+                      onChange={e => setRating({ riderOpts: { [r.key]: num(e.target.value) } })}
+                      className="rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white">
+                      {r.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  )}
+                </span>
               ))}
             </div>
           )}
