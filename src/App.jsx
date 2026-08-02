@@ -79,7 +79,39 @@ const EDU_SECTIONS = [
 
 const PLAN_LIBRARY = {
   GPP: { name: "Whole Life Critical Illness — Guaranteed Protect Plus", body: "Guaranteed Protect Plus is a limited-premium whole life policy providing protection against death up to age 100 and total & permanent disability up to age 70, with premium payment terms of 15 or 20 years (this proposal uses 20 years). It is a participating policy, allowing you to share in the performance of the participating fund through non-guaranteed bonuses.\n\n• Death Benefit — pays the Insured Amount plus bonuses, less amounts owing.\n• TPD Benefit — lump sum of the Insured Amount plus bonuses before age 70.\n• Minimum Death/Critical Illness Benefit — boosts coverage to 2× the insured amount up to age 65.\n• Maturity Benefit — lump sum of Insured Amount plus bonuses at age 100.\n• Bonuses — Reversionary Bonus and Terminal Bonus.\n• Option to Purchase Additional Insurance — buy new coverage without evidence of insurability on key life events (18th birthday, marriage, birth/adoption of a child, death of spouse).\n• Early Critical Protector Life (ECPL) — covers 150 medical conditions across severity stages (42 Early + 35 Intermediate + 73 Major), plus a Special Conditions benefit covering 15 conditions at 20% of the ECPL insured amount (max 5 claims).\n\nA win-win policy offering both protection and returns: a lump sum is available when there is a need to claim, easing financial burden if the unforeseen occurs, and a guaranteed surrender amount plus cash bonuses is available as a savings return (breakeven around year 25–30).\n\nPlan Limitations:\n∴ The 2× boosted coverage ends at the 65th birthday.\n∴ Once a critical illness claim is made, the plan terminates unless total insured amount (including booster) exceeds $250,000.\n∴ 90-day waiting period applies to most critical illnesses." },
-  PA: { name: "Comprehensive Accident Coverage — Solitaire Personal Accident", body: "• Covers Death, Total Permanent Disability and dismemberment due to accident at a very low premium.\n• Covers broken bones and burns up to $8,000.\n• Provides stability of lifestyle in case of loss of income or unexpected expenses arising from accidental death or disability.\n\nPlan Limitations:\n∴ As a standalone accident plan, coverage is payable only upon accidental causes.\n∴ If nothing should happen, the plan does not provide any return." },
+  PA: { name: "Comprehensive Accident Coverage — Solitaire Personal Accident", body: "• Covers Death, Total Permanent Disability and dismemberment due to accident at a very low premium.\n• Covers broken bones and burns up to $8,000.\n• Provides stability of lifestyle in case of loss of income or unexpected expenses arising from accidental death or disability.\n\nPlan Limitations:\n∴ As a standalone accident plan, coverage is payable only upon accidental causes.\n∴ If nothing should happen, the plan does not provide any return.", tables: [
+    { caption: "Basic Benefits — Insured Amount (B$)",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3", "Plan 4"],
+      widths: ["40%", "15%", "15%", "15%", "15%"],
+      rows: [
+        ["Accidental Death Benefit", "100,000", "250,000", "500,000", "750,000"],
+        ["Accidental Dismemberment and Burns Benefit", "100,000", "250,000", "500,000", "750,000"],
+        ["Accidental Permanent Total Disablement Benefit", "150,000", "375,000", "750,000", "1,125,000"],
+        ["Double Indemnity for Accidental Death on Public Conveyance Benefit", "100,000", "250,000", "500,000", "750,000"],
+        ["Accident Medical Reimbursement Benefit", "2,000", "3,000", "4,000", "5,000"],
+        ["Traditional Chinese Medicine / Chiropractic Reimbursement Benefit", "500", "750", "1,000", "1,250"],
+        ["Death Benefit", "1,000", "1,000", "1,000", "1,000"],
+      ] },
+    { caption: "Optional: Lifestyle Maintenance Benefits Group",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3", "Plan 4"],
+      widths: ["40%", "15%", "15%", "15%", "15%"],
+      rows: [
+        ["Weekly Income Benefit", "100", "200", "300", "400"],
+        ["Mobility Aids Reimbursement Benefit", "1,000", "1,000", "2,000", "2,000"],
+        ["Home Modification Reimbursement Benefit", "5,000", "10,000", "15,000", "20,000"],
+        ["Family Support Fund Benefit", "30,000", "60,000", "100,000", "150,000"],
+      ] },
+    { caption: "Optional: Accidental Hospitalisation Benefits Group",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3", "Plan 4"],
+      widths: ["40%", "15%", "15%", "15%", "15%"],
+      rows: [
+        ["Daily Accidental Hospital Income Benefit", "50", "150", "250", "350"],
+        ["Daily Accidental Intensive Care Unit (ICU) Benefit", "50", "150", "250", "350"],
+        ["Ambulance Services Benefit", "200", "200", "200", "200"],
+        ["Broken Bones Benefit", "8,000", "12,000", "16,000", "20,000"],
+        ["Emergency Medical Evacuation and Repatriation Benefit", "10,000", "25,000", "50,000", "75,000"],
+      ] },
+  ], tablesNote: "Each optional group is issued at the same plan type as the basic benefits." },
   MSCC: { name: "Comprehensive Cancer Coverage — MultiStage Cancer Cover", body: "• A critical illness plan specially designed to provide coverage for Major Cancer at early, intermediate and major stages.\n• Acts as income protection so you have funding to continue your standard of living upon diagnosis.\n• Level premium for 20 years.\n\nPlan Limitations:\n∴ Cancer benefit is payable only once; the policy terminates upon diagnosis of any covered stage resulting in payout.\n∴ As a standalone cancer plan, coverage is payable only upon diagnosis of Cancer.\n∴ If nothing should happen, the plan does not provide any return.", tables: [
     { caption: "Basic Benefits — Insured Amount (S$)",
       head: ["No", "Basic Benefits", "Plan 1", "Plan 2", "Plan 3"],
@@ -90,7 +122,7 @@ const PLAN_LIBRARY = {
     { caption: "What counts as a claim at each stage",
       head: ["Early Stage", "Intermediate Stage", "Major Stage"],
       widths: ["34%", "33%", "33%"],
-      prose: true,
+      dense: true,
       rows: [[
         [{ t: "Carcinoma in situ (CIS)" },
          { p: "CIS means the focal autonomous new growth of carcinomatous cells confined to the cells in which it originated and has not yet result in invasion and destruction of surrounding tissues." },
@@ -106,8 +138,64 @@ const PLAN_LIBRARY = {
   ],
   tablesNote: "Further definitions can be found in the MultiStage Cancer Cover Product Summary." },
   HI: { name: "Hospital Confinement Pay-Out — Hospital Income", body: "• Provides a cash payout for each day of hospital confinement (in Brunei Darussalam or overseas) due to injury or sickness.\n• Provides a get-well benefit after discharge.\n• Daily cash provision if required to undergo day surgery or recuperate as an outpatient following discharge.\n\nPlan Limitations:\n∴ As a standalone hospitalisation plan, coverage is payable only upon hospitalisation (admission to a hospital bed for at least 6 hours).\n∴ If nothing should happen, the plan does not provide any return." },
-  SA: { name: "Comprehensive Accident & Specific Diseases Coverage — Star Armour", body: "AIA Star Armour is an accident and health plan for juveniles aged 16 and below at application, combining accident cover with protection against specific childhood diseases.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 pays the insured amount, with double indemnity if the accident happens during school activities, on public or private conveyance, or as a pedestrian.\n\u2022 Monthly Catastrophe Cash Benefit \u2014 a monthly payout for up to 20 years if a catastrophic disability results from an accident.\n\u2022 Medical Reimbursement (Accident & Disease) \u2014 reimburses treatment costs including nursing and ambulance charges, plus TCM/chiropractic up to 10% of the benefit.\n\u2022 Daily Hospital Income (Accident & Disease) \u2014 paid for each day of hospitalisation up to 180 days, doubled while in intensive care.\n\u2022 Recuperation Benefit \u2014 pays out on diagnosis of Dengue Fever or Hand, Foot & Mouth Disease.\n\u2022 Education Assurance Fund \u2014 pays out on accidental death of the policyowner, protecting the child\u2019s education.\n\u2022 Optional Child Critical Illnesses Benefit \u2014 available at B$30,000, B$50,000 or B$100,000, convertible later to a whole life or endowment policy without further underwriting.\n\nPlan Limitations:\n\u2234 Entry is limited to juveniles aged 16 and below.\n\u2234 Disease-related benefits apply only to the specific diseases named in the policy contract.\n\u2234 If nothing should happen, the plan does not provide any return." },
-  CPA: { name: "Comprehensive Accident & Dementia Coverage — Centurion PA", body: "AIA Centurion PA is a personal accident plan designed for individuals aged 40 to 80, providing 24/7 worldwide coverage through to age 100, with an optional dementia benefit group.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 with an additional dismemberment and burns benefit on top of the base amount.\n\u2022 Fractures Benefit \u2014 a dedicated payout for fractures, which become materially more likely with age.\n\u2022 Loss of Activities of Daily Living Benefit \u2014 pays out when an accident leaves the insured unable to perform daily activities.\n\u2022 Accidental Medical Reimbursement \u2014 including an extra reimbursement specifically for fractures, plus TCM/chiropractic and ambulance cover.\n\u2022 Daily Accidental Hospital Income and Post-Hospitalisation Home Care \u2014 support during recovery.\n\u2022 Mobility Aid and Home Modification Reimbursement \u2014 helps adapt the home after a disabling accident.\n\u2022 Optional Dementia Benefits Group \u2014 a lump sum on diagnosis of dementia plus a care reimbursement benefit; entry before age 70, covering to age 85.\n\nPlan Limitations:\n\u2234 Entry ages are 40 to 80; ages 81 and above are renewal only.\n\u2234 The dementia option must be the same plan tier as the basic benefits or lower, and terminates at age 85.\n\u2234 As an accident plan, the main benefits are payable only on accidental causes \u2014 the dementia group is the exception.\n\u2234 If nothing should happen, the plan does not provide any return." },
+  SA: { name: "Comprehensive Accident & Specific Diseases Coverage — Star Armour", body: "AIA Star Armour is an accident and health plan for juveniles aged 16 and below at application, combining accident cover with protection against specific childhood diseases.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 pays the insured amount, with double indemnity if the accident happens during school activities, on public or private conveyance, or as a pedestrian.\n\u2022 Monthly Catastrophe Cash Benefit \u2014 a monthly payout for up to 20 years if a catastrophic disability results from an accident.\n\u2022 Medical Reimbursement (Accident & Disease) \u2014 reimburses treatment costs including nursing and ambulance charges, plus TCM/chiropractic up to 10% of the benefit.\n\u2022 Daily Hospital Income (Accident & Disease) \u2014 paid for each day of hospitalisation up to 180 days, doubled while in intensive care.\n\u2022 Recuperation Benefit \u2014 pays out on diagnosis of Dengue Fever or Hand, Foot & Mouth Disease.\n\u2022 Education Assurance Fund \u2014 pays out on accidental death of the policyowner, protecting the child\u2019s education.\n\u2022 Optional Child Critical Illnesses Benefit \u2014 available at B$30,000, B$50,000 or B$100,000, convertible later to a whole life or endowment policy without further underwriting.\n\nPlan Limitations:\n\u2234 Entry is limited to juveniles aged 16 and below.\n\u2234 Disease-related benefits apply only to the specific diseases named in the policy contract.\n\u2234 If nothing should happen, the plan does not provide any return.", tables: [
+    { caption: "Basic Benefits — Sum Assured (B$)",
+      head: ["Plan Type", "Plan 1", "Plan 2", "Plan 3"],
+      widths: ["49%", "17%", "17%", "17%"],
+      dense: true,
+      rows: [
+        [[{ h: "Accidental Death, Accidental Dismemberment and Burns Benefit" }, { p: "Refer to the Schedule of Indemnity in the policy contract" }], "20,000", "35,000", "100,000"],
+        [[{ h: "Double Indemnity for Dismemberment and Burns Benefit" }, { p: "Pays when your child is injured in an accident that happened at school, on public/private conveyances or as a pedestrian on the road" }], "20,000", "35,000", "100,000"],
+        [[{ h: "Monthly Catastrophe Cash Benefit (Accident)" }, { p: "Pays up to 20 years upon a catastrophic disability" }], "750/month", "1,000/month", "1,500/month"],
+        [[{ h: "Medical Reimbursement Benefit (Accident & Disease)" }, { p: "Pays for medical expenses including:" }, { ul: ["Hiring a licensed/graduate nurse — up to sum assured", "Ambulance charges — up to B$200", "Traditional Chinese medicine/chiropractic treatments — up to 10% of sum assured"] }], "1,500", "3,000", "5,000"],
+        [[{ h: "Daily Hospital Income Benefit (Accident & Disease)" }, { p: "Pays up to 180 days" }], "30/day", "50/day", "100/day"],
+        [[{ h: "Double Indemnity for Daily Hospital Income Benefit in ICU (Accident & Disease)" }, { p: "Pays up to 30 days" }], "30/day", "50/day", "100/day"],
+        [[{ h: "Post-Hospitalisation Home Care Benefit (Accident & Disease)" }, { p: "Pays when your child is required to stay in a hospital for more than 4 consecutive days. Maximum one claim per accident or disease" }], "100", "150", "200"],
+        [[{ h: "Recuperation Benefit (Dengue Fever and Hand, Foot & Mouth Disease)" }, { p: "Maximum one claim every 2 years" }], "50", "80", "100"],
+        [[{ h: "Education Assurance Fund Benefit" }, { ul: ["Pays upon accidental death of payor (before payor's 75th birthday; before the policy anniversary following child's 21st birthday [if child is no longer a student] or child's 24th birthday, whichever is earliest)", "Pays upon accidental death of child (after the coverage for payor ceases)"] }], "10,000", "17,500", "50,000"],
+        [[{ h: "Reconstructive Surgery Reimbursement Benefit (Accident)" }, { ul: ["Reconstructive surgery", "Skin transplantation"] }], "NIL", "5,000", "15,000"],
+        [[{ h: "Mobility Aids Reimbursement Benefit (Accident)" }, { p: "Pays when your child needs mobility aids" }], "NIL", "300", "1,000"],
+        [[{ h: "Emergency Medical Evacuation & Repatriation Benefit (Accident)" }, { p: "Covers while travelling overseas or outside of the home country" }], "NIL", "NIL", "50,000 per policy year"],
+        [[{ h: "Payor Benefit" }, { p: "Waives future premiums until your child reaches 21 years old should you pass away due to an accident before age 75" }]],
+        [[{ h: "Renewal Bonus" }, { p: "Provides additional 5% of sum assured for Accidental Death, Accidental Dismemberment and Burns Benefit for each policy renewal, up to a maximum of 5 renewals." }]],
+        [[{ h: "Death Benefit" }, { p: "If the insured passes away and no claim has been paid under the Accidental Death, Accidental Dismemberment and Burns Benefit, we will pay the amount of cover. The amount payable under this benefit shall not exceed $1,000 regardless of the number of AIA Star Armour policies insured under." }]],
+      ] },
+    { caption: "Optional Benefit — Sum Assured (B$)",
+      head: ["Optional Benefit", "Option 1", "Option 2", "Option 3"],
+      widths: ["49%", "17%", "17%", "17%"],
+      dense: true,
+      rows: [
+        [[{ h: "Child Critical Illnesses Benefit" }, { ul: ["Covers 17 Child Critical Illnesses", "Option to convert this benefit to an AIA whole life or endowment policy from your child's 18th birthday till the policy anniversary following your child's 21st birthday"] }, { p: "This benefit will terminate on the policy anniversary following the child's 21st birthday." }], "30,000", "50,000", "100,000"],
+      ] },
+  ] },
+  CPA: { name: "Comprehensive Accident & Dementia Coverage — Centurion PA", body: "AIA Centurion PA is a personal accident plan designed for individuals aged 40 to 80, providing 24/7 worldwide coverage through to age 100, with an optional dementia benefit group.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 with an additional dismemberment and burns benefit on top of the base amount.\n\u2022 Fractures Benefit \u2014 a dedicated payout for fractures, which become materially more likely with age.\n\u2022 Loss of Activities of Daily Living Benefit \u2014 pays out when an accident leaves the insured unable to perform daily activities.\n\u2022 Accidental Medical Reimbursement \u2014 including an extra reimbursement specifically for fractures, plus TCM/chiropractic and ambulance cover.\n\u2022 Daily Accidental Hospital Income and Post-Hospitalisation Home Care \u2014 support during recovery.\n\u2022 Mobility Aid and Home Modification Reimbursement \u2014 helps adapt the home after a disabling accident.\n\u2022 Optional Dementia Benefits Group \u2014 a lump sum on diagnosis of dementia plus a care reimbursement benefit; entry before age 70, covering to age 85.\n\nPlan Limitations:\n\u2234 Entry ages are 40 to 80; ages 81 and above are renewal only.\n\u2234 The dementia option must be the same plan tier as the basic benefits or lower, and terminates at age 85.\n\u2234 As an accident plan, the main benefits are payable only on accidental causes \u2014 the dementia group is the exception.\n\u2234 If nothing should happen, the plan does not provide any return.", tables: [
+    { caption: "Basic Benefits — Insured Amount (S$)",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3"],
+      widths: ["46%", "18%", "18%", "18%"],
+      rows: [
+        ["Accidental Death Benefit", "30,000", "60,000", "100,000"],
+        ["Accidental Dismemberment and Burns Benefit", "30,000", "60,000", "100,000"],
+        ["Additional Accidental Dismemberment and Burns Benefit", "30,000", "60,000", "100,000"],
+        ["Fractures Benefit", "10,000", "15,000", "30,000"],
+        ["Loss of Activities of Daily Living Benefit", "20,000", "30,000", "60,000"],
+        ["Accidental Medical Reimbursement Benefit", "1,000", "2,000", "3,000"],
+        ["Extra Accidental Medical Reimbursement Benefit (Fractures)", "1,000", "2,000", "3,000"],
+        ["TCM / Chiropractic Medical Reimbursement Benefit", "250", "500", "750"],
+        ["Ambulance Services Benefit", "200", "200", "200"],
+        ["Daily Accidental Hospital Income Benefit", "50", "100", "150"],
+        ["Post-Hospitalisation Home Care Benefit", "800", "1,000", "1,200"],
+        ["Mobility Aid Reimbursement Benefit", "250", "500", "750"],
+        ["Home Modification Reimbursement Benefit", "5,000", "10,000", "15,000"],
+        ["Death Benefit", "1,000", "1,000", "1,000"],
+      ] },
+    { caption: "Optional: Dementia Benefits Group — Insured Amount (S$)",
+      head: ["Benefit", "Plan 1", "Plan 2", "Plan 3"],
+      widths: ["46%", "18%", "18%", "18%"],
+      rows: [
+        ["Dementia Benefit", "30,000", "50,000", "100,000"],
+        ["Dementia Care Reimbursement Benefit", "6,000", "10,000", "20,000"],
+      ] },
+  ], tablesNote: "The dementia option must be taken at the same plan type as the basic benefits, or lower." },
   STP: { name: "Income Protection — Secure Term Plus", body: "• A term coverage plan providing high insurance coverage against death, total permanent disability and terminal illness for relatively low premiums.\n• Premiums are level for the initial 5, 10 or 20 years (this proposal locks in 20 years).\n• Acts as income protection to maintain your standard of living, and as credit protection against any liabilities.\n• Critical illness coverage is optional.\n• Convertible to a whole life plan in the future regardless of medical condition at that time — conversion is based on your health condition as of now.\n\nPlan Limitations:\n∴ Premiums become higher after the initial level-premium period." },
   ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate." },
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday." },
@@ -1529,18 +1617,23 @@ const PlanBodyTables = ({ tables, note }) => (
         {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 4 }}>{tb.caption}</div>}
         <table style={{ tableLayout: "fixed" }}>
           <thead><tr>{tb.head.map((h, k) => (
-            <th key={k} style={{ width: tb.widths?.[k], textAlign: tb.prose ? "left" : (tb.align?.[k] || "left") }}>{h}</th>
+            <th key={k} style={{ width: tb.widths?.[k], textAlign: k === 0 ? "left" : (tb.align?.[k] || "center") }}>{h}</th>
           ))}</tr></thead>
           <tbody>{tb.rows.map((row, ri) => (
             <tr key={ri}>{row.map((cell, ci) => (
-              <td key={ci} style={{ verticalAlign: "top", textAlign: tb.prose ? "left" : (tb.align?.[ci] || "left"), fontSize: tb.prose ? 11 : 12.5 }}>
-                {tb.prose
-                  ? (cell || []).map((b, bi) => {
-                      if (b.t) return <div key={bi} style={{ fontWeight: 700, textDecoration: "underline", marginBottom: 3, marginTop: bi ? 6 : 0 }}>{b.t}</div>;
-                      if (b.ul) return <ul key={bi} style={{ margin: "0 0 4px", paddingLeft: 14, listStyle: "disc" }}>{b.ul.map((li, li2) => <li key={li2} style={{ marginBottom: 1 }}>{li}</li>)}</ul>;
-                      return <p key={bi} style={{ margin: "0 0 5px", lineHeight: 1.45, textAlign: "left" }}>{b.p}</p>;
-                    })
-                  : cell}
+              // a row carrying a single cell stretches across the table — used for benefits
+              // that apply regardless of plan (payor waiver, renewal bonus, death benefit)
+              <td key={ci} colSpan={row.length === 1 && tb.head.length > 1 ? tb.head.length : undefined}
+                style={{ verticalAlign: "top", fontSize: tb.dense ? 11 : 12.5,
+                         textAlign: ci === 0 || row.length === 1 ? "left" : (tb.align?.[ci] || "center") }}>
+                {Array.isArray(cell) ? cell.map((b, bi) => {
+                  // {h} names a benefit (brand colour, matching the report's h3);
+                  // {t} is an underlined sub-heading; {p} prose; {ul} a bullet list
+                  if (b.h) return <div key={bi} style={{ fontWeight: 700, color: "#66229d", marginBottom: 2, marginTop: bi ? 5 : 0 }}>{b.h}</div>;
+                  if (b.t) return <div key={bi} style={{ fontWeight: 700, textDecoration: "underline", marginBottom: 3, marginTop: bi ? 6 : 0 }}>{b.t}</div>;
+                  if (b.ul) return <ul key={bi} style={{ margin: "0 0 4px", paddingLeft: 14, listStyle: "disc" }}>{b.ul.map((li, li2) => <li key={li2} style={{ marginBottom: 1 }}>{li}</li>)}</ul>;
+                  return <p key={bi} style={{ margin: "0 0 5px", lineHeight: 1.45, textAlign: "left" }}>{b.p}</p>;
+                }) : cell}
               </td>
             ))}</tr>
           ))}</tbody>
