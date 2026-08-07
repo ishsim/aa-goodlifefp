@@ -2310,6 +2310,98 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
   );
 }
 
+// Per-policy summary, grouped by whoever is insured — the plain "what do I actually hold"
+// view that sits behind the Overview timeline. Shared by the Overview step and the Review
+// Report so the two can never drift apart; `report` swaps editor chrome for the .rpt styling.
+const CurrentPlansTable = ({ client, report = false }) => {
+  const people = [
+    { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
+    ...(client.dependents || []).map((dep, i) => ({
+      id: dep.id, name: dep.name || "Dependent " + (i + 1),
+      relationship: dep.relationship || "", age: calcAge(dep.dob),
+    })),
+  ];
+  const rowsFor = (id) => [
+    ...(client.existingPlans || []).filter(x => (x.insured || "self") === id).map(x => ({
+      kind: "plan", id: x.id, policyNo: x.policyNumber, date: x.policyDate,
+      name: x.planName || x.planType || "Existing plan", sub: x.planName ? x.planType : "",
+      status: x.status || "active",
+      cover: (x.coverages || []).filter(c => c.category && num(c.amount) > 0)
+        .map(c => c.category + ": " + money(num(c.amount))),
+      premium: num(x.allocation ?? x.monthly), freq: x.allocationFreq,
+    })),
+    ...(client.existingInvestments || []).filter(x => (x.insured || "self") === id).map(x => ({
+      kind: "investment", id: x.id, policyNo: x.policyNumber, date: x.policyDate,
+      name: x.description || x.type || "Investment", sub: x.type && x.description ? x.type : "",
+      status: "active",
+      cover: num(x.currentValue) > 0 ? ["Current value: " + money(num(x.currentValue))] : [],
+      premium: num(x.allocation), freq: x.allocationFreq,
+    })),
+  ];
+  const groups = people.map(pp => ({ ...pp, rows: rowsFor(pp.id) })).filter(g => g.rows.length);
+  if (!groups.length) {
+    return <div className={report ? "italic text-slate-400" : "text-sm text-slate-400"}>No policies captured yet — add them in the Current Coverage step.</div>;
+  }
+  const th = report ? undefined : "text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200";
+  const td = report ? undefined : "py-1.5 px-2 border-b border-slate-100 align-top";
+  return (
+    <>
+      {groups.map(g => {
+        // frequencies differ per policy, so the only honest total is a monthly equivalent —
+        // and only for policies actually being paid for right now
+        const monthly = g.rows.filter(r => statusPaysPremium(r.status))
+          .reduce((sum, r) => sum + freqMonthlyEquiv(r.premium, r.freq), 0);
+        return (
+          <div key={g.id} style={{ breakInside: "avoid" }} className={report ? "" : "mb-5"}>
+            <div className={report ? "" : "font-semibold text-sm text-purple-900 mb-1"}>
+              {report
+                ? <h3>{g.name}{g.relationship ? " (" + g.relationship + ")" : ""}{g.age !== "" ? " — age " + g.age : ""}</h3>
+                : <>{g.name}{g.relationship ? " (" + g.relationship + ")" : ""}{g.age !== "" ? " — age " + g.age : ""}</>}
+            </div>
+            <table className={report ? undefined : "w-full text-sm border border-slate-200 rounded-lg overflow-hidden"}>
+              <thead><tr>
+                <th className={th}>Policy No.</th>
+                <th className={th}>Policy Date</th>
+                <th className={th}>Current Policy(s) / Portfolio</th>
+                <th className={th}>Coverage</th>
+                <th className={th} style={{ textAlign: "right" }}>Premium</th>
+                <th className={th}>Mode</th>
+              </tr></thead>
+              <tbody>
+                {g.rows.map((r, i) => {
+                  const dead = statusIsDead(r.status);
+                  return (
+                    <tr key={r.id || i} style={dead ? { opacity: 0.55 } : undefined}>
+                      <td className={td}>{r.policyNo || "—"}</td>
+                      <td className={td}>{fmtDate(r.date) || "—"}</td>
+                      <td className={td}>
+                        <b>{r.name}</b>
+                        {r.sub ? <div className="text-xs text-slate-500">{r.sub}</div> : null}
+                        {r.kind === "investment" && <div className="text-xs text-slate-500">Investment portfolio</div>}
+                        {r.status !== "active" && <div className="text-xs font-semibold" style={{ color: dead ? "#64748b" : "#b45309" }}>{statusLabel(r.status)}</div>}
+                      </td>
+                      <td className={td}>{r.cover.length ? r.cover.map((c, j) => <div key={j}>{c}</div>) : "—"}</td>
+                      <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? money(r.premium, 2) : "—"}</td>
+                      <td className={td}>{r.premium > 0 ? freqLabel(r.freq) : "—"}</td>
+                    </tr>
+                  );
+                })}
+                {monthly > 0 && (
+                  <tr>
+                    <td className={td} colSpan={4} style={{ fontWeight: 600 }}>Total being paid — monthly equivalent</td>
+                    <td className={td} style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{money(monthly, 2)}</td>
+                    <td className={td}>Monthly</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 function CurrentCoverageSection({ client, update }) {
   const plans = client.existingPlans || [];
   const invs = client.existingInvestments || [];
@@ -4119,11 +4211,6 @@ export default function App() {
       }
       return { main: <div>{mainEls}</div>, limitations: limitationsEl };
     };
-    // one block per insured person who has at least one existing plan
-    const reviewPersons = [
-      { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
-      ...(client.dependents || []).map((dep, i) => ({ id: dep.id, name: dep.name || "Dependent " + (i + 1), age: calcAge(dep.dob) })),
-    ].filter(p => p.id === "self" || (client.existingPlans || []).some(pl => (pl.insured || "self") === p.id));
 
     return (
       <div className="bg-slate-200 min-h-screen">
@@ -4205,34 +4292,7 @@ export default function App() {
           <div className="pagebreak" />
           <h2>Current Plans &amp; Coverage</h2>
           <p className="text-xs text-slate-500 mb-2">Existing insurance plans on file, as entered in the Current Coverage step.</p>
-          {reviewPersons.length === 0 && <p className="italic text-slate-400">No existing plans on file yet.</p>}
-          {reviewPersons.map(person => {
-            const plans = (client.existingPlans || []).filter(p => (p.insured || "self") === person.id);
-            if (plans.length === 0) return null;
-            return (
-              <div key={person.id} style={{ breakInside: "avoid" }}>
-                <h3>{person.name}{person.age !== "" ? " (" + person.age + ")" : ""}</h3>
-                <table>
-                  <thead><tr><th>Plan</th><th>Policy No.</th><th>Policy Date</th><th>Coverage</th><th className="tnum">Allocation</th></tr></thead>
-                  <tbody>
-                    {plans.map((p, i) => {
-                      const covs = (p.coverages || []).filter(c => c.category && num(c.amount) > 0);
-                      const allocAmt = num(p.allocation ?? p.monthly);
-                      return (
-                        <tr key={p.id || i}>
-                          <td><b>{p.planName || p.planType || "Existing plan"}</b>{p.planType ? <div className="text-xs text-slate-500">{p.planType}</div> : null}</td>
-                          <td>{p.policyNumber || "—"}</td>
-                          <td>{fmtDate(p.policyDate) || "—"}</td>
-                          <td>{covs.length ? covs.map((c, j) => <div key={j}>{c.category}: {money(num(c.amount))}</div>) : "—"}</td>
-                          <td className="tnum">{allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })}
+          <CurrentPlansTable client={client} report />
 
           {/* 4. Current Financial Health */}
           <div className="pagebreak" />
@@ -4700,6 +4760,10 @@ export default function App() {
         {step === 6 && (<>
           <SectionCard title="Overview">
             <CoverageTimelinePanel client={client} />
+          </SectionCard>
+          <SectionCard title="Current Plans & Coverage">
+            <p className="text-xs text-slate-500 mb-3">Every policy on file, policy by policy, grouped by who it insures — pulled straight from the Current Coverage step.</p>
+            <CurrentPlansTable client={client} />
           </SectionCard>
           <SectionCard title="Total Insurance Needs">
             <InsuranceNeedsSummary client={client} update={update} />
