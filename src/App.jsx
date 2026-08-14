@@ -2320,6 +2320,51 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
 // Per-policy summary, grouped by whoever is insured — the plain "what do I actually hold"
 // view that sits behind the Overview timeline. Shared by the Overview step and the Review
 // Report so the two can never drift apart; `report` swaps editor chrome for the .rpt styling.
+// The five-tier planning pyramid, drawn inline so it scales, prints crisply and needs no
+// uploaded asset. Bands run apex-first; each is the trapezoid of the triangle between two
+// heights, with a white gap standing in for the separator lines.
+const HIERARCHY_TIERS = [
+  // the apex is narrow at its own mid-height, so its label sits lower where there is room
+  { lines: ["Taxes &", "Estate"], fill: "#FFC000", shift: 14 },
+  { lines: ["Retirement", "Planning"], fill: "#8CE21C" },
+  { lines: ["Planning for", "Financial Goals"], fill: "#22D24E" },
+  { lines: ["Risk Management"], fill: "#3ED9AF" },
+  { lines: ["Contingency Planning"], fill: "#4E87C7" },
+];
+const HierarchyPyramid = ({ title = true }) => {
+  const W = 640, H = 380, n = HIERARCHY_TIERS.length, gap = 3;
+  const half = (y) => (y / H) * (W / 2);
+  return (
+    <svg viewBox={`0 0 ${W} ${H + (title ? 34 : 0)}`} width="100%"
+      style={{ maxWidth: W, display: "block", margin: "0 auto", fontFamily: "inherit" }}
+      role="img" aria-label="The Hierarchy of Needs in Financial Planning">
+      {title && <text x={W / 2} y="20" textAnchor="middle" fontSize="15" fontWeight="700" fill="#1f2937">The Hierarchy of Needs in Financial Planning</text>}
+      <g transform={`translate(0 ${title ? 34 : 0})`}>
+        {HIERARCHY_TIERS.map((t, i) => {
+          const y0 = (H / n) * i, y1 = (H / n) * (i + 1) - gap;
+          const pts = [
+            [W / 2 - half(y0), y0], [W / 2 + half(y0), y0],
+            [W / 2 + half(y1), y1], [W / 2 - half(y1), y1],
+          ].map(([x, y]) => `${x},${y}`).join(" ");
+          const mid = (y0 + y1) / 2;
+          const size = i === 0 ? 17 : 19;
+          // one line sits on the band's centre; two straddle it
+          const firstY = (t.lines.length === 1 ? mid + size * 0.35 : mid - size * 0.15) + (t.shift || 0);
+          return (
+            <g key={i}>
+              <polygon points={pts} fill={t.fill} />
+              {t.lines.map((ln, k) => (
+                <text key={k} x={W / 2} y={firstY + k * (size + 4)} textAnchor="middle"
+                  fontSize={size} fill="#1f2937">{ln}</text>
+              ))}
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+};
+
 const CurrentPlansTable = ({ client, report = false }) => {
   const people = [
     { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
@@ -3876,7 +3921,7 @@ export default function App() {
           <div className="pagebreak" />
           <h2>1. Executive Summary</h2>
           {n.exec ? para(n.exec) : <p className="italic text-slate-400">No executive summary yet — draft one in the Narrative step.</p>}
-          {client.sections.hierarchy && (<><h3>The Hierarchy of Needs in Financial Planning</h3>{para(EDU_SECTIONS[0].body)}</>)}
+          {client.sections.hierarchy && (<><h3>The Hierarchy of Needs in Financial Planning</h3>{para(EDU_SECTIONS[0].body)}<div style={{ breakInside: "avoid", margin: "10px 0 18px" }}><HierarchyPyramid title={false} /></div></>)}
           {client.sections.education && EDU_SECTIONS.slice(1).map(s => (<div key={s.id}><h3>{s.title}</h3>{para(s.body)}</div>))}
 
           <div className="pagebreak" />
@@ -4294,6 +4339,14 @@ export default function App() {
           {/* 2. Key Points */}
           <h3>Key Points</h3>
           {rv.keyPoints ? paraLead(rv.keyPoints, "dash") : <p className="italic text-slate-400">No key points yet — add them under Narrative → Annual Review Report.</p>}
+
+          {/* How we plan — a refresher before looking at this year's position.
+              Shares the full report's toggle so one switch governs both. */}
+          {client.sections.hierarchy && (<>
+            <h3>The Hierarchy of Needs in Financial Planning</h3>
+            {para(EDU_SECTIONS[0].body)}
+            <div style={{ breakInside: "avoid", margin: "10px 0 18px" }}><HierarchyPyramid title={false} /></div>
+          </>)}
 
           {/* 3. Current Plans & Coverage */}
           <div className="pagebreak" />
