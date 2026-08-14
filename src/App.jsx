@@ -1581,7 +1581,7 @@ const InvestedAssetRows = ({ rows, onChange }) => {
 // One quoted plan inside a person's plan-quotation table. Mirrors the Current Coverage
 // editor (coverage breakdown, coverage term, premium-ends age) so the recommended side of
 // the Overview timeline can be built from the same shape as the in-force side.
-const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }) => {
+const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, onMove, canMoveUp, canMoveDown }) => {
   const setP = (patch) => onChange({ ...p, ...patch });
   // Products with an official rate table can price themselves from the insured's age (plus
   // occupation class / gender / smoking status where the table needs them), so the advisor
@@ -1634,6 +1634,12 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId }
           <select value={p.insuredBy || "self"} onChange={e => setP({ insuredBy: e.target.value })} title="Move this plan to another person's table" className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
             {insuredOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
+          <span className="inline-flex flex-col leading-none">
+            <button onClick={() => onMove(-1)} disabled={!canMoveUp} title="Move up — plans print in this order"
+              className={"text-[10px] px-1 " + (canMoveUp ? "text-slate-500 hover:text-purple-800" : "text-slate-300 cursor-default")}>▲</button>
+            <button onClick={() => onMove(1)} disabled={!canMoveDown} title="Move down — plans print in this order"
+              className={"text-[10px] px-1 " + (canMoveDown ? "text-slate-500 hover:text-purple-800" : "text-slate-300 cursor-default")}>▼</button>
+          </span>
           <button onClick={onRemove} className="text-red-500 text-sm px-1">✕</button>
         </div>
       </div>
@@ -1894,7 +1900,8 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
     {groups.map(g => (
       <div key={g.id} style={{ breakInside: "avoid" }}>
         <h3>{g.name}{g.relationship ? " (" + g.relationship + ")" : ""}</h3>
-        {["Risk Management", "Goal Planning", "Retirement Planning"]
+        {/* categories appear in the order the advisor arranged their plans, not a fixed list */}
+        {[...new Set(g.items.map(p => p.category))]
           .map(cat => ({ cat, items: g.items.filter(p => p.category === cat) }))
           .filter(c => c.items.length)
           .map(c => (
@@ -4740,12 +4747,24 @@ export default function App() {
                 {mine.length === 0
                   ? <div className="text-sm text-slate-400">No plans quoted for {person.name} yet — add one above.</div>
                   : <div className="space-y-3">
-                      {mine.map(p => (
+                      {mine.map((p, idx) => (
                         <RecommendedPlanCard
                           key={p.id}
                           p={p}
                           clientId={client.id}
                           insuredOptions={quoteTargets}
+                          canMoveUp={idx > 0}
+                          canMoveDown={idx < mine.length - 1}
+                          onMove={dir => {
+                            // swap with the neighbour in this person's list; positions of
+                            // everyone else's plans in client.products stay put
+                            const all = [...client.products];
+                            const slots = all.map((x, i) => [x, i]).filter(([x]) => (x.insuredBy || "self") === person.id).map(([, i]) => i);
+                            const from = slots[idx], to = slots[idx + dir];
+                            if (from == null || to == null) return;
+                            [all[from], all[to]] = [all[to], all[from]];
+                            update({ products: all });
+                          }}
                           onChange={next => update({ products: client.products.map(x => x.id === p.id ? next : x) })}
                           onRemove={() => update({ products: client.products.filter(x => x.id !== p.id) })}
                         />

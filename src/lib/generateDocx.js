@@ -343,11 +343,11 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
   ], [5400, 3600]));
 
   // one quotation table per insured person, sub-grouped by planning category
-  const cats = ["Risk Management", "Goal Planning", "Retirement Planning"];
   const groups = d.insuredGroups || [];
   groups.forEach(g => {
     children.push(H2(g.name + (g.relationship ? " (" + g.relationship + ")" : "")));
-    cats.forEach(cat => {
+    // category blocks follow the advisor's arrangement, matching the on-screen reports
+    [...new Set(g.items.map(p => p.category))].forEach(cat => {
       const items = g.items.filter(p => p.category === cat);
       if (!items.length) return;
       children.push(buildTable(
