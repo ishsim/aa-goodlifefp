@@ -302,6 +302,7 @@ const PLAN_LIBRARY = {
   ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate." },
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday.", tables: [
     { caption: "150 Multi-Stage Critical Illnesses — conditions covered",
+      sub: "Critical illness is claimable up to 5 times under this plan.",
       head: ["No", "Critical Illness", "Early Stage", "Intermediate Stage", "Major Stage"],
       widths: ["5%", "51%", "14.6%", "14.7%", "14.7%"],
       align: ["left", "left", "center", "center", "center"],
@@ -457,12 +458,17 @@ const newProduct = (key, insuredBy = "self") => {
   };
 };
 // how a plan's coverage reads in report tables and timeline tooltips
+const isWaiver = (cat) => String(cat || "").startsWith("Premium Waiver");
 const planCoverageRows = (p) => {
-  const rows = (p.coverages || []).filter(c => c.category && num(c.amount) > 0);
+  // a premium waiver has no insured amount of its own, so it is kept on its category alone
+  const rows = (p.coverages || []).filter(c => c.category && (num(c.amount) > 0 || isWaiver(c.category)));
   if (p.key === "RS" && num(p.monthlyIncome) > 0) {
     return [{ id: "rs", category: "Retirement income", amount: p.monthlyIncome, display: money(num(p.monthlyIncome)) + "/month" + (p.retirementAge ? " from age " + p.retirementAge : "") }];
   }
-  return rows.map(c => ({ ...c, display: money(num(c.amount)) + (p.key === "HI" ? "/day" : "") }));
+  return rows.map(c => ({ ...c,
+    display: isWaiver(c.category) && !(num(c.amount) > 0)
+      ? "Premiums waived on claim"
+      : money(num(c.amount)) + (p.key === "HI" ? "/day" : "") }));
 };
 const planCoverageText = (p) => {
   const rows = planCoverageRows(p);
@@ -1619,7 +1625,7 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
   // Death $90k + Critical Illness $90k is $90k of cover, not $180k
   const covPeak = Math.max(0, ...(p.coverages || []).map(c => num(c.amount)));
   return (
-    <div className={"rounded-xl border-2 p-4 " + (p.include ? TIER_META[p.tier].cls : "border-slate-200 bg-slate-50 opacity-70")}>
+    <div className={"rounded-xl border-2 p-4 " + (p.include ? (TIER_META[p.tier]?.cls || "border-slate-200 bg-white") : "border-slate-200 bg-slate-50 opacity-70")}>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
         <label className="flex items-center gap-2 font-semibold text-slate-800">
           <input type="checkbox" checked={p.include} onChange={e => setP({ include: e.target.checked })} className="w-4 h-4 accent-purple-700" title="Untick to keep the plan on file but leave it out of the report" />
@@ -1627,6 +1633,7 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
         </label>
         <div className="flex items-center gap-2">
           <select value={p.tier} onChange={e => setP({ tier: e.target.value })} className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
+            <option value="">— no label —</option>
             <option value="recommended">Recommended (in budget)</option>
             <option value="optional">Worth considering (outside budget)</option>
             <option value="future">Future option</option>
@@ -1859,7 +1866,8 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
   <div style={{ marginTop: 12 }}>
     {(tables || []).filter(tb => !tb.rider || riders[tb.rider]).map((tb, ti) => (
       <div key={ti} style={{ breakInside: "avoid", marginBottom: 14 }}>
-        {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 4 }}>{tb.caption}</div>}
+        {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: tb.sub ? 1 : 4 }}>{tb.caption}</div>}
+        {tb.sub && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#66229d", marginBottom: 4 }}>{tb.sub}</div>}
         <table style={{ tableLayout: "fixed" }}>
           <thead><tr>{tb.head.map((h, k) => (
             <th key={k} style={{ width: tb.widths?.[k], textAlign: k === 0 ? "left" : (tb.align?.[k] || "center") }}>{h}</th>
@@ -1914,7 +1922,7 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
                   <tr key={p.id}>
                     <td>
                       <b>{p.label}</b>
-                      <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>
+                      {TIER_META[p.tier] && <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>}
                       {term && <div className="text-xs text-slate-500 mt-1">{term}</div>}
                     </td>
                     <td>{planCoverageRows(p).map((cv, k) => <div key={k}>{cv.category}: {cv.display}</div>)}</td>
@@ -1995,6 +2003,7 @@ const PLAN_COVERAGE_CATEGORIES = [
   "Death", "Disability",
   "Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)",
   "Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)",
+  "Premium Waiver (Payor)", "Premium Waiver (Insured)",
   "Retirement", "Child Savings", "Others",
 ];
 // broader bucket each granular category rolls up into — drives which Overview timeline
@@ -2006,6 +2015,8 @@ const CATEGORY_BUCKET = {
   "Health (Hospitalisation & Surgery)": "Hospital Stay",
   "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
   "Hospitalisation (Accident)": "Hospital Stay",
+  // a waiver pays no sum assured — it keeps the policy alive, so it sits with "Others"
+  "Premium Waiver (Payor)": "Others", "Premium Waiver (Insured)": "Others",
   "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
 };
 // Overview timeline row buckets, in display order
