@@ -299,7 +299,15 @@ const PLAN_LIBRARY = {
       dense: true,
       rows: [[["1. Acute Necrohemorrhagic Pancreatitis", "2. Alzheimer's Disease / Severe Dementia", "3. Angioplasty & Other Invasive Treatment for Coronary Artery *", "4. Apallic Syndrome", "5. Aplastic Anaemia", "6. Bacterial Meningitis", "7. Benign Brain Tumour", "8. Blindness (Loss of Sight)", "9. Coma", "10. Coronary Artery By-pass Surgery", "11. Creutzfeld-Jacob Disease", "12. Deafness (Loss of Hearing)", "13. Elephantiasis", "14. End Stage Liver Failure", "15. End Stage Lung Disease", "16. Fulminant Hepatitis", "17. Heart Attack of Specified Severity", "18. Heart Valve Surgery", "19. HIV Due to Blood Transfusion and Occupationally Acquired HIV", "20. Kidney Failure", "21. Loss of Independent Existence", "22. Loss of Speech"], ["23. Major Burns", "24. Major Cancers", "25. Major Head Trauma", "26. Major Organ / Bone Marrow Transplantation", "27. Medullary Cystic Disease", "28. Motor Neurone Disease", "29. Multiple Sclerosis", "30. Muscular Dystrophy", "31. Necrotising Fasciitis", "32. Other Serious Coronary Artery Disease", "33. Paralysis (Loss of Use of Limbs)", "34. Parkinson's Disease", "35. Poliomyelitis", "36. Primary Pulmonary Hypertension", "37. Progressive Scleroderma", "38. Progressive Supranuclear Palsy", "39. Severe Myasthenia Gravis", "40. Stroke", "41. Surgery to Aorta", "42. Systemic Lupus Erythematosus with Lupus Nephritis", "43. Viral Encephalitis"]]] },
   ], tablesNote: "* If the Insured undergoes Angioplasty & Other Invasive Treatment for Coronary Artery, we will pay 10% of the Insured Amount of this supplementary benefit (subject to a maximum of S$25,000). That benefit is payable once during the term of the supplementary benefit and ceases automatically upon payment, after which the Insured Amount of this supplementary benefit is reduced by the amount paid." },
-  ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate." },
+  ILP: { name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate.\n∴ A Full Surrender Charge applies: the Regular Premium policy value is multiplied by a surrender factor based on the number of full annual premiums paid, starting at 95% after one year and tapering to 0% once eight have been paid — see the table below.\n∴ A Partial Surrender Charge is deducted from the remaining policy value, calculated as number of Regular Premium units withdrawn x bid price x A / (1 - A), where A is the same surrender factor.", tables: [
+    { caption: "Surrender Charge — Surrender Factor by premiums paid",
+      sub: "Applies to both the Full and Partial Surrender Charge.",
+      head: ["Number of Full Annual Premiums Paid", "Surrender Factor"],
+      widths: ["62%", "38%"],
+      align: ["left", "center"],
+      rows: [["1", "95%"], ["2", "85%"], ["3", "65%"], ["4", "40%"],
+             ["5", "30%"], ["6", "25%"], ["7", "15%"], ["8 +", "0%"]] },
+  ], tablesNote: "The number of full annual premiums used to find the Surrender Factor is based on the original amount of Regular Premiums payable." },
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday.", tables: [
     { caption: "150 Multi-Stage Critical Illnesses — conditions covered",
       sub: "Critical illness is claimable up to 5 times under this plan.",
@@ -767,14 +775,29 @@ async function deleteClientRow(id) {
 // only keeps a {id, name, path, caption} pointer, and images are fetched on demand via a
 // short-lived signed URL (the bucket is private, scoped per advisor by folder).
 const PLAN_IMAGES_BUCKET = "plan-images";
+const readAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(r.result);
+  r.onerror = () => reject(new Error("Could not read the file"));
+  r.readAsDataURL(file);
+});
+// Returns { path } when the image lands in Storage, or { dataUrl } when it had to be
+// embedded instead. Storage is preferred — an embedded image is re-sent on every save of
+// that client — but a missing bucket or an offline moment shouldn't block the advisor, so
+// we fall back rather than fail. PlanImage renders either shape.
 async function uploadPlanImage(file, clientId) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${user.id}/${clientId}/${uid()}-${safeName}`;
-  const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file);
-  if (error) throw error;
-  return path;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("not signed in");
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${user.id}/${clientId}/${uid()}-${safeName}`;
+    const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file);
+    if (error) throw error;
+    return { path };
+  } catch (e) {
+    console.warn("[plan images] storage upload failed, embedding instead:", e?.message || e);
+    return { dataUrl: await readAsDataUrl(file), embedded: true };
+  }
 }
 async function deletePlanImage(path) {
   if (!path) return;
@@ -1828,14 +1851,17 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
           <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
             const files = Array.from(e.target.files);
             e.target.value = "";
+            let embeddedAny = false;
             for (const file of files) {
               try {
-                const path = await uploadPlanImage(file, clientId);
-                onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, path, caption: "" }] });
+                const { embedded, ...stored } = await uploadPlanImage(file, clientId);
+                embeddedAny = embeddedAny || embedded;
+                onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, ...stored, caption: "" }] });
               } catch (err) {
-                toast.error("Image upload failed: " + (err?.message || err));
+                toast.error("Could not add image: " + (err?.message || err));
               }
             }
+            if (embeddedAny) toast("Image saved with the client record — image storage isn't set up on this project yet.");
           }} /></label>
         </div>
         {(p.planImages || []).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
