@@ -474,6 +474,7 @@ const planCoverageRows = (p) => {
     return [{ id: "rs", category: "Retirement income", amount: p.monthlyIncome, display: money(num(p.monthlyIncome)) + "/month" + (p.retirementAge ? " from age " + p.retirementAge : "") }];
   }
   return rows.map(c => ({ ...c,
+    category: String(c.label || "").trim() || c.category,
     display: isWaiver(c.category) && !(num(c.amount) > 0)
       ? "Premiums waived on claim"
       : money(num(c.amount)) + (p.key === "HI" ? "/day" : "") }));
@@ -1801,12 +1802,19 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
           <div className="space-y-2">
             {(p.coverages || []).map((c, j) => (
               <div key={c.id || j} className="grid grid-cols-12 gap-2">
-                <div className="col-span-7">
+                {/* "Others" is the catch-all, so it gets a free-text name; the rest already
+                    describe themselves and stay full width */}
+                <div className={c.category === "Others" ? "col-span-4" : "col-span-7"}>
                   <select value={c.category || ""} onChange={e => setCov(j, { category: e.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
                     <option value="">Select…</option>
                     {PLAN_COVERAGE_CATEGORIES.map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
+                {c.category === "Others" && (
+                  <div className="col-span-3">
+                    <Input value={c.label || ""} onChange={e => setCov(j, { label: e.target.value })} placeholder="e.g. Insured Amount" title="Names this line in the report — leave blank to print as “Others”" />
+                  </div>
+                )}
                 <div className="col-span-4"><NumInput value={c.amount} onChange={e => setCov(j, { amount: e.target.value })} placeholder="$" /></div>
                 <div className="col-span-1 flex items-center"><button onClick={() => setP({ coverages: (p.coverages || []).filter((_, k) => k !== j) })} className="text-red-500 text-sm">✕</button></div>
               </div>
