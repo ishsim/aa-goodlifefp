@@ -792,12 +792,16 @@ async function uploadPlanImage(file, clientId) {
     if (!user) throw new Error("not signed in");
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${user.id}/${clientId}/${uid()}-${safeName}`;
-    const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file);
+    const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
     if (error) throw error;
     return { path };
   } catch (e) {
-    console.warn("[plan images] storage upload failed, embedding instead:", e?.message || e);
-    return { dataUrl: await readAsDataUrl(file), embedded: true };
+    const reason = e?.message || String(e);
+    console.warn("[plan images] storage upload failed, embedding instead:", reason, e);
+    return { dataUrl: await readAsDataUrl(file), embedded: true, reason };
   }
 }
 async function deletePlanImage(path) {
