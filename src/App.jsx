@@ -792,12 +792,16 @@ async function uploadPlanImage(file, clientId) {
     if (!user) throw new Error("not signed in");
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${user.id}/${clientId}/${uid()}-${safeName}`;
-    const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file);
+    const { error } = await supabase.storage.from(PLAN_IMAGES_BUCKET).upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
     if (error) throw error;
     return { path };
   } catch (e) {
-    console.warn("[plan images] storage upload failed, embedding instead:", e?.message || e);
-    return { dataUrl: await readAsDataUrl(file), embedded: true };
+    const reason = e?.message || String(e);
+    console.warn("[plan images] storage upload failed, embedding instead:", reason, e);
+    return { dataUrl: await readAsDataUrl(file), embedded: true, reason };
   }
 }
 async function deletePlanImage(path) {
@@ -1857,19 +1861,25 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Images for this plan (appear in report after this plan's explanation)</span>
           <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
-            const files = Array.from(e.target.files);
-            e.target.value = "";
-            let embeddedAny = false;
+            const input = e.target;
+            // Keep the File handles alive: resetting input.value before the async
+            // upload/read finishes invalidates them in Chromium ("Could not read the file").
+            const files = Array.from(input.files || []);
+            const added = [];
+            let embeddedReason = null;
             for (const file of files) {
               try {
-                const { embedded, ...stored } = await uploadPlanImage(file, clientId);
-                embeddedAny = embeddedAny || embedded;
-                onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, ...stored, caption: "" }] });
+                const { embedded, reason, ...stored } = await uploadPlanImage(file, clientId);
+                if (embedded) embeddedReason = reason || embeddedReason;
+                added.push({ id: uid(), name: file.name, ...stored, caption: "" });
               } catch (err) {
                 toast.error("Could not add image: " + (err?.message || err));
               }
             }
-            if (embeddedAny) toast("Image saved with the client record — image storage isn't set up on this project yet.");
+            input.value = ""; // safe now that every file has been consumed
+            // one update for the whole selection — per-file updates dropped all but the last
+            if (added.length) onChange({ ...p, planImages: [...(p.planImages || []), ...added] });
+            if (embeddedReason) toast("Image saved with the client record — storage upload failed: " + embeddedReason);
           }} /></label>
         </div>
         {(p.planImages || []).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
@@ -2551,12 +2561,20 @@ function CurrentCoverageSection({ client, update }) {
 // immediately) or a storage path (img.path, resolved to a short-lived signed URL first).
 const PlanImage = ({ img, ...imgProps }) => {
   const [url, setUrl] = useState(img.dataUrl || null);
+  const [err, setErr] = useState(null);
   useEffect(() => {
     if (img.dataUrl || !img.path) return;
     let cancelled = false;
-    signedPlanImageUrl(img.path).then(u => { if (!cancelled) setUrl(u); }).catch(() => {});
+    setErr(null);
+    signedPlanImageUrl(img.path)
+      .then(u => { if (!cancelled) setUrl(u); })
+      .catch(e => {
+        console.error("[plan images] could not load image", img.path, e);
+        if (!cancelled) setErr(e?.message || "Image unavailable");
+      });
     return () => { cancelled = true; };
   }, [img.dataUrl, img.path]);
+  if (err) return <div className="w-full h-full flex items-center justify-center text-[10px] text-rose-600 bg-rose-50 text-center px-1">{err}</div>;
   if (!url) return <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 bg-slate-50">Loading…</div>;
   return <img src={url} {...imgProps} />;
 };
