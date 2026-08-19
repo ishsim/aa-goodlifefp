@@ -2561,12 +2561,20 @@ function CurrentCoverageSection({ client, update }) {
 // immediately) or a storage path (img.path, resolved to a short-lived signed URL first).
 const PlanImage = ({ img, ...imgProps }) => {
   const [url, setUrl] = useState(img.dataUrl || null);
+  const [err, setErr] = useState(null);
   useEffect(() => {
     if (img.dataUrl || !img.path) return;
     let cancelled = false;
-    signedPlanImageUrl(img.path).then(u => { if (!cancelled) setUrl(u); }).catch(() => {});
+    setErr(null);
+    signedPlanImageUrl(img.path)
+      .then(u => { if (!cancelled) setUrl(u); })
+      .catch(e => {
+        console.error("[plan images] could not load image", img.path, e);
+        if (!cancelled) setErr(e?.message || "Image unavailable");
+      });
     return () => { cancelled = true; };
   }, [img.dataUrl, img.path]);
+  if (err) return <div className="w-full h-full flex items-center justify-center text-[10px] text-rose-600 bg-rose-50 text-center px-1">{err}</div>;
   if (!url) return <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 bg-slate-50">Loading…</div>;
   return <img src={url} {...imgProps} />;
 };
