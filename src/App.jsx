@@ -1861,19 +1861,25 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Images for this plan (appear in report after this plan's explanation)</span>
           <label className="text-xs text-purple-700 hover:underline cursor-pointer font-semibold">+ Upload<input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
-            const files = Array.from(e.target.files);
-            e.target.value = "";
-            let embeddedAny = false;
+            const input = e.target;
+            // Keep the File handles alive: resetting input.value before the async
+            // upload/read finishes invalidates them in Chromium ("Could not read the file").
+            const files = Array.from(input.files || []);
+            const added = [];
+            let embeddedReason = null;
             for (const file of files) {
               try {
-                const { embedded, ...stored } = await uploadPlanImage(file, clientId);
-                embeddedAny = embeddedAny || embedded;
-                onChange({ ...p, planImages: [...(p.planImages || []), { id: uid(), name: file.name, ...stored, caption: "" }] });
+                const { embedded, reason, ...stored } = await uploadPlanImage(file, clientId);
+                if (embedded) embeddedReason = reason || embeddedReason;
+                added.push({ id: uid(), name: file.name, ...stored, caption: "" });
               } catch (err) {
                 toast.error("Could not add image: " + (err?.message || err));
               }
             }
-            if (embeddedAny) toast("Image saved with the client record — image storage isn't set up on this project yet.");
+            input.value = ""; // safe now that every file has been consumed
+            // one update for the whole selection — per-file updates dropped all but the last
+            if (added.length) onChange({ ...p, planImages: [...(p.planImages || []), ...added] });
+            if (embeddedReason) toast("Image saved with the client record — storage upload failed: " + embeddedReason);
           }} /></label>
         </div>
         {(p.planImages || []).length === 0 && <div className="text-xs text-slate-400">No images yet — upload diagrams, condition lists, or benefit illustrations to include after this plan's explanation in the report.</div>}
