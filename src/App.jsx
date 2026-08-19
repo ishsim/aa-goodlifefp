@@ -558,6 +558,9 @@ const blankClient = () => ({
   // recommended plans are added per insured person — starts empty, built up in step 6
   products: [],
   budgetNote: "approximately $100 per month",
+  // "recommendation" = a costed proposal (tiers, subtotals, budget guideline);
+  // "options" = a menu of plans to browse, with per-plan premiums but no totals
+  reportMode: "recommendation",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
   // Annual Review report — separate narrative from the first-time client report above
   review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" },
@@ -1950,7 +1953,7 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
   </div>
 );
 
-const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
+const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = false }) => (
   <>
     {groups.map(g => (
       <div key={g.id} style={{ breakInside: "avoid" }}>
@@ -1972,7 +1975,8 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
                   <tr key={p.id}>
                     <td>
                       <b>{p.label}</b>
-                      {TIER_META[p.tier] && <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>}
+                      {/* nothing is "recommended" when the client is just browsing options */}
+                      {!optionsMode && TIER_META[p.tier] && <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>}
                       {term && <div className="text-xs text-slate-500 mt-1">{term}</div>}
                     </td>
                     <td>{planCoverageRows(p).map((cv, k) => <div key={k}>{cv.category}: {cv.display}</div>)}</td>
@@ -1984,7 +1988,7 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
               })}</tbody>
             </table>
           ))}
-        {groups.length > 1 && (
+        {groups.length > 1 && !optionsMode && (
           <table><tbody><tr>
             <td className="font-semibold">Subtotal — {g.name}</td>
             <td className="tnum font-semibold">{money(g.monthly, 2)} / month · {money(g.annual, 2)} / year</td>
@@ -1992,7 +1996,7 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
         )}
       </div>
     ))}
-    {groups.length > 0 && (
+    {groups.length > 0 && !optionsMode && (
       <table><tbody><tr>
         <td className="font-bold">Total of plans shown</td>
         <td className="tnum font-bold">{money(grandMonthly, 2)} / month · {money(grandAnnual, 2)} / year</td>
@@ -3780,6 +3784,9 @@ export default function App() {
   // ----- report view -----
   if (view === "report") {
     const n = client.narrative;
+    // a browsing client gets a menu of plans, not a costed proposal: no tiers,
+    // no subtotals, no budget guideline — see reportMode on the client record
+    const optionsMode = client.reportMode === "options";
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{textAlign:"justify",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{p}</p>);
     // action plan: bold the numbered heading before the colon ("1. Title: details…")
     const paraAction = (t) => (t || "").split(/\n+/).filter(s => s.trim()).map((p, i) => {
@@ -3967,7 +3974,7 @@ export default function App() {
               ] },
               { num: "4.", title: "Recommendation", sub: [
                 ...(n.actionPlan ? ["Action Plan"] : []),
-                "4.1 Recommended Plans",
+                optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans",
               ] },
               ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", sub: uniqueExplanations(d.selected).map((p, i) => (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label)) }] : []),
               { num: d.selected.length ? "6." : "5.", title: "Conclusion", sub: ["Client Acknowledgement"] },
@@ -4153,15 +4160,19 @@ export default function App() {
           {n.recoIntro ? para(n.recoIntro) : <p className="italic text-slate-400">No recommendation narrative yet — draft one in the Narrative step.</p>}
           {n.actionPlan && (<><h3>Action Plan</h3>{paraAction(n.actionPlan)}</>)}
 
-          <h3>4.1 Recommended Plans</h3>
-          <p className="mb-2">The main purpose of these plan recommendations is to prioritise protecting your income — ensuring financial security for you and your family — and to prepare funds for retirement, including addressing potential income loss due to disability or sickness.</p>
+          <h3>{optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans"}</h3>
+          <p className="mb-2">{optionsMode
+            ? "The plans set out below are options for your consideration. They are presented so you can compare what each one covers and what it costs, without any commitment — we can narrow them down together once you have had a chance to look through."
+            : "The main purpose of these plan recommendations is to prioritise protecting your income — ensuring financial security for you and your family — and to prepare funds for retirement, including addressing potential income loss due to disability or sickness."}</p>
           <table><tbody>
             <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{money(d.ef3)} – {money(d.ef6)}</td></tr>
             <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
             <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
           </tbody></table>
-          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} />
-          {d.net > 0 && (() => {
+          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} optionsMode={optionsMode} />
+          {/* the 4-3-2-1 guideline measures a committed premium against income, which
+              only means something once these are actual recommendations */}
+          {!optionsMode && d.net > 0 && (() => {
             const protGuide = d.net * 0.1, savGuide = d.net * 0.2;
             const protSel = d.selected.filter(p => p.category === "Risk Management").reduce((s, p) => s + num(p.monthly), 0);
             const savSel = d.selected.filter(p => p.category !== "Risk Management").reduce((s, p) => s + num(p.monthly), 0);
@@ -4196,7 +4207,9 @@ export default function App() {
               </div>
             );
           })()}
-          <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
+          {optionsMode
+            ? <p className="text-xs text-slate-500 mt-2">The plans above are presented as options for discussion. Premiums shown are per plan and are not a total commitment. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
+            : <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>}
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
             {uniqueExplanations(d.selected).map((p, i) => {
@@ -4244,6 +4257,9 @@ export default function App() {
 
   // ----- annual review report view -----
   if (view === "review") {
+    // a browsing client gets a menu of plans, not a costed proposal: no tiers,
+    // no subtotals, no budget guideline — see reportMode on the client record
+    const optionsMode = client.reportMode === "options";
     const rv = client.review || { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" };
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>);
     // key points / action items: bold the lead phrase before the em-dash or colon
@@ -4482,14 +4498,14 @@ export default function App() {
           <table><tbody>
             <tr><td>Emergency Funds</td><td>{rv.contingencyNote || ("Allocate " + money(d.ef3) + " as emergency funds")}</td><td className="tnum italic text-slate-500">No Return</td></tr>
           </tbody></table>
-          <h3>4-3-2-1 Recommended Plans</h3>
+          <h3>{optionsMode ? "Plan Options" : "4-3-2-1 Recommended Plans"}</h3>
           <table><tbody>
             <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{money(d.ef3)} – {money(d.ef6)}</td></tr>
             <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
             <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
           </tbody></table>
           {d.insuredGroups.length === 0 && <p className="italic text-slate-400">No recommended plans yet — add them in the Recommended Plans step.</p>}
-          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} />
+          <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} optionsMode={optionsMode} />
 
           {/* 7. Explanation of Recommendations */}
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2>Explanation of Recommendations</h2>
@@ -4857,6 +4873,12 @@ export default function App() {
 
         {step === 5 && (<>
           <SectionCard title="Plan quotation table" right={<span className="text-sm text-slate-500">Selected: {money(d.premMonthly, 2)}/mo · {money(d.premAnnual, 2)}/yr</span>}>
+            <Field label="Report mode" hint="A recommendation is a costed proposal — plan tiers, subtotals and the 4-3-2-1 budget check. Plan options is a menu for a client who just wants to see what is available: per-plan premiums stay, totals and tiers come off.">
+              <select value={client.reportMode || "recommendation"} onChange={e => update({ reportMode: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                <option value="recommendation">Recommendation — costed proposal</option>
+                <option value="options">Plan options — listing only, no totals</option>
+              </select>
+            </Field>
             <Field label="Client's indicated monthly budget (appears in the report legend)">
               <Input value={client.budgetNote} onChange={e => update({ budgetNote: e.target.value })} />
             </Field>

@@ -172,6 +172,9 @@ function capturedImage(cap, maxWidth = 600) {
 }
 
 export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, captures = {} }) {
+  // mirrors the on-screen reports: a browsing client gets a plan menu, not a costed
+  // proposal — no tier labels and no premium totals
+  const optionsMode = client?.reportMode === "options";
   const children = [];
 
   // ---- Cover ----
@@ -334,7 +337,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     children.push(...splitParas(client.narrative.actionPlan));
   }
 
-  children.push(H2("4.1 Recommended Plans"));
+  children.push(H2(optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans"));
   children.push(P("The main purpose of these plan recommendations is to prioritise protecting your income and to prepare funds for retirement."));
   children.push(buildTable([], [
     ["Emergency fund needed (3–6 months)", { text: money(d.ef3) + " – " + money(d.ef6), align: AlignmentType.RIGHT }],
@@ -353,7 +356,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
       children.push(buildTable(
         [cat, "Coverage", "Monthly", "Annual", "Projected returns"],
         items.map(p => [
-          { text: p.label + (tierMeta?.[p.tier] ? "  [" + tierMeta[p.tier].label + "]" : "") + (p.termText ? "\n" + p.termText : ""), bold: true },
+          { text: p.label + (!optionsMode && tierMeta?.[p.tier] ? "  [" + tierMeta[p.tier].label + "]" : "") + (p.termText ? "\n" + p.termText : ""), bold: true },
           p.coverageText || "",
           { text: money(num(p.monthly), 2), align: AlignmentType.RIGHT },
           { text: money(num(p.annual), 2), align: AlignmentType.RIGHT },
@@ -362,13 +365,13 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
         [2800, 1600, 1300, 1300, 2000],
       ));
     });
-    if (groups.length > 1) {
+    if (groups.length > 1 && !optionsMode) {
       children.push(buildTable([], [
         [{ text: "Subtotal — " + g.name, bold: true }, { text: money(g.monthly, 2) + " / month · " + money(g.annual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
       ], [5400, 3600]));
     }
   });
-  if (d.selected.length) {
+  if (d.selected.length && !optionsMode) {
     children.push(buildTable([], [
       [{ text: "Total of plans shown", bold: true }, { text: money(d.premMonthly, 2) + " / month · " + money(d.premAnnual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
     ], [5400, 3600]));
