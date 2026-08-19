@@ -1915,7 +1915,7 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
       <div key={ti} style={{ breakInside: "avoid", marginBottom: 14 }}>
         {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: tb.sub ? 1 : 4 }}>{tb.caption}</div>}
         {tb.sub && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#66229d", marginBottom: 4 }}>{tb.sub}</div>}
-        <table style={{ tableLayout: "fixed" }}>
+        <table className="compact" style={{ tableLayout: "fixed" }}>
           <thead><tr>{tb.head.map((h, k) => (
             <th key={k} style={{ width: tb.widths?.[k], textAlign: k === 0 ? "left" : (tb.align?.[k] || "center") }}>{h}</th>
           ))}</tr></thead>
@@ -1924,7 +1924,7 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
               // a row carrying a single cell stretches across the table — used for benefits
               // that apply regardless of plan (payor waiver, renewal bonus, death benefit)
               <td key={ci} colSpan={row.length === 1 && tb.head.length > 1 ? tb.head.length : undefined}
-                style={{ verticalAlign: "top", fontSize: tb.dense ? 11 : 12.5,
+                style={{ verticalAlign: "top", fontSize: tb.dense ? 10.5 : 11.5,
                          textAlign: ci === 0 || row.length === 1 ? "left" : (tb.align?.[ci] || "center") }}>
                 {Array.isArray(cell) && typeof cell[0] === "string"
                   ? (tb.plainList
@@ -1960,7 +1960,10 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual }) => (
           .map(cat => ({ cat, items: g.items.filter(p => p.category === cat) }))
           .filter(c => c.items.length)
           .map(c => (
-            <table key={c.cat}>
+            <table key={c.cat} style={{ tableLayout: "fixed" }}>
+              {/* Plan and Projected returns carry the wordy content, so they take the
+                  width; the two premium columns only ever hold a currency figure */}
+              <colgroup><col style={{ width: "27%" }} /><col style={{ width: "22%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "27%" }} /></colgroup>
               <thead><tr><th colSpan={5} style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em" }}>{c.cat}</th></tr>
                 <tr><th>Plan</th><th>Coverage</th><th className="tnum">Monthly</th><th className="tnum">Annual</th><th>Projected returns</th></tr></thead>
               <tbody>{c.items.map(p => {
@@ -3882,6 +3885,11 @@ export default function App() {
           .rpt table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
           .rpt th{background:#51037c;color:#fff;text-align:left;padding:6px 10px;font-weight:600}
           .rpt td{border-bottom:1px solid #e2e8f0;padding:6px 10px;vertical-align:top}
+          /* benefit tables inside a plan explanation read as supporting detail, so they
+             sit narrower than the page and set tighter than the report's main tables */
+          .rpt table.compact{width:86%;font-size:11.5px;margin:8px 0}
+          .rpt table.compact th{padding:4px 7px;font-size:11px}
+          .rpt table.compact td{padding:4px 7px}
           .rpt p{text-align:justify;line-height:1.65;margin:0 0 12px}
           .rpt .tnum{text-align:right;font-variant-numeric:tabular-nums}
           .pagebreak{break-before:page}
@@ -4342,6 +4350,11 @@ export default function App() {
           .rpt table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
           .rpt th{background:#51037c;color:#fff;text-align:left;padding:6px 10px;font-weight:600}
           .rpt td{border-bottom:1px solid #e2e8f0;padding:6px 10px;vertical-align:top}
+          /* benefit tables inside a plan explanation read as supporting detail, so they
+             sit narrower than the page and set tighter than the report's main tables */
+          .rpt table.compact{width:86%;font-size:11.5px;margin:8px 0}
+          .rpt table.compact th{padding:4px 7px;font-size:11px}
+          .rpt table.compact td{padding:4px 7px}
           .rpt p{text-align:justify;line-height:1.65;margin:0 0 12px}
           .rpt .tnum{text-align:right;font-variant-numeric:tabular-nums}
           .pagebreak{break-before:page}
