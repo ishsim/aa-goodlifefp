@@ -782,12 +782,33 @@ async function deleteClientRow(id) {
 // only keeps a {id, name, path, caption} pointer, and images are fetched on demand via a
 // short-lived signed URL (the bucket is private, scoped per advisor by folder).
 const PLAN_IMAGES_BUCKET = "plan-images";
-const readAsDataUrl = (file) => new Promise((resolve, reject) => {
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(r.result);
-  r.onerror = () => reject(new Error("Could not read the file"));
-  r.readAsDataURL(file);
+  // keep the real DOMException — its name is the only clue to why the read failed
+  r.onerror = () => reject(r.error || new Error("FileReader failed"));
+  r.readAsDataURL(blob);
 });
+// Turn a read failure into something the advisor can act on. The usual cause on a Mac is
+// a cloud placeholder: OneDrive and iCloud hand the browser a File whose bytes are still
+// in the cloud, and reading it throws NotReadableError/NotFoundError.
+const describeReadError = (e) => {
+  const name = e?.name || "";
+  if (name === "NotReadableError" || name === "NotFoundError")
+    return "the file could not be read from disk. If it lives in OneDrive or iCloud Drive it may not be downloaded to this Mac yet — open it once in Preview so it downloads, or copy it to the Desktop first, then try again.";
+  if (name === "SecurityError") return "the browser blocked reading this file. Try copying it to the Desktop and uploading from there.";
+  return e?.message || String(e);
+};
+async function fileToDataUrl(file) {
+  if (!file.size) throw new Error("the file is empty (0 bytes) — it may still be downloading from the cloud.");
+  try {
+    // arrayBuffer() reports the underlying OS error more faithfully than FileReader does
+    const buf = await file.arrayBuffer();
+    return await blobToDataUrl(new Blob([buf], { type: file.type || "application/octet-stream" }));
+  } catch (e) {
+    throw new Error(describeReadError(e));
+  }
+}
 // Returns { path } when the image lands in Storage, or { dataUrl } when it had to be
 // embedded instead. Storage is preferred — an embedded image is re-sent on every save of
 // that client — but a missing bucket or an offline moment shouldn't block the advisor, so
@@ -807,7 +828,12 @@ async function uploadPlanImage(file, clientId) {
   } catch (e) {
     const reason = e?.message || String(e);
     console.warn("[plan images] storage upload failed, embedding instead:", reason, e);
-    return { dataUrl: await readAsDataUrl(file), embedded: true, reason };
+    try {
+      return { dataUrl: await fileToDataUrl(file), embedded: true, reason };
+    } catch (readErr) {
+      // both routes failed — name both, since the storage one is usually the fixable half
+      throw new Error(readErr.message + " (the storage upload also failed: " + reason + ")");
+    }
   }
 }
 async function deletePlanImage(path) {
