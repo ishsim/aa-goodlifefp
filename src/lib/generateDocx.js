@@ -1,7 +1,7 @@
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
-  ImageRun, PageBreak, LevelFormat,
+  ImageRun, PageBreak, LevelFormat, Footer, PageNumber,
 } from "docx";
 
 const PURPLE = "51037C";
@@ -413,6 +413,15 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
           size: { width: 11906, height: 16838 }, // A4
           margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 },
         },
+        // the cover page carries no number, matching the on-screen report
+        titlePage: true,
+      },
+      footers: {
+        default: new Footer({ children: [new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [new TextRun({ children: [PageNumber.CURRENT], size: 18, color: GREY })],
+        })] }),
+        first: new Footer({ children: [new Paragraph("")] }),
       },
       children,
     }],

@@ -1981,6 +1981,37 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
   </div>
 );
 
+// Contents page. An entry with an `id` links to the heading carrying that id — the jump
+// works on screen and survives print-to-PDF as an internal link. Entries without one
+// (rows that describe a table rather than a heading) stay as plain text.
+const planAnchor = (p) => "plan-" + String(p.key || "").toLowerCase() + "-" + String(p.id || "").slice(0, 6);
+const TocEntry = ({ id, children, style }) => id
+  ? <a href={"#" + id} style={{ color: "inherit", textDecoration: "none", ...style }}>{children}</a>
+  : <span style={style}>{children}</span>;
+const TableOfContents = ({ entries }) => (
+  <div style={{ fontSize: 13, marginTop: 18 }}>
+    {entries.map((e, i) => (
+      <div key={i} style={{ marginBottom: 12, breakInside: "avoid" }}>
+        <div style={{ display: "flex", alignItems: "baseline", fontWeight: 700, color: "#3a1955" }}>
+          {e.num && <span style={{ width: 26, flexShrink: 0 }}>{e.num}</span>}
+          <TocEntry id={e.id} style={{ textTransform: "uppercase", letterSpacing: "0.03em" }}>{e.title}</TocEntry>
+          <span style={{ flex: 1, borderBottom: "2px dotted #cbd5e1", margin: "0 0 3px 8px" }} />
+        </div>
+        {(e.sub || []).map((sRow, j) => {
+          const label = typeof sRow === "string" ? sRow : sRow.label;
+          const id = typeof sRow === "string" ? null : sRow.id;
+          return (
+            <div key={j} style={{ display: "flex", alignItems: "baseline", color: "#475569", marginLeft: 26, fontStyle: "italic", lineHeight: 1.8 }}>
+              <TocEntry id={id}>{label}</TocEntry>
+              <span style={{ flex: 1, borderBottom: "1px dotted #e2e8f0", margin: "0 0 4px 8px" }} />
+            </div>
+          );
+        })}
+      </div>
+    ))}
+  </div>
+);
+
 const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = false }) => (
   <>
     {groups.map(g => (
@@ -3935,9 +3966,18 @@ export default function App() {
             /* Lovable injects an "Edit with Lovable" badge on hosted previews — keep it out of the PDF */
             #lovable-badge,a[href*="lovable.dev"],a[href*="lovable.app"],[id*="lovable" i],div[class*="lovable" i]{display:none!important}
             *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-            .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm!important}
-            @page{size:A4;margin:0}
+            .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm 8mm!important}
+            /* page numbers in the bottom margin. Browsers that don't implement @page margin
+               boxes simply leave the margin empty — nothing else shifts. The cover carries
+               no number. */
+            @page{size:A4;margin:0 0 10mm;@bottom-right{content:counter(page);font-family:'Source Sans 3',system-ui,sans-serif;font-size:9pt;color:#64748b;margin-right:16mm}}
+            @page:first{@bottom-right{content:""}}
+            /* contents links print as ordinary text, not as blue underlined links */
+            .rpt a{color:inherit!important;text-decoration:none!important}
           }
+          /* a heading jumped to from the contents shouldn't hide under the sticky toolbar */
+          .rpt h2,.rpt h3{scroll-margin-top:70px}
+          .rpt a[href^="#"]:hover{text-decoration:underline!important}
         `}</style>
         <div className="no-print sticky top-0 z-10 text-white px-6 py-3 flex items-center justify-between" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
@@ -3987,55 +4027,39 @@ export default function App() {
           {(() => {
             const hasOther = (client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0;
             const entries = [
-              { num: "1.", title: "Executive Summary", sub: [
-                ...(client.sections.hierarchy ? ["The Hierarchy of Needs in Financial Planning"] : []),
-                ...(client.sections.education ? EDU_SECTIONS.slice(1).map(s => s.title) : []),
+              { num: "1.", title: "Executive Summary", id: "sec-exec", sub: [
+                ...(client.sections.hierarchy ? [{ label: "The Hierarchy of Needs in Financial Planning", id: "sec-hierarchy" }] : []),
+                ...(client.sections.education ? EDU_SECTIONS.slice(1).map(s => ({ label: s.title, id: "sec-edu-" + s.id })) : []),
               ] },
-              { num: "2.", title: "Your Finances", sub: [
-                "Net Worth", "2.1 Cash Flow Summary",
-                ...(client.sections.allocation ? ["4-3-2-1 Allocation"] : []),
-                ...(client.sections.ratios ? ["2.2 Financial Ratio Analysis"] : []),
+              { num: "2.", title: "Your Finances", id: "sec-finances", sub: [
+                { label: "Net Worth", id: "sec-finances" }, { label: "2.1 Cash Flow Summary", id: "sec-cashflow" },
+                ...(client.sections.allocation ? [{ label: "4-3-2-1 Allocation", id: "sec-allocation" }] : []),
+                ...(client.sections.ratios ? [{ label: "2.2 Financial Ratio Analysis", id: "sec-ratios" }] : []),
               ] },
-              { num: "3.", title: "Your Concerns & Objectives", sub: [
-                "3.1 Income Replacement", "3.2 Retirement Planning",
-                ...(hasOther ? ["3.3 Other Objectives"] : []),
+              { num: "3.", title: "Your Concerns & Objectives", id: "sec-objectives", sub: [
+                { label: "3.1 Income Replacement", id: "sec-income-replacement" }, { label: "3.2 Retirement Planning", id: "sec-retirement" },
+                ...(hasOther ? [{ label: "3.3 Other Objectives", id: "sec-other-objectives" }] : []),
               ] },
-              { num: "4.", title: "Recommendation", sub: [
-                ...(n.actionPlan ? ["Action Plan"] : []),
-                optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans",
+              { num: "4.", title: "Recommendation", id: "sec-recommendation", sub: [
+                ...(n.actionPlan ? [{ label: "Action Plan", id: "sec-action-plan" }] : []),
+                { label: optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans", id: "sec-plans" },
               ] },
-              ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", sub: uniqueExplanations(d.selected).map((p, i) => (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label)) }] : []),
-              { num: d.selected.length ? "6." : "5.", title: "Conclusion", sub: ["Client Acknowledgement"] },
+              ...(d.selected.length ? [{ num: "5.", title: "Explanation of Plan Options", id: "sec-explanations",
+                sub: uniqueExplanations(d.selected).map((p, i) => ({ label: (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label), id: planAnchor(p) })) }] : []),
+              { num: d.selected.length ? "6." : "5.", title: "Conclusion", id: "sec-conclusion",
+                sub: [{ label: "Client Acknowledgement", id: "sec-acknowledgement" }] },
             ];
-            return (
-              <div style={{ fontSize: 13, marginTop: 18 }}>
-                {entries.map((e, i) => (
-                  <div key={i} style={{ marginBottom: 12, breakInside: "avoid" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", fontWeight: 700, color: "#3a1955" }}>
-                      <span style={{ width: 26, flexShrink: 0 }}>{e.num}</span>
-                      <span style={{ textTransform: "uppercase", letterSpacing: "0.03em" }}>{e.title}</span>
-                      <span style={{ flex: 1, borderBottom: "2px dotted #cbd5e1", margin: "0 0 3px 8px" }} />
-                    </div>
-                    {e.sub.map((s, j) => (
-                      <div key={j} style={{ display: "flex", alignItems: "baseline", color: "#475569", marginLeft: 26, fontStyle: "italic", lineHeight: 1.8 }}>
-                        <span>{s}</span>
-                        <span style={{ flex: 1, borderBottom: "1px dotted #e2e8f0", margin: "0 0 4px 8px" }} />
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            );
+            return <TableOfContents entries={entries} />;
           })()}
 
           <div className="pagebreak" />
-          <h2>1. Executive Summary</h2>
+          <h2 id="sec-exec">1. Executive Summary</h2>
           {n.exec ? para(n.exec) : <p className="italic text-slate-400">No executive summary yet — draft one in the Narrative step.</p>}
-          {client.sections.hierarchy && (<><h3>The Hierarchy of Needs in Financial Planning</h3>{para(EDU_SECTIONS[0].body)}<div style={{ breakInside: "avoid", margin: "10px 0 18px" }}><HierarchyPyramid title={false} /></div></>)}
-          {client.sections.education && EDU_SECTIONS.slice(1).map(s => (<div key={s.id}><h3>{s.title}</h3>{para(s.body)}</div>))}
+          {client.sections.hierarchy && (<><h3 id="sec-hierarchy">The Hierarchy of Needs in Financial Planning</h3>{para(EDU_SECTIONS[0].body)}<div style={{ breakInside: "avoid", margin: "10px 0 18px" }}><HierarchyPyramid title={false} /></div></>)}
+          {client.sections.education && EDU_SECTIONS.slice(1).map(s => (<div key={s.id}><h3 id={"sec-edu-" + s.id}>{s.title}</h3>{para(s.body)}</div>))}
 
           <div className="pagebreak" />
-          <h2>2. Your Finances</h2>
+          <h2 id="sec-finances">2. Your Finances</h2>
           <p className="mb-3">Your risk preference serves as a guide to determine your investment risk profile and to assist your planner in making recommendations. From our fact-find, we identified your risk preference as <b>{client.riskProfile || "n/a"}</b>.</p>
           <table><tbody>
             <tr><td>Total Personal Assets</td><td className="tnum">{money(d.personal)}</td></tr>
@@ -4047,14 +4071,14 @@ export default function App() {
           </tbody></table>
           {d.assetPie.length > 0 && (<div className="my-3" data-docx-capture="assetPie"><StaticDonut data={d.assetPie} colorMap={ASSET_COLORS} /></div>)}
           <p className="text-xs text-slate-500 mb-4">Personal-use assets (houses, vehicles) form part of your standard of living and are normally not drawn upon at death or retirement. Invested assets are held to produce income or capital growth and are available to you or your dependants. Cash and equivalents can normally be liquidated within a week or two and form part of your Emergency Fund.</p>
-          <h3>2.1 Your Cash Flow Summary</h3>
+          <h3 id="sec-cashflow">2.1 Your Cash Flow Summary</h3>
           <table><tbody>
             <tr><td>Net Income (take-home)</td><td className="tnum">{money(d.net)} / month</td></tr>
             <tr><td>Total Expenses</td><td className="tnum">({money(d.totalExpenses)}) / month</td></tr>
             <tr><td className="font-bold">{d.surplus >= 0 ? "Surplus" : "Shortfall"}</td><td className={"tnum font-bold " + (d.surplus >= 0 ? "text-purple-900" : "text-red-700")}>{money(Math.abs(d.surplus))} / month</td></tr>
           </tbody></table>
           {client.sections.allocation && (<>
-            <h3>The 4-3-2-1 Money Management Framework</h3>
+            <h3 id="sec-allocation">The 4-3-2-1 Money Management Framework</h3>
             <p className="mb-2">A 4-3-2-1 money management concept is recommended within your budget system — allocating income across loans, expenditures, savings and protection.</p>
             <table>
               <thead><tr><th>Allocation</th><th className="tnum">Guideline</th><th className="tnum">Optimal ($/mo)</th><th className="tnum">Current ($/mo)</th><th className="tnum">Current %</th></tr></thead>
@@ -4065,7 +4089,7 @@ export default function App() {
             {d.pie.length > 0 && (<div className="my-3" data-docx-capture="allocationPie"><StaticDonut data={d.pie} colorMap={PIE_COLORS} /></div>)}
           </>)}
           {client.sections.ratios && (<>
-            <h3>2.2 Financial Ratio Analysis</h3>
+            <h3 id="sec-ratios">2.2 Financial Ratio Analysis</h3>
             <p className="mb-2">Your financial ratios represent your current position and change over time. No single ratio should be reviewed in isolation or be conclusive of your financial position.</p>
             <table>
               <thead><tr><th>Ratio</th><th className="tnum">Benchmark</th><th className="tnum">Yours</th><th>Reading</th></tr></thead>
@@ -4094,14 +4118,14 @@ export default function App() {
           </>)}
 
           <div className="pagebreak" />
-          <h2>3. Your Concerns &amp; Objectives</h2>
+          <h2 id="sec-objectives">3. Your Concerns &amp; Objectives</h2>
           {calcAge(client.dob) !== "" && (
             <div className="my-4" style={{ breakInside: "avoid" }}>
               <LifeTimeline client={client} />
               <p className="text-xs text-slate-500 mt-1" style={{ textAlign: "center" }}>Your planning horizon at a glance — where you are today, your target retirement age, your dependents, and the years beyond. Green marks show when each child reaches 18 and 21.</p>
             </div>
           )}
-          <h3>3.1 Income Replacement</h3>
+          <h3 id="sec-income-replacement">3.1 Income Replacement</h3>
           <p className="mb-2">To provide an income of {money(d.irMonthly)} per month in the event of premature death or total permanent disability, for {d.irYears} years from today (potential income of {money(d.potentialIncome)}).</p>
           <table>
             <thead><tr><th>Need</th><th>Guideline</th><th className="tnum">Benchmark</th><th className="tnum">Current</th><th className="tnum">Shortfall</th></tr></thead>
@@ -4110,7 +4134,7 @@ export default function App() {
             ))}</tbody>
           </table>
           <p className="text-xs text-slate-500 mb-4">Without adequate coverage for death, disability and sickness: (i) your SPK and other income might not be sufficient to support family expenses; (ii) you might have to downgrade to a less desired lifestyle.</p>
-          <h3>3.2 Retirement Planning</h3>
+          <h3 id="sec-retirement">3.2 Retirement Planning</h3>
           <p className="mb-2">To provide a minimum of {money(num(client.retirement.monthly))} per month for {client.retirement.years} years after retirement (assuming post-retirement savings follow the rate of inflation).</p>
           <table>
             <thead>
@@ -4174,7 +4198,7 @@ export default function App() {
           </table>
           <p className="text-xs text-slate-500">With the current projection you can expect a monthly retirement annuity of approximately <b>{money(d.rtMonthlyAnnuity)}</b>.</p>
           {(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0 && (<>
-            <h3>3.3 Other Objectives</h3>
+            <h3 id="sec-other-objectives">3.3 Other Objectives</h3>
             <table>
               <thead><tr><th>Objective</th><th>Remarks</th><th className="tnum">Target</th><th className="tnum">Horizon</th><th className="tnum">Indicative saving</th></tr></thead>
               <tbody>{(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).map(o => (
@@ -4184,11 +4208,11 @@ export default function App() {
           </>)}
 
           <div className="pagebreak" />
-          <h2>4. Recommendation</h2>
+          <h2 id="sec-recommendation">4. Recommendation</h2>
           {n.recoIntro ? para(n.recoIntro) : <p className="italic text-slate-400">No recommendation narrative yet — draft one in the Narrative step.</p>}
-          {n.actionPlan && (<><h3>Action Plan</h3>{paraAction(n.actionPlan)}</>)}
+          {n.actionPlan && (<><h3 id="sec-action-plan">Action Plan</h3>{paraAction(n.actionPlan)}</>)}
 
-          <h3>{optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans"}</h3>
+          <h3 id="sec-plans">{optionsMode ? "4.1 Plan Options" : "4.1 Recommended Plans"}</h3>
           <p className="mb-2">{optionsMode
             ? "The plans set out below are options for your consideration. They are presented so you can compare what each one covers and what it costs, without any commitment — we can narrow them down together once you have had a chance to look through."
             : "The main purpose of these plan recommendations is to prioritise protecting your income — ensuring financial security for you and your family — and to prepare funds for retirement, including addressing potential income loss due to disability or sickness."}</p>
@@ -4239,12 +4263,12 @@ export default function App() {
             ? <p className="text-xs text-slate-500 mt-2">The plans above are presented as options for discussion. Premiums shown are per plan and are not a total commitment. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>
             : <p className="text-xs text-slate-500 mt-2"><b>Recommended</b> plans fit within the indicated budget of {client.budgetNote}. <b>Worth considering</b> are additional options currently outside that budget. <b>Future options</b> are plans to explore as your finances allow or as priorities evolve. Returns are based on the Projected Investment Rate of Return on AIA's Participating Fund at 4.25% p.a. unless stated otherwise.</p>}
 
-          {d.selected.length > 0 && (<><div className="pagebreak" /><h2>5. Explanation of Plan Options</h2>
+          {d.selected.length > 0 && (<><div className="pagebreak" /><h2 id="sec-explanations">5. Explanation of Plan Options</h2>
             {uniqueExplanations(d.selected).map((p, i) => {
               const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
               return (
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
-                  <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
+                  <h3 id={planAnchor(p)}>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
                   {(p.planImages||[]).length > 0 && (
@@ -4263,9 +4287,9 @@ export default function App() {
             })}</>)}
 
           <div className="pagebreak" />
-          <h2>{d.selected.length > 0 ? "6" : "5"}. Conclusion</h2>
+          <h2 id="sec-conclusion">{d.selected.length > 0 ? "6" : "5"}. Conclusion</h2>
           {para("The above recommendation is based on my best knowledge and professional advice, as if I were in your shoes. All premiums and coverage amounts can be adjusted to your needs. The budget set aside for the above objectives should be around 20–30% of individual income, to encourage progress toward future goals while still enjoying the lifestyle you want during your working years.\n\nThe plan is designed to encourage you to accumulate as much as you can to reduce future shortfalls, and to keep you protected along the course of your joyful life.\n\nIt is advised that we meet at least once a year to review your financial standing and track the progress of your financial plan.")}
-          <h3>Client Acknowledgement</h3>
+          <h3 id="sec-acknowledgement">Client Acknowledgement</h3>
           {para("I/We understand that the IA will furnish me with a copy of the complete Financial Health Review signed by me/us. I/We acknowledge that the considerations (where applicable) set out in your sales advisory guide have been highlighted and explained to me/us by the IA.\n\nI/We have understood and acknowledge receipt of the following documents in relation to the products recommended: product summary(s) and benefit illustration(s) applicable to life insurance and/or Accident & Health insurance. I/We acknowledge that the fees, charges and commission for the product(s) chosen (not applicable to Accident & Health insurance) have been disclosed and explained to me/us by reference to relevant disclosure documents; for Accident & Health insurance products, this is available upon written request.\n\nThe IA has explained to me/us in detail the recommendations made, and any investment decision has been arrived at independently by me/us without inducement or pressure. I have been informed of the risks of investment in the products recommended and appreciate fully the nature and extent of such risks and their consequences to my financial plans should such risks materialise.\n\nI/We understand that any incomplete or inaccurate information provided by me/us may affect the suitability of any recommendations made.")}
           <div className="grid grid-cols-2 gap-10 my-8 text-sm">
             <div><div className="border-b border-slate-400 h-12"></div>Client's Signature &amp; Date</div>
@@ -4408,9 +4432,18 @@ export default function App() {
             .no-print{display:none!important}
             #lovable-badge,a[href*="lovable.dev"],a[href*="lovable.app"],[id*="lovable" i],div[class*="lovable" i]{display:none!important}
             *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-            .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm!important}
-            @page{size:A4;margin:0}
+            .sheet{box-shadow:none!important;margin:0!important;width:100%!important;padding:14mm 16mm 8mm!important}
+            /* page numbers in the bottom margin. Browsers that don't implement @page margin
+               boxes simply leave the margin empty — nothing else shifts. The cover carries
+               no number. */
+            @page{size:A4;margin:0 0 10mm;@bottom-right{content:counter(page);font-family:'Source Sans 3',system-ui,sans-serif;font-size:9pt;color:#64748b;margin-right:16mm}}
+            @page:first{@bottom-right{content:""}}
+            /* contents links print as ordinary text, not as blue underlined links */
+            .rpt a{color:inherit!important;text-decoration:none!important}
           }
+          /* a heading jumped to from the contents shouldn't hide under the sticky toolbar */
+          .rpt h2,.rpt h3{scroll-margin-top:70px}
+          .rpt a[href^="#"]:hover{text-decoration:underline!important}
         `}</style>
         <div className="no-print sticky top-0 z-10 text-white px-6 py-3 flex items-center justify-between" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
           <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — annual review preview</div>
@@ -4455,32 +4488,54 @@ export default function App() {
             <div className="text-center text-sm mt-8">The information collected and maintained in this document will be held in the <b>strictest confidence</b>.</div>
           </div>
 
+          <div className="pagebreak" />
+          <h2>Table of Contents</h2>
+          {(() => {
+            const entries = [
+              { title: "Executive Summary", id: "rv-exec", sub: [
+                { label: "Key Points", id: "rv-keypoints" },
+                ...(client.sections.hierarchy ? [{ label: "The Hierarchy of Needs in Financial Planning", id: "rv-hierarchy" }] : []),
+              ] },
+              { title: "Current Plans & Coverage", id: "rv-current-plans", sub: [] },
+              { title: "Current Financial Health", id: "rv-health", sub: [] },
+              { title: "Overview of Plans", id: "rv-overview", sub: [] },
+              { title: "Recommendations", id: "rv-recommendations", sub: [
+                ...(rv.contingencyNote ? [{ label: "Contingency Planning", id: "rv-contingency" }] : []),
+                { label: optionsMode ? "Plan Options" : "4-3-2-1 Recommended Plans", id: "rv-plans" },
+              ] },
+              ...(d.selected.length ? [{ title: "Explanation of Recommendations", id: "rv-explanations",
+                sub: uniqueExplanations(d.selected).map((p, i) => ({ label: (i + 1) + ". " + (PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label), id: planAnchor(p) })) }] : []),
+              ...(rv.whatsNext ? [{ title: "What's Next", id: "rv-whats-next", sub: [] }] : []),
+            ];
+            return <TableOfContents entries={entries} />;
+          })()}
+
           {/* 1. Executive Summary */}
           <div className="pagebreak" />
-          <h2>Executive Summary</h2>
+          <h2 id="rv-exec">Executive Summary</h2>
           {rv.exec ? para(rv.exec) : <p className="italic text-slate-400">No executive summary yet — fill it in under Narrative → Annual Review Report.</p>}
 
           {/* 2. Key Points */}
-          <h3>Key Points</h3>
+          <h3 id="rv-keypoints">Key Points</h3>
           {rv.keyPoints ? paraLead(rv.keyPoints, "dash") : <p className="italic text-slate-400">No key points yet — add them under Narrative → Annual Review Report.</p>}
 
           {/* How we plan — a refresher before looking at this year's position.
               Shares the full report's toggle so one switch governs both. */}
           {client.sections.hierarchy && (<>
-            <h3>The Hierarchy of Needs in Financial Planning</h3>
+            <h3 id="rv-hierarchy">The Hierarchy of Needs in Financial Planning</h3>
             {para(EDU_SECTIONS[0].body)}
             <div style={{ breakInside: "avoid", margin: "10px 0 18px" }}><HierarchyPyramid title={false} /></div>
           </>)}
 
           {/* 3. Current Plans & Coverage */}
           <div className="pagebreak" />
-          <h2>Current Plans &amp; Coverage</h2>
+          <h2 id="rv-current-plans">Current Plans &amp; Coverage</h2>
           <p className="text-xs text-slate-500 mb-2">Existing insurance plans on file, as entered in the Current Coverage step.</p>
           <CurrentPlansTable client={client} report />
 
           {/* 4. Current Financial Health */}
           <div className="pagebreak" />
-          <h2>Current Financial Health</h2>
+          <h2 id="rv-health">Current Financial Health</h2>
           {rv.financialHealthDone ? (
             <>
               <p className="mb-2">Your financial ratios represent your current position and change over time. No single ratio should be reviewed in isolation or be conclusive of your financial position.</p>
@@ -4514,19 +4569,19 @@ export default function App() {
 
           {/* 5. Overview of Plans */}
           <div className="pagebreak" />
-          <h2>Overview of Plans</h2>
+          <h2 id="rv-overview">Overview of Plans</h2>
           <p className="text-xs text-slate-500 mb-2">This is a summary of your current in-force insurance plans as of {todayLong()} that is disclosed. Current value from Investment plans is not included in this overview (if any).</p>
           <div data-docx-capture="reviewTimeline"><CoverageTimelinePanel client={client} printMode={true} /></div>
 
           {/* 6. Recommendations */}
           <div className="pagebreak" />
-          <h2>Recommendations</h2>
+          <h2 id="rv-recommendations">Recommendations</h2>
           <p className="mb-2">This is a summary of plan option recommendations for your coverage gaps and investment opportunities in insurance. Further info is provided in the Explanation of Recommendations section that follows.</p>
-          <h3>Contingency Planning</h3>
+          <h3 id="rv-contingency">Contingency Planning</h3>
           <table><tbody>
             <tr><td>Emergency Funds</td><td>{rv.contingencyNote || ("Allocate " + money(d.ef3) + " as emergency funds")}</td><td className="tnum italic text-slate-500">No Return</td></tr>
           </tbody></table>
-          <h3>{optionsMode ? "Plan Options" : "4-3-2-1 Recommended Plans"}</h3>
+          <h3 id="rv-plans">{optionsMode ? "Plan Options" : "4-3-2-1 Recommended Plans"}</h3>
           <table><tbody>
             <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{money(d.ef3)} – {money(d.ef6)}</td></tr>
             <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
@@ -4536,12 +4591,12 @@ export default function App() {
           <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} optionsMode={optionsMode} />
 
           {/* 7. Explanation of Recommendations */}
-          {d.selected.length > 0 && (<><div className="pagebreak" /><h2>Explanation of Recommendations</h2>
+          {d.selected.length > 0 && (<><div className="pagebreak" /><h2 id="rv-explanations">Explanation of Recommendations</h2>
             {uniqueExplanations(d.selected).map((p, i) => {
               const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
               return (
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
-                  <h3>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
+                  <h3 id={planAnchor(p)}>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
                   {(p.planImages || []).length > 0 && (
@@ -4562,7 +4617,7 @@ export default function App() {
           {/* What's Next */}
           {rv.whatsNext && (<>
             <div className="pagebreak" />
-            <h2>What's Next</h2>
+            <h2 id="rv-whats-next">What's Next</h2>
             {paraLead(rv.whatsNext, "num")}
           </>)}
 
