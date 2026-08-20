@@ -1944,7 +1944,9 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
       <div key={ti} style={{ breakInside: "avoid", marginBottom: 14 }}>
         {tb.caption && <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: tb.sub ? 1 : 4 }}>{tb.caption}</div>}
         {tb.sub && <div style={{ fontSize: 11.5, fontWeight: 600, color: "#66229d", marginBottom: 4 }}>{tb.sub}</div>}
-        <table className="compact" style={{ tableLayout: "fixed" }}>
+        {/* a two-column lookup table stretched to the page reads as mostly empty space,
+            so width follows the column count unless the table names its own */}
+        <table className="compact" style={{ tableLayout: "fixed", width: tb.width || ({ 1: "42%", 2: "52%", 3: "68%" }[tb.head.length] || "86%") }}>
           <thead><tr>{tb.head.map((h, k) => (
             <th key={k} style={{ width: tb.widths?.[k], textAlign: k === 0 ? "left" : (tb.align?.[k] || "center") }}>{h}</th>
           ))}</tr></thead>
