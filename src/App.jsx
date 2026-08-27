@@ -2138,6 +2138,8 @@ const CATEGORY_BUCKET = {
 const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay"];
+// the two critical-illness stage rows, kept together so gap logic can treat them as a pair
+const CI_ROWS = ["Major Critical Illness", "Early-Major Critical Illness"];
 const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
@@ -2852,16 +2854,25 @@ function InsuranceNeedsSummary({ client, update }) {
   );
 }
 
+// The full 0–100 axis squeezes every bar so tight that the plan labels on them truncate.
+// A printed timeline can't be zoomed by the reader, so it opens on the years that are
+// actually in play — a little before today, through retirement and past it.
+const printedWindow = (age, ret) => {
+  if (!(age > 0)) return { a0: 0, a1: TIMELINE_MAX_AGE };
+  const a0 = Math.max(0, age - 6);
+  const a1 = Math.min(TIMELINE_MAX_AGE, Math.max(age + 30, ret > 0 ? ret + 8 : 0, a0 + 25));
+  return { a0, a1 };
+};
 function CoverageTimelinePanel({ client, printMode = false }) {
+  const clientAge = num(calcAge(client.dob));
+  const retireAge = num(client.retirementAge); // from Profile (KYC) step
   const [mode, setMode] = useState("current");
-  const [win, setWin] = useState({ a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
+  const [win, setWin] = useState(() => printMode ? printedWindow(clientAge, retireAge) : { a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
   const [hover, setHover] = useState(null);       // { item, left, top }
   const [selected, setSelected] = useState(null); // pinned item for the detail card
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
   const winRef = useRef(win); winRef.current = win;
-  const clientAge = num(calcAge(client.dob));
-  const retireAge = num(client.retirementAge); // from Profile (KYC) step
 
   // everyone a plan can insure: the client plus each dependent, each with a colour
   const insuredList = useMemo(() => [
@@ -3047,9 +3058,14 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         // that matter most for a child/spouse — critical illness, accident, hospitalisation
         // (and its death/disability sibling) — not retirement or "others"
         const gapCats = person.id === "self" ? EXISTING_PLAN_CATEGORIES : DEPENDENT_GAP_CATEGORIES;
+        // A plan covering one CI stage sits directly above an empty row for the other,
+        // which reads as a hole in cover rather than a distinction between stages. Show
+        // the empty stage only when neither is covered.
+        const ciCovered = CI_ROWS.some(c => mine.some(it => it.category === c));
         rows = gapCats.filter(cat => {
           if (mine.some(it => it.category === cat)) return true;
           if (cat === "Others" || cat === "Child Savings") return false;              // no gap row for these
+          if (CI_ROWS.includes(cat) && ciCovered) return false;                       // sibling stage is covered
           return true;                                                                // uncovered → gap row
         }).map(cat => ({ category: cat, plans: mine.filter(it => it.category === cat) }));
         // categories outside the fixed gap list (e.g. "Investment Portfolio", "Retirement" for a dependent) still get their own row
