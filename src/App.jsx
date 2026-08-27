@@ -2493,6 +2493,91 @@ const HierarchyPyramid = ({ title = true }) => {
   );
 };
 
+// What the client is actually committing today, split the way the 4-3-2-1 rule splits it.
+// Only active policies count — APL is funded by a loan against cash value and ETI is
+// paid-up, so neither is money leaving the client's pocket. Investments sit with savings.
+const currentPremiumSplit = (c) => {
+  let protection = 0, savings = 0;
+  (c.existingPlans || []).forEach(pl => {
+    if (!statusPaysPremium(pl.status)) return;
+    const m = freqMonthlyEquiv(pl.allocation ?? pl.monthly, pl.allocationFreq);
+    if (m <= 0) return;
+    // an untyped plan is far more likely to be insurance than an endowment
+    if (planTypeMeta(pl.planType)?.group === "savings") savings += m; else protection += m;
+  });
+  (c.existingInvestments || []).forEach(iv => {
+    const m = freqMonthlyEquiv(iv.allocation, iv.allocationFreq);
+    if (m > 0) savings += m;
+  });
+  return { protection, savings, total: protection + savings };
+};
+
+// Annualised commitment against the 10% protection / 20% savings guidelines, so the client
+// can see how much of a year's income each type of plan is already using up.
+const CurrentPremiumBudget = ({ client, d }) => {
+  const split = currentPremiumSplit(client);
+  if (split.total <= 0) return null;
+  const annualIncome = d.net * 12;
+  const pct = (v) => annualIncome > 0 ? (v / annualIncome * 100).toFixed(1) + "%" : "—";
+  const rows = [
+    { label: "Protection plans", guidePct: 0.10, guideNote: "10% of annual income", committed: split.protection * 12,
+      hint: "Whole life / critical illness, accident & hospitalisation, term and special life" },
+    { label: "Savings & investment plans", guidePct: 0.20, guideNote: "20% of annual income", committed: split.savings * 12,
+      hint: "Endowments, retirement annuities and investment portfolios" },
+  ];
+  const combinedGuide = annualIncome * 0.30, combinedCommitted = split.total * 12;
+  const position = (committed, guide) => {
+    if (annualIncome <= 0) return "—";
+    return committed <= guide
+      ? "Room of " + money(guide - committed) + " / year"
+      : "Over by " + money(committed - guide) + " / year";
+  };
+  const tone = (committed, guide) => annualIncome > 0 && committed > guide ? "text-red-700" : "text-purple-900";
+  return (
+    <div className="my-4" style={{ breakInside: "avoid" }}>
+      <h3 id="rv-premium-budget">Premium Commitment against the 4-3-2-1 Rule</h3>
+      <p className="text-xs text-slate-500 mb-1">
+        As a guideline, about <b>10%</b> of take-home income goes to protection and <b>20%</b> to savings and investments.
+        Against a take-home income of <b>{money(d.net)} / month</b> — <b>{money(annualIncome)} / year</b> — this is what your
+        in-force plans are already using. Lapsed, surrendered, APL and ETI policies are excluded.
+      </p>
+      <table>
+        <thead><tr>
+          <th>Allocation</th>
+          <th className="tnum">Guideline / year</th>
+          <th className="tnum">Committed / year</th>
+          <th className="tnum">% of income</th>
+          <th>Position</th>
+        </tr></thead>
+        <tbody>
+          {rows.map(r => {
+            const guide = annualIncome * r.guidePct;
+            return (
+              <tr key={r.label}>
+                <td><b>{r.label}</b><div className="text-xs text-slate-500">{r.guideNote} · {r.hint}</div></td>
+                <td className="tnum">{annualIncome > 0 ? money(guide) : "—"}</td>
+                <td className="tnum">{money(r.committed)}</td>
+                <td className="tnum">{pct(r.committed)}</td>
+                <td className={"font-semibold " + tone(r.committed, guide)}>{position(r.committed, guide)}</td>
+              </tr>
+            );
+          })}
+          <tr style={{ background: "#f5f0fa" }}>
+            <td className="font-bold">Combined commitment (30% of annual income)</td>
+            <td className="tnum font-bold">{annualIncome > 0 ? money(combinedGuide) : "—"}</td>
+            <td className="tnum font-bold">{money(combinedCommitted)}</td>
+            <td className="tnum font-bold">{pct(combinedCommitted)}</td>
+            <td className={"font-bold " + tone(combinedCommitted, combinedGuide)}>{position(combinedCommitted, combinedGuide)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="text-xs text-slate-500 mt-1">
+        Premiums paid other than monthly are converted to their annual equivalent so every policy compares like for like.
+      </p>
+    </div>
+  );
+};
+
 const CurrentPlansTable = ({ client, report = false }) => {
   const people = [
     { id: "self", name: client.name || "Client", age: calcAge(client.dob) },
@@ -4514,7 +4599,8 @@ export default function App() {
                 { label: "Key Points", id: "rv-keypoints" },
                 ...(client.sections.hierarchy ? [{ label: "The Hierarchy of Needs in Financial Planning", id: "rv-hierarchy" }] : []),
               ] },
-              { title: "Current Plans & Coverage", id: "rv-current-plans", sub: [] },
+              { title: "Current Plans & Coverage", id: "rv-current-plans",
+                sub: currentPremiumSplit(client).total > 0 ? [{ label: "Premium Commitment against the 4-3-2-1 Rule", id: "rv-premium-budget" }] : [] },
               { title: "Current Financial Health", id: "rv-health", sub: [] },
               { title: "Overview of Plans", id: "rv-overview", sub: [] },
               { title: "Recommendations", id: "rv-recommendations", sub: [
@@ -4550,6 +4636,7 @@ export default function App() {
           <h2 id="rv-current-plans">Current Plans &amp; Coverage</h2>
           <p className="text-xs text-slate-500 mb-2">Existing insurance plans on file, as entered in the Current Coverage step.</p>
           <CurrentPlansTable client={client} report />
+          <CurrentPremiumBudget client={client} d={d} />
 
           {/* 4. Current Financial Health */}
           <div className="pagebreak" />
