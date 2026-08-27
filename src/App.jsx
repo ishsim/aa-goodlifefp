@@ -2123,7 +2123,9 @@ const PLAN_COVERAGE_CATEGORIES = [
 // row a plan's coverage appears on, and the Total Insurance Needs auto-totals
 const CATEGORY_BUCKET = {
   "Death": "Death & Disability", "Disability": "Death & Disability",
-  "Health (Major Critical Illness)": "Critical Illness", "Health (Early-Major Critical Illness)": "Critical Illness",
+  // major and early-major CI pay on different triggers and usually for different sums,
+  // so they get their own timeline rows rather than being read as one block of cover
+  "Health (Major Critical Illness)": "Major Critical Illness", "Health (Early-Major Critical Illness)": "Early-Major Critical Illness",
   // hospitalisation & surgery cover belongs with the other hospital benefits, not with CI
   "Health (Hospitalisation & Surgery)": "Hospital Stay",
   "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
@@ -2133,9 +2135,9 @@ const CATEGORY_BUCKET = {
   "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
 };
 // Overview timeline row buckets, in display order
-const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
-const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Critical Illness", "Personal Accident", "Hospital Stay"];
+const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay"];
 const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
