@@ -3043,6 +3043,10 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const who = insuredById(r.insured || "self");
         const owner = insuredById(r.owner || "self");
         const payUntil = policyPremiumEndAge(r, invDob);
+        // Horizons run from today (they grow the *current* value), so a 12-year horizon
+        // lands at the insured's current age + 12 — not at the policy's start age.
+        const baseAge = who.age != null ? who.age : start;
+        const projections = horizons.map(h => ({ ...h, age: baseAge + h.years, year: new Date().getFullYear() + h.years }));
         return {
           id: r.id || "inv" + i,
           origin: "current",
@@ -3060,9 +3064,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
             ["Allocation", num(r.allocation) > 0 ? money(num(r.allocation), 2) + " / " + freqLabel(r.allocationFreq).toLowerCase() : ""],
             ["Pay until", payUntil > 0 ? "age " + payUntil + (r.policyExpiry ? " (" + fmtDate(r.policyExpiry) + ")" : "") : ""],
-            ...horizons.map(h => [h.rate + "% p.a. @ " + h.years + " yrs", money(h.projected)]),
             ["Notes", r.notes],
           ].filter(([, v]) => v),
+          projections,
         };
       });
       return [...plans, ...invs];
@@ -3175,9 +3179,13 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   }, [items, insuredList, mode]);
 
   const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 32, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7, EMPTY_H = 20, SEC_H = 22;
+  // extra band above a row whose plans carry projected values, so the marker labels
+  // have somewhere to sit that is not on top of the bar above them
+  const PROJ_H = 12;
+  const rowHasProj = (r) => r.plans.some(pl => (pl.projections || []).length > 0);
   const span = Math.max(win.a1 - win.a0, 1);
   const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
-  const rowH = (r) => r.plans.length ? r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2 : EMPTY_H;
+  const rowH = (r) => r.plans.length ? r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2 + (rowHasProj(r) ? PROJ_H : 0) : EMPTY_H;
   const secH = (s) => SEC_H + s.rows.reduce((a, r) => a + rowH(r), 0);
   const plotH = Math.max(sections.reduce((a, s) => a + secH(s), 0), 40);
   const totalH = AXIS_H + plotH + BOT_H;
@@ -3319,6 +3327,44 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     );
   };
 
+  // A projected value is a point in time, so it reads as a tick across the row at the age
+  // it lands on, labelled with the rate that produced it. Several rates usually share one
+  // horizon, so a tick carries a range and the pinned card breaks it down in full.
+  const projectionMarks = (row, y0) => {
+    if (!rowHasProj(row)) return null;
+    const byAge = new Map();
+    row.plans.forEach(p => (p.projections || []).forEach(pr => {
+      const age = pr.age + p.offset;
+      if (!byAge.has(age)) byAge.set(age, []);
+      byAge.get(age).push(pr);
+    }));
+    const top = y0 + PROJ_H - 1, bottom = y0 + rowH(row) - 3;
+    let lastLabelX = -Infinity;
+    return [...byAge.entries()].sort((a, b) => a[0] - b[0]).map(([age, entries]) => {
+      if (age < win.a0 || age > win.a1) return null;
+      const cx = x(age);
+      const vals = entries.map(e => e.projected);
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      const text = entries.length === 1
+        ? entries[0].rate + "% · " + kfmt(hi)
+        : kfmt(lo) + "–" + kfmt(hi);
+      // drop a label rather than let two overlap; the tick itself always stays
+      const room = cx - lastLabelX > 54;
+      if (room) lastLabelX = cx;
+      return (
+        <g key={"pr" + age} pointerEvents="none">
+          <line x1={cx} y1={top} x2={cx} y2={bottom} stroke="#0f172a" strokeWidth="1" strokeDasharray="2 2" opacity="0.55" />
+          <polygon points={`${cx - 3},${top} ${cx + 3},${top} ${cx},${top + 4}`} fill="#0f172a" opacity="0.75" />
+          {room && (<>
+            <text x={cx} y={y0 + PROJ_H - 4} textAnchor="middle" fontSize="7.5" fontWeight="700"
+              stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{text}</text>
+            <text x={cx} y={y0 + PROJ_H - 4} textAnchor="middle" fontSize="7.5" fill="#0f172a" fontWeight="700">{text}</text>
+          </>)}
+        </g>
+      );
+    });
+  };
+
   const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
   return (
@@ -3379,8 +3425,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                   return (
                     <g key={row.category}>
                       <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
+                      {projectionMarks(row, y0)}
                       {row.plans.map((p, pi) => {
-                        const y = y0 + ROW_PAD + pi * (LANE_H + LANE_GAP);
+                        const y = y0 + ROW_PAD + (rowHasProj(row) ? PROJ_H : 0) + pi * (LANE_H + LANE_GAP);
                         const cs = p.start + p.offset, ce = p.end + p.offset;
                         const active = hover?.item.id === p.id || selected?.id === p.id;
                         const common = {
@@ -3525,6 +3572,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
               premium / contribution period
             </span>
           )}
+          {items.some(it => (it.projections || []).length > 0) && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="12"><line x1="10" y1="2" x2="10" y2="12" stroke="#0f172a" strokeWidth="1" strokeDasharray="2 2" opacity="0.55" /><polygon points="7,2 13,2 10,6" fill="#0f172a" opacity="0.75" /></svg>
+              projected value at that age
+            </span>
+          )}
           {mode === "current" && (
             <span className="inline-flex items-center gap-1.5">
               <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" /></svg>
@@ -3557,6 +3610,49 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                 </div>
               ))}
             </div>
+            {(selected.projections || []).length > 0 && (() => {
+              // one row per horizon, one column per rate — reading across a row answers
+              // "what is this worth at that age", reading down a column answers
+              // "what does this rate do over time"
+              const rates = [...new Set(selected.projections.map(pr => pr.rate))].sort((a, b) => a - b);
+              const years = [...new Set(selected.projections.map(pr => pr.years))].sort((a, b) => a - b);
+              const at = (yr, rate) => selected.projections.find(pr => pr.years === yr && pr.rate === rate);
+              return (
+                <div className="mt-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Projected value</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden bg-white">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">Year · age</th>
+                          {rates.map(r => (
+                            <th key={r} className="text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{r}% p.a.</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {years.map(yr => {
+                          const any = selected.projections.find(pr => pr.years === yr);
+                          return (
+                            <tr key={yr}>
+                              <td className="py-1.5 px-2 border-b border-slate-100">
+                                <b>{any.year}</b> — age {any.age}
+                                <span className="text-slate-400"> · in {yr} {yr === 1 ? "yr" : "yrs"}</span>
+                              </td>
+                              {rates.map(r => {
+                                const cell = at(yr, r);
+                                return <td key={r} className="py-1.5 px-2 border-b border-slate-100 text-right tabular-nums">{cell ? money(cell.projected) : "—"}</td>;
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Projections grow the current value plus ongoing contributions at the stated rate; they are illustrations, not guarantees.</p>
+                </div>
+              );
+            })()}
           </div>
         )}
         </>
