@@ -1089,15 +1089,16 @@ function buildReviewPrompt(c, d, notes) {
     `- Plans proposed at this review: ${d.selected.length ? d.selected.map(pl => `${pl.label} (${money(num(pl.monthly), 0)}/mo)`).join("; ") : "None"}`,
     `- Financial health check completed this meeting: ${c.review?.financialHealthDone ? "Yes" : "No"}`,
     ``,
-    `Write three sections:`,
+    `Write three sections. The JSON keys below are fixed by the system that reads your answer — use them exactly as given, even though two of them are named for a different document:`,
     `1. "exec" — Executive summary (2-3 short paragraphs): recap the meeting. Lead with what has changed since the last review, why it matters, and what you looked at together. Reference the meeting date if given. Do not list the plans; that belongs elsewhere in the report.`,
-    `2. "keyPoints" — The points discussed, ONE PER LINE, each formatted exactly "Title — detail" with an em dash. 3-6 lines. The title is 2-4 words naming the point (e.g. "Growing Family", "Protection Gap", "Emergency Fund"); the detail is one or two sentences. No numbering, no bullet characters, no blank lines between them.`,
-    `3. "whatsNext" — A numbered list of agreed next steps, 2-5 items, as a single string with each item on its own line starting "1. ", "2. " etc., formatted "1. Title: detail". Only include steps the notes actually support — do not invent commitments.`,
+    `2. "recoIntro" — put THE KEY POINTS DISCUSSED here. One per line, each formatted exactly "Title — detail" with an em dash. 3-6 lines. The title is 2-4 words naming the point (e.g. "Growing Family", "Protection Gap", "Emergency Fund"); the detail is one or two sentences. No numbering, no bullet characters, no blank lines between them.`,
+    `3. "actionPlan" — put WHAT HAPPENS NEXT here. A numbered list of agreed next steps, 2-5 items, as a single string with each item on its own line starting "1. ", "2. " etc., formatted "1. Title: detail". Only include steps the notes actually support — do not invent commitments.`,
     ``,
     `If the notes mention a specific figure that conflicts with the data on file, follow the notes and do not correct them silently.`,
+    `Write product names exactly as the notes or the data give them. Never expand an abbreviation into a full product name and never invent one — if the notes say "MSCC", write "MSCC".`,
     ``,
     `Respond ONLY with a valid JSON object (no markdown fences, no preamble) in this exact shape:`,
-    `{"exec": "...", "keyPoints": "...", "whatsNext": "..."}`
+    `{"exec": "...", "recoIntro": "...", "actionPlan": "..."}`
   ];
   return lines.join("\n");
 }
@@ -3966,9 +3967,14 @@ export default function App() {
         }
         throw new Error(message);
       }
-      const exec = data?.exec || "";
-      const keyPoints = data?.keyPoints ?? data?.recoIntro ?? "";
-      const whatsNext = data?.whatsNext ?? data?.actionPlan ?? "";
+      // The deployed edge function returns a fixed exec/recoIntro/actionPlan triple and
+      // drops any other key, filling the ones the model omitted with "" — so an empty
+      // string means "not returned" here and the semantic names can only win when they
+      // actually carry text.
+      const firstText = (...vals) => vals.find(v => typeof v === "string" && v.trim()) || "";
+      const exec = firstText(data?.exec);
+      const keyPoints = firstText(data?.keyPoints, data?.recoIntro);
+      const whatsNext = firstText(data?.whatsNext, data?.actionPlan);
       if (!exec && !keyPoints && !whatsNext) throw new Error(data?.error || "No content returned");
       updateDeep("review", { exec, keyPoints, whatsNext });
       toast.success("Review draft generated — read it through before sending");
