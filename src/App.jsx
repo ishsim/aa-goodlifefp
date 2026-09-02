@@ -563,7 +563,9 @@ const blankClient = () => ({
   reportMode: "recommendation",
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
   // Annual Review report — separate narrative from the first-time client report above
-  review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" },
+  // meetingNotes is the advisor's raw notes from the review meeting — kept on the record
+  // so a draft can be regenerated later without retyping them
+  review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "", meetingNotes: "" },
   sections: { education: true, hierarchy: true, ratios: true, allocation: true },
   updated: Date.now(),
 });
@@ -1046,6 +1048,56 @@ function buildClaudePrompt(c, d) {
     ``,
     `Respond ONLY with a valid JSON object (no markdown fences, no preamble) in this exact shape:`,
     `{"exec": "...", "recoIntro": "...", "actionPlan": "..."}`
+  ];
+  return lines.join("\n");
+}
+
+// The annual review is a different document from the first-time recommendation: it recaps a
+// conversation that has already happened rather than making a case from scratch. So the
+// advisor's own meeting notes lead, and the client data is there for grounding — to catch a
+// figure the notes reference loosely, and to keep the draft honest about what is on file.
+function buildReviewPrompt(c, d, notes) {
+  const activePlans = (c.existingPlans || []).filter(p => statusPaysPremium(p.status));
+  const split = currentPremiumSplit(c);
+  const annualIncome = d.net * 12;
+  const failing = d.ratios.filter(r => r.pass === false).map(r => r.name);
+  const gaps = d.irRows.filter(r => r.shortfall > 0).map(r => `${r.name} (short ${money(r.shortfall, 0)})`);
+  const lines = [
+    `You are drafting the narrative sections of an ANNUAL REVIEW report for an existing client of a Certified Financial Planner in Brunei working under GoodLife Financial Planning (in association with AIA Brunei), with an advisory approach built on stewardship, trust, and reducing financial anxiety. Tone: warm, professional, plain-spoken, client-centred, never salesy or alarmist. Address the client as "you". Amounts are in BND ($).`,
+    ``,
+    `This is a review of a relationship already in place — not a first proposal. Write as a recap of the meeting that just happened: what has changed since last time, what you discussed, and what happens next. Do not re-introduce the client to financial planning or restate their whole situation from first principles.`,
+    ``,
+    `THE ADVISOR'S NOTES FROM THIS REVIEW MEETING (this is your primary source — everything below it is background):`,
+    notes.trim(),
+    ``,
+    `CLIENT DATA ON FILE (for grounding figures; do not recite what the notes do not raise):`,
+    `- Name: ${c.name || "Client"}`,
+    `- Age: ${calcAge(c.dob) || "Not provided"}`,
+    `- Occupation: ${c.occupation || "Not provided"}`,
+    `- Meeting date: ${c.meetingDate || "Not provided"}`,
+    `- Dependents: ${(c.dependents || []).filter(dep => dep.name).map(dep => `${dep.name} (${dep.relationship || "dependent"}${dep.dob ? ", age " + calcAge(dep.dob) : ""})`).join("; ") || "None on file"}`,
+    `- Monthly net income: ${money(d.net, 0)} (${money(annualIncome, 0)} / year)`,
+    `- Monthly expenses: ${money(d.totalExpenses, 0)} · surplus ${money(d.surplus, 0)}`,
+    `- Cash & equivalents: ${money(d.cash, 0)} against a 3-month emergency fund target of ${money(d.ef3, 0)}`,
+    `- Net worth: ${money(d.netWorth, 0)} · liabilities ${money(d.totalLiab, 0)}`,
+    `- Ratios below benchmark: ${failing.length ? failing.join(", ") : "None"}`,
+    `- Protection shortfalls still open: ${gaps.length ? gaps.join("; ") : "None"}`,
+    `- Policies in force (premium being paid): ${activePlans.length ? activePlans.map(pl => `${pl.planName || pl.planType || "plan"}${pl.planType && pl.planName ? " (" + pl.planType + ")" : ""}`).join("; ") : "None on file"}`,
+    `- Policies not being paid: ${(c.existingPlans || []).filter(pl => !statusPaysPremium(pl.status)).map(pl => `${pl.planName || pl.planType || "plan"} — ${statusLabel(pl.status)}`).join("; ") || "None"}`,
+    `- Premium commitment: protection ${money(split.protection * 12, 0)}/yr, savings & investments ${money(split.savings * 12, 0)}/yr` +
+      (annualIncome > 0 ? ` — against 4-3-2-1 guidelines of ${money(annualIncome * 0.1, 0)} (10%) and ${money(annualIncome * 0.2, 0)} (20%)` : ``),
+    `- Plans proposed at this review: ${d.selected.length ? d.selected.map(pl => `${pl.label} (${money(num(pl.monthly), 0)}/mo)`).join("; ") : "None"}`,
+    `- Financial health check completed this meeting: ${c.review?.financialHealthDone ? "Yes" : "No"}`,
+    ``,
+    `Write three sections:`,
+    `1. "exec" — Executive summary (2-3 short paragraphs): recap the meeting. Lead with what has changed since the last review, why it matters, and what you looked at together. Reference the meeting date if given. Do not list the plans; that belongs elsewhere in the report.`,
+    `2. "keyPoints" — The points discussed, ONE PER LINE, each formatted exactly "Title — detail" with an em dash. 3-6 lines. The title is 2-4 words naming the point (e.g. "Growing Family", "Protection Gap", "Emergency Fund"); the detail is one or two sentences. No numbering, no bullet characters, no blank lines between them.`,
+    `3. "whatsNext" — A numbered list of agreed next steps, 2-5 items, as a single string with each item on its own line starting "1. ", "2. " etc., formatted "1. Title: detail". Only include steps the notes actually support — do not invent commitments.`,
+    ``,
+    `If the notes mention a specific figure that conflicts with the data on file, follow the notes and do not correct them silently.`,
+    ``,
+    `Respond ONLY with a valid JSON object (no markdown fences, no preamble) in this exact shape:`,
+    `{"exec": "...", "keyPoints": "...", "whatsNext": "..."}`
   ];
   return lines.join("\n");
 }
@@ -3846,6 +3898,8 @@ export default function App() {
 
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState("");
+  const [draftingReview, setDraftingReview] = useState(false);
+  const [reviewDraftError, setReviewDraftError] = useState("");
 
   const draftWithAI = async () => {
     if (!client || !d) return;
@@ -3883,6 +3937,46 @@ export default function App() {
       setDraftError(e instanceof Error ? e.message : String(e));
     } finally {
       setDrafting(false);
+    }
+  };
+
+  // Turns the advisor's raw meeting notes into the three review-report narrative fields.
+  // Shares the draft-narrative edge function with the recommendation drafter; the older
+  // deployment of that function only passes through exec/recoIntro/actionPlan, so the
+  // review keys fall back to those positionally and the feature works either way.
+  const draftReviewFromNotes = async () => {
+    if (!client || !d) return;
+    const notes = (client.review?.meetingNotes || "").trim();
+    if (!notes) { setReviewDraftError("Paste your meeting notes first — the draft is written from them."); return; }
+    setDraftingReview(true);
+    setReviewDraftError("");
+    try {
+      const { data, error } = await supabase.functions.invoke('draft-narrative', {
+        body: { prompt: buildReviewPrompt(client, d, notes) }
+      });
+      if (error) {
+        console.error('Edge function error:', error);
+        let message = error.message;
+        try {
+          const details = await error.context?.json?.();
+          if (details?.details) message = `${message}: ${details.details}`;
+          else if (details?.error) message = `${message}: ${details.error}`;
+        } catch (_detailsError) {
+          // keep the SDK's message if the response body can't be read
+        }
+        throw new Error(message);
+      }
+      const exec = data?.exec || "";
+      const keyPoints = data?.keyPoints ?? data?.recoIntro ?? "";
+      const whatsNext = data?.whatsNext ?? data?.actionPlan ?? "";
+      if (!exec && !keyPoints && !whatsNext) throw new Error(data?.error || "No content returned");
+      updateDeep("review", { exec, keyPoints, whatsNext });
+      toast.success("Review draft generated — read it through before sending");
+    } catch (e) {
+      console.error(e);
+      setReviewDraftError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDraftingReview(false);
     }
   };
 
@@ -5255,6 +5349,19 @@ export default function App() {
 
           <SectionCard title="Annual Review Report — content (for existing clients)">
             <p className="text-xs text-slate-500 mb-3">This feeds the separate <b>Review Report</b> — a shorter annual check-in document, distinct from the full Preview Report above. It pulls Current Plans, Recommendations and Explanations straight from the steps you've already filled in; the fields below are just the review-specific narrative.</p>
+            <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 mb-4">
+              <Field label="Review meeting notes" hint="Paste your notes from the meeting — rough is fine. The draft is written from these; the client's data on file is used only to keep figures honest.">
+                <TextArea rows={7} value={client.review.meetingNotes || ""} onChange={e => updateDeep("review", { meetingNotes: e.target.value })}
+                  placeholder={"e.g. Second child due March. Wants to move house in 2 yrs.\nWorried about hospital costs after mother's surgery.\nSalary up to $4,200. Emergency fund still only ~1 month.\nAgreed: top up CI cover, revisit endowment at next review."} />
+              </Field>
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={draftReviewFromNotes} disabled={draftingReview} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
+                  {draftingReview ? "Drafting…" : "\u2726 Draft review from notes"}
+                </button>
+                <span className="text-xs text-slate-500">Fills the three fields below — always read them through before sending.</span>
+              </div>
+              {reviewDraftError && <p className="mt-2 text-sm text-red-600">{reviewDraftError}</p>}
+            </div>
             <Field label="Executive summary (meeting recap)" hint="What changed since last time, and why it matters — e.g. a growing family, drifting spending, a new goal."><TextArea rows={6} value={client.review.exec} onChange={e => updateDeep("review", { exec: e.target.value })} /></Field>
             <div className="h-4" />
             <Field label="Key points from the discussion" hint="One point per line, formatted 'Title — detail'. E.g. 'Growing Family — your second child arrives this year, so coverage needs an update.'"><TextArea rows={8} value={client.review.keyPoints} onChange={e => updateDeep("review", { keyPoints: e.target.value })} /></Field>

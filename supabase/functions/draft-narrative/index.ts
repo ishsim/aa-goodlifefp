@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     }
 
     const cleaned = stripFences(text);
-    let parsed: { exec?: unknown; recoIntro?: unknown; actionPlan?: unknown };
+    let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
@@ -83,8 +83,12 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Pass the model's object through as-is so a new prompt shape (the annual review asks
+    // for keyPoints/whatsNext) needs no redeploy, while the recommendation drafter's three
+    // keys stay present even when the model omits one.
     return new Response(
       JSON.stringify({
+        ...parsed,
         exec: parsed.exec ?? "",
         recoIntro: parsed.recoIntro ?? "",
         actionPlan: parsed.actionPlan ?? "",
