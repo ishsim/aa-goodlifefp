@@ -4287,7 +4287,7 @@ export default function App() {
           .rpt a[href^="#"]:hover{text-decoration:underline!important}
         `}</style>
         <div className="no-print sticky top-0 z-10 text-white px-6 py-3 flex items-center justify-between" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
-          <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview</div>
+          <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — report preview{optionsMode && <span className="ml-3 text-[11px] bg-amber-300 text-amber-950 font-semibold px-2 py-1 rounded" title="Set on the Recommended Plans step. Tier labels, subtotals and the 4-3-2-1 budget check are hidden in this mode.">PLAN OPTIONS MODE — tier labels &amp; totals hidden</span>}</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
             <button onClick={doPrintPdf} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Save as PDF</button>
@@ -4757,7 +4757,7 @@ export default function App() {
           .rpt a[href^="#"]:hover{text-decoration:underline!important}
         `}</style>
         <div className="no-print sticky top-0 z-10 text-white px-6 py-3 flex items-center justify-between" style={{ background: "linear-gradient(120deg, #3a1955 0%, #51037c 100%)" }}>
-          <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — annual review preview</div>
+          <div className="text-sm"><span className="font-semibold">{displayName(client.name, "Unnamed")}</span> — annual review preview{optionsMode && <span className="ml-3 text-[11px] bg-amber-300 text-amber-950 font-semibold px-2 py-1 rounded" title="Set on the Recommended Plans step. Tier labels, subtotals and the 4-3-2-1 budget check are hidden in this mode.">PLAN OPTIONS MODE — tier labels &amp; totals hidden</span>}</div>
           <div className="flex gap-2">
             <button onClick={() => setView("edit")} className="text-sm px-3 py-1.5 rounded-lg border border-purple-400 hover:bg-purple-900">← Back to editing</button>
             <button onClick={doPrintPdf} className="text-sm px-3 py-1.5 rounded-lg bg-white text-purple-900 font-semibold hover:bg-purple-100">⬇ Save as PDF</button>
