@@ -2037,7 +2037,9 @@ const PlanBodyTables = ({ tables, note, riders = {} }) => (
 // Contents page. An entry with an `id` links to the heading carrying that id — the jump
 // works on screen and survives print-to-PDF as an internal link. Entries without one
 // (rows that describe a table rather than a heading) stay as plain text.
-const planAnchor = (p) => "plan-" + String(p.key || "").toLowerCase() + "-" + String(p.id || "").slice(0, 6);
+// Explanations are deduped by plan key, so the anchor is the key — that way every
+// quotation row for a plan points at the one explanation written for it.
+const planAnchor = (p) => "plan-" + String(p.key || "").toLowerCase();
 const TocEntry = ({ id, children, style }) => id
   ? <a href={"#" + id} style={{ color: "inherit", textDecoration: "none", ...style }}>{children}</a>
   : <span style={style}>{children}</span>;
@@ -2086,7 +2088,9 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
                 return (
                   <tr key={p.id}>
                     <td>
-                      <b>{p.label}</b>
+                      {p.key
+                        ? <a href={"#" + planAnchor(p)} className="planlink" title="Jump to this plan's explanation"><b>{p.label}</b></a>
+                        : <b>{p.label}</b>}
                       {/* nothing is "recommended" when the client is just browsing options */}
                       {!optionsMode && TIER_META[p.tier] && <div><span className={"inline-block text-[10px] px-1.5 py-0.5 rounded mt-1 " + TIER_META[p.tier].chip}>{TIER_META[p.tier].label}</span></div>}
                       {term && <div className="text-xs text-slate-500 mt-1">{term}</div>}
@@ -4273,7 +4277,11 @@ export default function App() {
             @page:first{@bottom-right{content:""}}
             /* contents links print as ordinary text, not as blue underlined links */
             .rpt a{color:inherit!important;text-decoration:none!important}
+            .rpt a.planlink{border-bottom:none!important}
           }
+          /* a plan name in the quotation table jumps to its explanation — dotted underline
+             on screen so it reads as clickable, nothing at all on paper */
+          .rpt a.planlink{border-bottom:1px dotted #a78bfa}
           /* a heading jumped to from the contents shouldn't hide under the sticky toolbar */
           .rpt h2,.rpt h3{scroll-margin-top:70px}
           .rpt a[href^="#"]:hover{text-decoration:underline!important}
@@ -4739,7 +4747,11 @@ export default function App() {
             @page:first{@bottom-right{content:""}}
             /* contents links print as ordinary text, not as blue underlined links */
             .rpt a{color:inherit!important;text-decoration:none!important}
+            .rpt a.planlink{border-bottom:none!important}
           }
+          /* a plan name in the quotation table jumps to its explanation — dotted underline
+             on screen so it reads as clickable, nothing at all on paper */
+          .rpt a.planlink{border-bottom:1px dotted #a78bfa}
           /* a heading jumped to from the contents shouldn't hide under the sticky toolbar */
           .rpt h2,.rpt h3{scroll-margin-top:70px}
           .rpt a[href^="#"]:hover{text-decoration:underline!important}
