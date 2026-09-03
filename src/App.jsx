@@ -59,6 +59,30 @@ const policyStartAge = (row, dob) => { const a = ageAtDate(dob, row.policyDate);
 const policyPremiumEndAge = (row, dob) => { const a = ageAtDate(dob, row.policyExpiry); return a !== "" ? a : num(row.premiumEndsAge ?? row.payUntilAge); };
 // Privacy mode keeps the shape of the name — "Charma Maidin" reads as "C***** M*****" —
 // which is far easier to recognise at a glance than bare initials while still masking it.
+// Client-list search. Policy numbers are compared with punctuation and case stripped, so
+// "Q625123456", "q62-512 3456" and "Q62 5123456" all find the same policy. A match on
+// anything other than the client's own name reports why, since a client card showing only
+// a name is baffling when you searched for a policy number.
+const normId = (v) => String(v || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+const clientSearchMatch = (c, q) => {
+  const qn = q.toLowerCase();
+  if ((c.name || "").toLowerCase().includes(qn)) return { ok: true };
+  if ((c.occupation || "").toLowerCase().includes(qn)) return { ok: true };
+  const dep = (c.dependents || []).find(dp => (dp.name || "").toLowerCase().includes(qn));
+  if (dep) return { ok: true, kind: "dependent", name: dep.name, relationship: dep.relationship };
+  const qid = normId(q);
+  // two characters would match half the book; a policy number search is deliberate
+  if (qid.length >= 3) {
+    const policies = [
+      ...(c.existingPlans || []).map(x => ({ no: x.policyNumber, what: x.planName || x.planType })),
+      ...(c.existingInvestments || []).map(x => ({ no: x.policyNumber, what: x.description || x.type })),
+    ];
+    const hit = policies.find(x => normId(x.no).length > 0 && normId(x.no).includes(qid));
+    if (hit) return { ok: true, kind: "policy", no: hit.no, what: hit.what };
+  }
+  return { ok: false };
+};
+
 const maskedName = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return parts.map(w => w[0].toUpperCase() + "*".repeat(Math.max(w.length - 1, 0))).join(" ");
@@ -4094,7 +4118,7 @@ export default function App() {
               type="text"
               value={clientQuery}
               onChange={e => setClientQuery(e.target.value)}
-              placeholder="Search clients by name or occupation…"
+              placeholder="Search by client, dependent, occupation or policy number…"
               className="w-full rounded-lg border border-slate-300 bg-white pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
             />
             {clientQuery && (
@@ -4109,9 +4133,9 @@ export default function App() {
         )}
         {/* Match against the real name/occupation even while privacy mode masks the display */}
         {(() => {
-          const q = clientQuery.trim().toLowerCase();
+          const q = clientQuery.trim();
           const visible = q
-            ? clients.filter(c => (c.name || "").toLowerCase().includes(q) || (c.occupation || "").toLowerCase().includes(q))
+            ? clients.map(c => ({ c, m: clientSearchMatch(c, q) })).filter(r => r.m.ok).map(r => ({ ...r.c, _match: r.m }))
             : clients;
           if (clients.length > 0 && visible.length === 0) return (
             <div className="bg-white border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 text-sm">
@@ -4125,6 +4149,12 @@ export default function App() {
               <div>
                 <div className="font-semibold text-slate-800">{displayName(c.name, "Unnamed client")}</div>
                 <div className="text-xs text-slate-400">Updated {new Date(c.updated).toLocaleDateString("en-GB")} · {c.occupation || "—"}</div>
+                {c._match?.kind === "dependent" && (
+                  <div className="text-xs text-purple-700 mt-0.5">Matched {c._match.relationship ? c._match.relationship.toLowerCase() : "dependent"}: <b>{displayName(c._match.name, "Dependent")}</b></div>
+                )}
+                {c._match?.kind === "policy" && (
+                  <div className="text-xs text-purple-700 mt-0.5">Matched policy <b>{c._match.no}</b>{c._match.what ? " · " + c._match.what : ""}</div>
+                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => { setActiveId(c.id); setView("edit"); setStep(0); }} className="text-sm px-3 py-1.5 rounded-lg border border-purple-700 text-purple-800 hover:bg-purple-50">Open</button>
