@@ -83,6 +83,22 @@ const clientSearchMatch = (c, q) => {
   return { ok: false };
 };
 
+// A client's overall "updated" moves whenever anything is touched, which says nothing about
+// whether the numbers behind a financial health check are current. These two steps get their
+// own timestamps, stamped only when their own data actually changes.
+const SECTION_FIELDS = {
+  income: { label: "Income", fields: ["income", "expenses"] },
+  assets: { label: "Assets", fields: ["assets", "liabilities"] },
+};
+const sectionStamps = (before, after, at) => {
+  const out = {};
+  for (const [key, { fields }] of Object.entries(SECTION_FIELDS)) {
+    if (fields.some(f => JSON.stringify(before[f]) !== JSON.stringify(after[f]))) out[key] = at;
+  }
+  return out;
+};
+const shortDate = (ts) => ts ? new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
+
 const maskedName = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return parts.map(w => w[0].toUpperCase() + "*".repeat(Math.max(w.length - 1, 0))).join(" ");
@@ -585,6 +601,9 @@ const blankClient = () => ({
   // "recommendation" = a costed proposal (tiers, subtotals, budget guideline);
   // "options" = a menu of plans to browse, with per-plan premiums but no totals
   reportMode: "recommendation",
+  // per-step "last updated" for the two steps whose data goes stale on its own
+  // (Income Allocation and Assets & Liabilities) — see SECTION_FIELDS
+  sectionUpdated: {},
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
   // Annual Review report — separate narrative from the first-time client report above
   // meetingNotes is the advisor's raw notes from the review meeting — kept on the record
@@ -3831,7 +3850,15 @@ export default function App() {
 
   const update = (patch) => {
     setClients(prev => {
-      const next = prev.map(c => c.id === activeId ? { ...c, ...patch, updated: Date.now() } : c);
+      const at = Date.now();
+      const next = prev.map(c => {
+        if (c.id !== activeId) return c;
+        const merged = { ...c, ...patch, updated: at };
+        const stamps = sectionStamps(c, merged, at);
+        return Object.keys(stamps).length
+          ? { ...merged, sectionUpdated: { ...(c.sectionUpdated || {}), ...stamps } }
+          : merged;
+      });
       const updated = next.find(c => c.id === activeId);
       if (updated) {
         pendingSaveRef.current = updated;
@@ -4149,6 +4176,15 @@ export default function App() {
               <div>
                 <div className="font-semibold text-slate-800">{displayName(c.name, "Unnamed client")}</div>
                 <div className="text-xs text-slate-400">Updated {new Date(c.updated).toLocaleDateString("en-GB")} · {c.occupation || "—"}</div>
+                {/* the whole-record date moves on any edit, so the fact-find figures carry
+                    their own — a dash means not touched since this became tracked */}
+                <div className="text-xs text-slate-400 mt-0.5">
+                  {Object.entries(SECTION_FIELDS).map(([key, { label }], i) => (
+                    <span key={key} title={label === "Income" ? "Income Allocation last updated" : "Assets & Liabilities last updated"}>
+                      {i > 0 ? " · " : ""}{label} <span className={c.sectionUpdated?.[key] ? "text-slate-500 font-medium" : "text-slate-300"}>{shortDate(c.sectionUpdated?.[key])}</span>
+                    </span>
+                  ))}
+                </div>
                 {c._match?.kind === "dependent" && (
                   <div className="text-xs text-purple-700 mt-0.5">Matched {c._match.relationship ? c._match.relationship.toLowerCase() : "dependent"}: <b>{displayName(c._match.name, "Dependent")}</b></div>
                 )}
