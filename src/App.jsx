@@ -520,7 +520,7 @@ const planCoverageRows = (p) => {
     category: String(c.label || "").trim() || c.category,
     display: isWaiver(c.category) && !(num(c.amount) > 0)
       ? "Premiums waived on claim"
-      : money(num(c.amount)) + (p.key === "HI" ? "/day" : "") }));
+      : withUnit(c.category, money(num(c.amount))) }));
 };
 const planCoverageText = (p) => {
   const rows = planCoverageRows(p);
@@ -993,10 +993,12 @@ function compute(c) {
   const rt = c.retirement;
   const rtRequired = num(rt.monthly) * 12 * num(rt.years);
   const rtAdjusted = rtRequired * Math.pow(1 + num(rt.inflation) / 100, yearsToRet);
-  const spkAnnuityTotal = num(rt.spkAnnuityMonthly) > 0 ? num(rt.spkAnnuityMonthly) * 12 * num(rt.spkAnnuityYears) : num(rt.spkAnnuityLegacy);
+  // both figures fall back to the SPK holding under Current Coverage when left blank here
+  const spkMonthly = spkAnnuityMonthlyOf(c);
+  const spkAnnuityTotal = spkMonthly > 0 ? spkMonthly * 12 * num(rt.spkAnnuityYears) : num(rt.spkAnnuityLegacy);
   const annTotal = projectFV(rt.annuities || {}, yearsToRet);
   const invTotal = projectFV(rt.investments || {}, yearsToRet);
-  const rtProjected = num(rt.spkProj) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal;
+  const rtProjected = spkProjected(c) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal;
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
   const rtMonthlyAnnuity = num(rt.years) > 0 ? rtProjected / (num(rt.years) * 12) : 0;
   // products
@@ -1045,7 +1047,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
 function buildClaudePrompt(c, d) {
@@ -2221,6 +2223,13 @@ const PLAN_COVERAGE_CATEGORIES = [
   "Premium Waiver (Payor)", "Premium Waiver (Insured)",
   "Retirement", "Child Savings", "Others",
 ];
+// Some benefits are a rate, not a sum assured — a hospital income plan paying "$50" pays
+// $50 a day, and reading it as a lump sum overstates the cover badly.
+const CATEGORY_UNIT = {
+  "Hospitalisation (Accident)": "/day",
+  "Weekly Indemnity (Accident)": "/week",
+};
+const withUnit = (cat, text) => text + (CATEGORY_UNIT[cat] || "");
 // broader bucket each granular category rolls up into — drives which Overview timeline
 // row a plan's coverage appears on, and the Total Insurance Needs auto-totals
 const CATEGORY_BUCKET = {
@@ -2228,24 +2237,38 @@ const CATEGORY_BUCKET = {
   // major and early-major CI pay on different triggers and usually for different sums,
   // so they get their own timeline rows rather than being read as one block of cover
   "Health (Major Critical Illness)": "Major Critical Illness", "Health (Early-Major Critical Illness)": "Early-Major Critical Illness",
-  // hospitalisation & surgery cover belongs with the other hospital benefits, not with CI
-  "Health (Hospitalisation & Surgery)": "Hospital Stay",
+  // An accident plan's hospital income pays only for an accident admission; a
+  // hospitalisation plan pays whatever put you in the bed. Reading them off one row makes
+  // an accident-only benefit look like full hospital cover.
+  "Health (Hospitalisation & Surgery)": "Hospital Stay (Any Cause)",
   "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
-  "Hospitalisation (Accident)": "Hospital Stay",
+  "Hospitalisation (Accident)": "Hospital Stay (Accident)",
   // a waiver pays no sum assured — it keeps the policy alive, so it sits with "Others"
   "Premium Waiver (Payor)": "Others", "Premium Waiver (Insured)": "Others",
   "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
 };
 // Overview timeline row buckets, in display order
-const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay", "Retirement", "Child Savings", "Others"];
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)", "Retirement", "Child Savings", "Others"];
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
-const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay"];
+const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)"];
 // the two critical-illness stage rows, kept together so gap logic can treat them as a pair
 const CI_ROWS = ["Major Critical Illness", "Early-Major Critical Illness"];
 const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
 const SPK_PAYOUT_AGE = 60;
+// SPK is a statutory scheme, so its two figures belong to the holding itself rather than
+// being retyped under Retirement Planning: a lump sum at 60, then a fixed monthly annuity
+// scaled to the member's average serviced salary. A figure typed on the objective still
+// wins — this only fills a blank.
+const spkFromHoldings = (c) => {
+  const spk = (c.existingInvestments || []).find(r => r.type === "SPK" && (r.insured || "self") === "self");
+  if (!spk) return null;
+  return { lumpSum: num(spk.spkLumpSum), annuityMonthly: num(spk.spkAnnuityMonthly), row: spk };
+};
+// the objective's own value if given, otherwise whatever the SPK holding implies
+const spkProjected = (c) => num(c.retirement?.spkProj) > 0 ? num(c.retirement.spkProj) : (spkFromHoldings(c)?.lumpSum || 0);
+const spkAnnuityMonthlyOf = (c) => num(c.retirement?.spkAnnuityMonthly) > 0 ? num(c.retirement.spkAnnuityMonthly) : (spkFromHoldings(c)?.annuityMonthly || 0);
 // intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
 // investment tagged the same way merges into that category's row on the Overview timeline
 const INVESTMENT_CATEGORIES = ["Investment Portfolio", "Retirement", "Child Savings", "Education", "Emergency Fund", "Property", "Others"];
@@ -2464,6 +2487,10 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
         <div className="col-span-3">
+          <label className="text-xs text-slate-500">Policy / account no.</label>
+          <Input value={row.policyNumber || ""} onChange={e => set("policyNumber", e.target.value)} placeholder="e.g. UT-99881" />
+        </div>
+        <div className="col-span-3">
           <label className="text-xs text-slate-500">Policy date</label>
           <Input type="date" value={row.policyDate || ""} onChange={e => set("policyDate", e.target.value)} />
           <div className="text-[11px] text-slate-400 mt-0.5">{ageNote(ageAtDate(insuredDob, row.policyDate), row.startAge, "starts at")}</div>
@@ -2492,6 +2519,24 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
           </select>
         </div>
       </div>
+      {row.type === "SPK" && (
+        <div className="mt-3 pt-3 border-t border-slate-200">
+          <div className="text-xs text-slate-500 font-semibold mb-2">SPK benefits at age {SPK_PAYOUT_AGE}</div>
+          <div className="grid grid-cols-12 gap-2">
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Projected lump sum at {SPK_PAYOUT_AGE}</label>
+              <NumInput value={row.spkLumpSum || ""} onChange={e => set("spkLumpSum", e.target.value)} placeholder="$" />
+            </div>
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Monthly annuity from {SPK_PAYOUT_AGE}</label>
+              <NumInput value={row.spkAnnuityMonthly || ""} onChange={e => set("spkAnnuityMonthly", e.target.value)} placeholder="$ / month" />
+            </div>
+            <div className="col-span-6 flex items-end">
+              <p className="text-[11px] text-slate-400 mb-1.5">Both feed Retirement Planning under Objectives, and appear on the Overview timeline. The annuity is scaled to the member&rsquo;s average serviced salary, so it is entered rather than projected.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mt-3 pt-3 border-t border-slate-200">
         <div className="flex items-center justify-between mb-2">
           <label className="text-xs text-slate-500 font-semibold">Projected returns — group by rate, then add a year for each horizon</label>
@@ -3057,7 +3102,9 @@ const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "
 const NEEDS_TRIANGLE_GROUPS = [
   { key: "health", label: "Health Benefits", categories: ["Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)"], corner: { x: 108, y: 96 } },
   { key: "life", label: "Life Protection", categories: ["Death", "Disability"], corner: { x: 352, y: 96 } },
-  { key: "accident", label: "Accident Coverage", categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)"], corner: { x: 230, y: 344 } },
+  // a daily hospital income is a rate, not a sum assured, so it is left out of the
+  // accident total rather than added to lump-sum benefits as if it were one
+  { key: "accident", label: "Accident Coverage", categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)"], corner: { x: 230, y: 344 } },
 ];
 
 function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
@@ -3292,7 +3339,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           id: (p.id || "cur" + i) + "-" + bucket,
           origin: "current",
           label, category: bucket, start, end, insured: who, offset: offsetOf(who),
-          covShort: kfmt(Math.max(...covs.map(c => num(c.amount)))),
+          covShort: withUnit(covs[0]?.category, kfmt(Math.max(...covs.map(c => num(c.amount))))),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           status: p.status || "active",
@@ -3342,7 +3389,13 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           origin: "current",
           label: r.description || r.type || "Investment",
           category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
-          covShort: kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
+          covShort: r.type === "SPK"
+            // SPK's story is the two things it pays, not its running balance
+            ? [num(r.spkLumpSum) > 0 ? kfmt(num(r.spkLumpSum)) + " at " + SPK_PAYOUT_AGE : null,
+               num(r.spkAnnuityMonthly) > 0 ? money(num(r.spkAnnuityMonthly)) + "/mo after" : null]
+                .filter(Boolean).join(" · ") || kfmt(num(r.currentValue))
+            : kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
+          spkAnnuityMonthly: num(r.spkAnnuityMonthly),
           stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
           lumpSumAge: r.type === "SPK" && end > SPK_PAYOUT_AGE ? SPK_PAYOUT_AGE : null,
           premStart: payUntil > start ? start : null, premEnd: payUntil > start ? payUntil : null,
@@ -3416,7 +3469,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           ...common,
           id: "reco-" + (p.id || i) + "-" + bucket,
           category: bucket,
-          covShort: kfmt(boosted > 0 ? boosted : peak) + (p.key === "HI" ? "/day" : ""),
+          covShort: withUnit(covs[0]?.category, kfmt(boosted > 0 ? boosted : peak)),
         };
       });
     });
@@ -3753,7 +3806,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                                   fill="#f59e0b" stroke="#fff" strokeWidth="1" pointerEvents="none" />
                               )}
                               {gA && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gA, y)}
-                              {gB && gB.w > 60 && haloLabel("annuity", gB, y)}
+                              {gB && gB.w > 60 && haloLabel(p.spkAnnuityMonthly > 0 ? money(p.spkAnnuityMonthly) + "/mo" : "annuity", gB, y)}
                               {premBracket(p, y)}
                             </g>
                           );
@@ -4724,11 +4777,11 @@ export default function App() {
               <tr>
                 <td>SPK — Member Account (projected)</td>
                 <td className="tnum">—</td>
-                <td className="tnum">{money(num(client.retirement.spkProj))}</td>
+                <td className="tnum">{money(d.spkLumpSum)}</td>
                 <td className="tnum">—</td>
               </tr>
               <tr>
-                <td>SPK Annuity — Employer{num(client.retirement.spkAnnuityMonthly) > 0 ? " (" + money(num(client.retirement.spkAnnuityMonthly)) + "/mo × " + client.retirement.spkAnnuityYears + " yrs)" : ""}</td>
+                <td>SPK Annuity — Employer{d.spkMonthly > 0 ? " (" + money(d.spkMonthly) + "/mo × " + client.retirement.spkAnnuityYears + " yrs)" : ""}</td>
                 <td className="tnum">—</td>
                 <td className="tnum">{money(d.spkAnnuityTotal)}</td>
                 <td className="tnum">—</td>
@@ -5474,13 +5527,25 @@ export default function App() {
               <Field label="Inflation % p.a."><NumInput value={client.retirement.inflation} onChange={e => updateDeep("retirement", { inflation: e.target.value })} /></Field>
             </div>
             <div className="grid md:grid-cols-2 gap-4">
-              <Field label="SPK projected (lump sum at retirement)"><NumInput value={client.retirement.spkProj} onChange={e => updateDeep("retirement", { spkProj: e.target.value })} /></Field>
+              <Field label="SPK projected (lump sum at retirement)"
+                hint={spkFromHoldings(client)?.lumpSum > 0 && !(num(client.retirement.spkProj) > 0)
+                  ? "Using " + money(spkFromHoldings(client).lumpSum) + " from your SPK holding under Current Coverage — type here to override"
+                  : undefined}>
+                <NumInput value={client.retirement.spkProj} onChange={e => updateDeep("retirement", { spkProj: e.target.value })}
+                  placeholder={spkFromHoldings(client)?.lumpSum > 0 ? String(spkFromHoldings(client).lumpSum) : ""} />
+              </Field>
               <Field label="Old age pension (total)"><NumInput value={client.retirement.pension} onChange={e => updateDeep("retirement", { pension: e.target.value })} /></Field>
             </div>
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">SPK Annuity (Employer) — total: <span className="text-purple-900">{money(d.spkAnnuityTotal)}</span></div>
               <div className="grid md:grid-cols-2 gap-4">
-                <Field label="Monthly amount"><NumInput value={client.retirement.spkAnnuityMonthly} onChange={e => updateDeep("retirement", { spkAnnuityMonthly: e.target.value })} /></Field>
+                <Field label="Monthly amount"
+                  hint={spkFromHoldings(client)?.annuityMonthly > 0 && !(num(client.retirement.spkAnnuityMonthly) > 0)
+                    ? "Using " + money(spkFromHoldings(client).annuityMonthly) + "/mo from your SPK holding"
+                    : undefined}>
+                  <NumInput value={client.retirement.spkAnnuityMonthly} onChange={e => updateDeep("retirement", { spkAnnuityMonthly: e.target.value })}
+                    placeholder={spkFromHoldings(client)?.annuityMonthly > 0 ? String(spkFromHoldings(client).annuityMonthly) : ""} />
+                </Field>
                 <Field label="Number of years"><NumInput value={client.retirement.spkAnnuityYears} onChange={e => updateDeep("retirement", { spkAnnuityYears: e.target.value })} /></Field>
               </div>
             </div>
