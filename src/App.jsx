@@ -604,6 +604,8 @@ const blankClient = () => ({
   // per-step "last updated" for the two steps whose data goes stale on its own
   // (Income Allocation and Assets & Liabilities) — see SECTION_FIELDS
   sectionUpdated: {},
+  // dated snapshots of the headline figures, one per review — see snapshotFrom()
+  history: [],
   narrative: { exec: "", recoIntro: "", actionPlan: "" },
   // Annual Review report — separate narrative from the first-time client report above
   // meetingNotes is the advisor's raw notes from the review meeting — kept on the record
@@ -2675,6 +2677,194 @@ const CurrentPremiumBudget = ({ client, d }) => {
         Premiums paid other than monthly are converted to their annual equivalent so every policy compares like for like.
       </p>
     </div>
+  );
+};
+
+// A dated record of where the client stood, taken at a review. Deliberately just the
+// headline figures: enough for every chart here, small enough that a decade of reviews
+// adds nothing meaningful to the record's size.
+const snapshotFrom = (c, d, date) => {
+  const split = currentPremiumSplit(c);
+  return {
+    id: uid(),
+    date: date || new Date().toISOString().slice(0, 10),
+    note: "",
+    net: Math.round(d.net), expenses: Math.round(d.totalExpenses), surplus: Math.round(d.surplus),
+    invested: Math.round(d.invested), cash: Math.round(d.cash), personal: Math.round(d.personal),
+    totalAssets: Math.round(d.totalAssets), totalLiab: Math.round(d.totalLiab), netWorth: Math.round(d.netWorth),
+    protection: Math.round(split.protection * 12), savings: Math.round(split.savings * 12),
+  };
+};
+const byDate = (a, b) => String(a.date || "").localeCompare(String(b.date || ""));
+const histYear = (h) => String(h.date || "").slice(0, 4) || "—";
+
+// Two small charts drawn as plain SVG so they print with the rest of the report: net income
+// per month over time, and assets against liabilities with the net-worth gap between them.
+const ProgressCharts = ({ history }) => {
+  const rows = [...history].filter(r => r.date).sort(byDate);
+  if (rows.length < 2) return null;
+  const W = 300, H = 132, L = 46, R = 8, T = 12, B = 22;
+  const iw = W - L - R, ih = H - T - B;
+  const xAt = (i) => L + (rows.length === 1 ? iw / 2 : (i / (rows.length - 1)) * iw);
+
+  const chart = (title, series, opts = {}) => {
+    const all = series.flatMap(sr => sr.values);
+    const top = Math.max(...all, 1) * 1.12;
+    const y = (v) => T + ih - (v / top) * ih;
+    return (
+      <div style={{ breakInside: "avoid" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 2 }}>{title}</div>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W }} role="img" aria-label={title}>
+          {[0, 0.5, 1].map(f => (
+            <g key={f}>
+              <line x1={L} y1={T + ih - f * ih} x2={W - R} y2={T + ih - f * ih} stroke="#e2e8f0" strokeWidth="1" />
+              <text x={L - 5} y={T + ih - f * ih + 3} textAnchor="end" fontSize="7.5" fill="#94a3b8">{kfmt(top * f)}</text>
+            </g>
+          ))}
+          {opts.bars
+            ? series.map((sr, si) => rows.map((r, i) => {
+                const bw = Math.max(4, Math.min(14, iw / (rows.length * series.length + 1)));
+                const bx = xAt(i) - (series.length * bw) / 2 + si * bw;
+                return <rect key={sr.label + i} x={bx} y={y(sr.values[i])} width={bw - 1} height={Math.max(0, T + ih - y(sr.values[i]))} fill={sr.color} rx="1" />;
+              }))
+            : series.map(sr => (
+                <g key={sr.label}>
+                  <polyline fill="none" stroke={sr.color} strokeWidth="2" points={rows.map((r, i) => `${xAt(i)},${y(sr.values[i])}`).join(" ")} />
+                  {rows.map((r, i) => <circle key={i} cx={xAt(i)} cy={y(sr.values[i])} r="2.5" fill={sr.color} />)}
+                </g>
+              ))}
+          {rows.map((r, i) => <text key={i} x={xAt(i)} y={H - 6} textAnchor="middle" fontSize="7.5" fill="#64748b">{histYear(r)}</text>)}
+        </svg>
+        <div style={{ fontSize: 9.5, color: "#64748b", marginTop: -2 }}>
+          {series.map((sr, i) => (
+            <span key={sr.label} style={{ marginRight: 10 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: sr.color, marginRight: 4 }} />{sr.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, margin: "10px 0 6px" }}>
+      {chart("Take-home income per month", [{ label: "Net income", color: "#51037c", values: rows.map(r => num(r.net)) }])}
+      {chart("Assets vs liabilities", [
+        { label: "Total assets", color: "#059669", values: rows.map(r => num(r.totalAssets)) },
+        { label: "Total liabilities", color: "#dc2626", values: rows.map(r => num(r.totalLiab)) },
+      ], { bars: true })}
+    </div>
+  );
+};
+
+// The same figures as a table, with the movement since the previous review — the number the
+// client actually wants: am I further ahead than last year.
+const ProgressTable = ({ history, report = false }) => {
+  const rows = [...history].filter(r => r.date).sort(byDate);
+  if (!rows.length) return null;
+  const delta = (cur, prev) => {
+    if (prev == null) return "—";
+    const diff = num(cur) - num(prev);
+    if (diff === 0) return "no change";
+    return (diff > 0 ? "▲ " : "▼ ") + money(Math.abs(diff));
+  };
+  const td = report ? undefined : "py-1.5 px-2 border-b border-slate-100 align-top";
+  const th = report ? undefined : "text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200";
+  return (
+    <table className={report ? undefined : "w-full text-sm border border-slate-200 rounded-lg overflow-hidden"}>
+      <thead><tr>
+        <th className={th}>Review</th>
+        <th className={th} style={{ textAlign: "right" }}>Net income /mo</th>
+        <th className={th} style={{ textAlign: "right" }}>Total assets</th>
+        <th className={th} style={{ textAlign: "right" }}>Total liabilities</th>
+        <th className={th} style={{ textAlign: "right" }}>Net worth</th>
+        <th className={th}>Net worth vs previous</th>
+      </tr></thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={r.id || i}>
+            <td className={td}><b>{fmtDate(r.date) || r.date}</b>{r.note ? <div className="text-xs text-slate-500">{r.note}</div> : null}</td>
+            <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.net))}</td>
+            <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.totalAssets))}</td>
+            <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.totalLiab))}</td>
+            <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{money(num(r.netWorth))}</td>
+            <td className={td} style={{ color: i === 0 ? "#64748b" : (num(r.netWorth) >= num(rows[i - 1].netWorth) ? "#15803d" : "#b91c1c"), fontWeight: 600 }}>
+              {delta(r.netWorth, i === 0 ? null : rows[i - 1].netWorth)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+// Advisor-side panel: capture today's figures, and hand-edit or backfill past reviews.
+const ProgressPanel = ({ client, d, update }) => {
+  const rows = [...(client.history || [])].sort(byDate);
+  const setRows = (next) => update({ history: next });
+  const patch = (id, p) => setRows((client.history || []).map(r => r.id === id ? { ...r, ...p } : r));
+  const capture = () => {
+    const snap = snapshotFrom(client, d);
+    const clash = rows.find(r => r.date === snap.date);
+    if (clash && !confirm("A snapshot already exists for " + fmtDate(snap.date) + ". Add another for the same date?")) return;
+    setRows([...(client.history || []), snap]);
+  };
+  const addBlank = () => setRows([...(client.history || []), {
+    id: uid(), date: "", note: "", net: "", expenses: "", surplus: "",
+    invested: "", cash: "", personal: "", totalAssets: "", totalLiab: "", netWorth: "", protection: "", savings: "",
+  }]);
+  const num2 = (v) => v === "" || v == null ? "" : v;
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button onClick={capture} className="bg-purple-700 hover:bg-purple-800 text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
+          ＋ Capture today's figures
+        </button>
+        <button onClick={addBlank} className="text-sm px-3 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">
+          Add a past review by hand
+        </button>
+        <span className="text-xs text-slate-500">Takes the totals as they stand now: income, assets, liabilities and premiums.</span>
+      </div>
+      {rows.length === 0 && (
+        <div className="text-sm text-slate-400">No snapshots yet. Capture one at the end of a review, or type in past years from your own records — two or more make the charts.</div>
+      )}
+      {rows.length > 0 && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+              <thead><tr>
+                {["Date", "Note", "Net income /mo", "Total assets", "Total liabilities", "Net worth", ""].map(h => (
+                  <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id}>
+                    <td className="py-1.5 px-2 border-b border-slate-100"><Input type="date" value={r.date || ""} onChange={e => patch(r.id, { date: e.target.value })} className="text-sm" /></td>
+                    <td className="py-1.5 px-2 border-b border-slate-100"><Input value={r.note || ""} onChange={e => patch(r.id, { note: e.target.value })} placeholder="e.g. 2025 annual review" className="text-sm" /></td>
+                    <td className="py-1.5 px-2 border-b border-slate-100"><NumInput value={num2(r.net)} onChange={e => patch(r.id, { net: e.target.value })} /></td>
+                    <td className="py-1.5 px-2 border-b border-slate-100"><NumInput value={num2(r.totalAssets)} onChange={e => patch(r.id, { totalAssets: e.target.value })} /></td>
+                    <td className="py-1.5 px-2 border-b border-slate-100"><NumInput value={num2(r.totalLiab)} onChange={e => patch(r.id, { totalLiab: e.target.value })} /></td>
+                    <td className="py-1.5 px-2 border-b border-slate-100">
+                      <NumInput value={num2(r.netWorth)} onChange={e => patch(r.id, { netWorth: e.target.value })} />
+                      {(num(r.totalAssets) > 0 || num(r.totalLiab) > 0) && num(r.netWorth) !== num(r.totalAssets) - num(r.totalLiab) && (
+                        <button onClick={() => patch(r.id, { netWorth: num(r.totalAssets) - num(r.totalLiab) })}
+                          className="block text-[11px] text-purple-700 hover:underline mt-0.5">set to {money(num(r.totalAssets) - num(r.totalLiab))}</button>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 border-b border-slate-100">
+                      <button onClick={() => { if (confirm("Delete the snapshot dated " + (fmtDate(r.date) || "—") + "?")) setRows((client.history || []).filter(x => x.id !== r.id)); }} className="text-red-500 text-sm">✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-400 mt-2">A captured snapshot also stores expenses, the asset split and the annual premium commitment, which the report uses even though they are not editable here.</p>
+          {rows.length >= 2 && <div className="mt-4"><ProgressCharts history={rows} /></div>}
+        </>
+      )}
+    </>
   );
 };
 
@@ -4875,7 +5065,8 @@ export default function App() {
               ] },
               { title: "Current Plans & Coverage", id: "rv-current-plans",
                 sub: currentPremiumSplit(client).total > 0 ? [{ label: "Premium Commitment against the 4-3-2-1 Rule", id: "rv-premium-budget" }] : [] },
-              { title: "Current Financial Health", id: "rv-health", sub: [] },
+              { title: "Current Financial Health", id: "rv-health",
+                sub: (client.history || []).filter(h => h.date).length >= 2 ? [{ label: "Your Progress Since Previous Reviews", id: "rv-progress" }] : [] },
               { title: "Overview of Plans", id: "rv-overview", sub: [] },
               { title: "Recommendations", id: "rv-recommendations", sub: [
                 ...(rv.contingencyNote ? [{ label: "Contingency Planning", id: "rv-contingency" }] : []),
@@ -4944,6 +5135,15 @@ export default function App() {
             </>
           ) : (
             <p>Please note that we have not yet conducted a full Financial Health Check. This is a comprehensive diagnostic tool used to map out your entire financial landscape — from debt management to wealth distribution. The advantage of this process is that it identifies "blind spots" in your financial planning that standard policy reviews might miss, ensuring every dollar you save is working efficiently toward your long-term goals. Should you wish to gain this deeper level of clarity, we can schedule a dedicated session for this whenever you are ready.</p>
+          )}
+
+          {(client.history || []).filter(h => h.date).length >= 2 && (
+            <div style={{ breakInside: "avoid" }}>
+              <h3 id="rv-progress">Your Progress Since Previous Reviews</h3>
+              <p className="text-xs text-slate-500 mb-1">Where things stood at each review we have on record — the point of an annual review is the direction of travel, not any single year's figures.</p>
+              <ProgressCharts history={client.history} />
+              <ProgressTable history={client.history} report />
+            </div>
           )}
 
           {/* 5. Overview of Plans */}
@@ -5403,6 +5603,10 @@ export default function App() {
           </SectionCard>
           <SectionCard title="Total Insurance Needs">
             <InsuranceNeedsSummary client={client} update={update} />
+          </SectionCard>
+          <SectionCard title="Progress over the years">
+            <p className="text-xs text-slate-500 mb-3">Dated snapshots of the headline figures, so income and net worth can be tracked review by review. Captured by hand, so nothing is recorded until the fact-find is final.</p>
+            <ProgressPanel client={client} d={d} update={update} />
           </SectionCard>
         </>)}
 
