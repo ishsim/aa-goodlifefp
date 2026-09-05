@@ -2228,7 +2228,12 @@ const PLAN_COVERAGE_CATEGORIES = [
 const CATEGORY_UNIT = {
   "Hospitalisation (Accident)": "/day",
   "Weekly Indemnity (Accident)": "/week",
+  // an annuity's "amount" is the income it pays each month, not a sum assured
+  "Retirement": "/mo",
 };
+// A rate needs its exact figure — "$1k/mo" is not a payout anyone can plan against — so a
+// category carrying a unit is always written out in full rather than abbreviated.
+const hasUnit = (cat) => Boolean(CATEGORY_UNIT[cat]);
 const withUnit = (cat, text) => text + (CATEGORY_UNIT[cat] || "");
 // broader bucket each granular category rolls up into — drives which Overview timeline
 // row a plan's coverage appears on, and the Total Insurance Needs auto-totals
@@ -2394,6 +2399,20 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
             <NumInput value={row.payoutStartAge || ""} onChange={e => set("payoutStartAge", e.target.value)} placeholder="60" />
             <div className="text-[11px] text-slate-400 mt-0.5">annuity income begins</div>
           </div>
+        )}
+        {row.planType === "Retirement Annuity" && (
+          <>
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Expected dividend payout</label>
+              <NumInput value={row.dividendPayout || ""} onChange={e => set("dividendPayout", e.target.value)} placeholder="$ over the payout years" />
+              <div className="text-[11px] text-slate-400 mt-0.5">non-guaranteed</div>
+            </div>
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Terminal dividend</label>
+              <NumInput value={row.terminalDividend || ""} onChange={e => set("terminalDividend", e.target.value)} placeholder="$ at the end of payout" />
+              <div className="text-[11px] text-slate-400 mt-0.5">paid once, at maturity</div>
+            </div>
+          </>
         )}
         <div className="col-span-2">
           <label className="text-xs text-slate-500">{row.planType === "Retirement Annuity" ? "Payout to age" : "To age"}</label>
@@ -2572,19 +2591,28 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
                   const projected = num(h.projectedValueOverride) > 0 ? num(h.projectedValueOverride) : auto;
                   return (
                     <div key={h.id || hi} className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-3">
+                      <div className="col-span-2">
                         <label className="text-xs text-slate-500">Projection years</label>
                         <NumInput value={h.years || ""} onChange={e => setHorizon(gi, hi, "years", e.target.value)} />
-                        {insuredAge != null && num(h.years) > 0 && <div className="text-[10px] text-slate-400 mt-0.5">insured will be age {insuredAge + num(h.years)}</div>}
                       </div>
-                      <div className="col-span-7">
+                      <div className="col-span-2">
+                        {/* the advisor thinks in ages ("project to 60"), and this is the age the
+                            Overview marker uses — so it is entered, not inferred */}
+                        <label className="text-xs text-slate-500">At age</label>
+                        <NumInput value={h.atAge || ""} onChange={e => setHorizon(gi, hi, "atAge", e.target.value)}
+                          placeholder={insuredAge != null && num(h.years) > 0 ? String(insuredAge + num(h.years)) : ""} />
+                        {insuredAge != null && num(h.years) > 0 && !(num(h.atAge) > 0) && (
+                          <div className="text-[10px] text-slate-400 mt-0.5">age {insuredAge + num(h.years)}</div>
+                        )}
+                      </div>
+                      <div className="col-span-6">
                         <label className="text-xs text-slate-500">Projected value $ {auto > 0 ? "(auto: " + money(auto) + ")" : ""}</label>
                         <NumInput value={h.projectedValueOverride || ""} onChange={e => setHorizon(gi, hi, "projectedValueOverride", e.target.value)} placeholder={auto > 0 ? String(Math.round(auto)) : "auto-calculated"} />
                       </div>
                       <div className="col-span-2 flex items-end justify-end">
                         <button onClick={() => removeHorizon(gi, hi)} className="text-red-500 text-sm">✕</button>
                       </div>
-                      {projected > 0 && <div className="col-span-12 text-[11px] text-slate-400 -mt-1">Projects to {money(projected)}{num(h.years) > 0 ? " in " + h.years + " years" : ""} — override if fees or a different scenario should apply.</div>}
+                      {projected > 0 && <div className="col-span-12 text-[11px] text-slate-400 -mt-1">Projects to {money(projected)}{num(h.atAge) > 0 ? " at age " + num(h.atAge) : num(h.years) > 0 ? " in " + h.years + " years" : ""} — override if fees or a different scenario should apply.</div>}
                     </div>
                   );
                 })}
@@ -3352,18 +3380,21 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           id: (p.id || "cur" + i) + "-" + bucket,
           origin: "current",
           label, category: bucket, start, end, insured: who, offset: offsetOf(who),
-          covShort: withUnit(covs[0]?.category, kfmt(Math.max(...covs.map(c => num(c.amount))))),
+          covShort: withUnit(covs[0]?.category, (hasUnit(covs[0]?.category) ? money : kfmt)(Math.max(...covs.map(c => num(c.amount))))),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           status: p.status || "active",
           savings: isSavingsPlanType(p.planType),
           // a deferred annuity reads in three acts: pay in, wait, then draw income
           payoutStart: p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? num(p.payoutStartAge) : null,
+          terminalDividend: num(p.terminalDividend),
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Plan type", p.planType], ["Status", statusLabel(p.status)],
             ["Policy number", p.policyNumber],
             ["Annuity payout", p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? "age " + num(p.payoutStartAge) + " – " + end : ""],
+            ["Expected dividends", num(p.dividendPayout) > 0 ? money(num(p.dividendPayout)) : ""],
+            ["Terminal dividend", num(p.terminalDividend) > 0 ? money(num(p.terminalDividend)) : ""],
             ["Policy date", fmtDate(p.policyDate)],
             ...covs.map(c => [c.category, money(num(c.amount))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
@@ -3383,7 +3414,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
         // flatten rate groups → individual horizon points for the headline figure + details list
         const horizons = (r.returnRates || []).flatMap(g => (g.horizons || []).map(h => ({
-          rate: num(g.rate), years: num(h.years),
+          rate: num(g.rate), years: num(h.years), atAge: num(h.atAge),
           projected: num(h.projectedValueOverride) > 0 ? num(h.projectedValueOverride) : projectFV({ current: r.currentValue, contrib: monthlyEquiv, rate: g.rate, years: h.years }, 0),
         }))).filter(h => h.years > 0);
         const maxYears = horizons.reduce((m, h) => Math.max(m, h.years), 0);
@@ -3396,7 +3427,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         // Horizons run from today (they grow the *current* value), so a 12-year horizon
         // lands at the insured's current age + 12 — not at the policy's start age.
         const baseAge = who.age != null ? who.age : start;
-        const projections = horizons.map(h => ({ ...h, age: baseAge + h.years, year: new Date().getFullYear() + h.years }));
+        // an explicitly entered age wins: it is what the advisor means, and it avoids the
+        // off-by-one that creeps in when a horizon is converted through today's age
+        const projections = horizons.map(h => {
+          const age = h.atAge > 0 ? h.atAge : baseAge + h.years;
+          return { ...h, age, year: new Date().getFullYear() + (age - baseAge) };
+        });
         return {
           id: r.id || "inv" + i,
           origin: "current",
@@ -3484,7 +3520,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           ...common,
           id: "reco-" + (p.id || i) + "-" + bucket,
           category: bucket,
-          covShort: withUnit(covs[0]?.category, kfmt(boosted > 0 ? boosted : peak)),
+          covShort: withUnit(covs[0]?.category, (hasUnit(covs[0]?.category) ? money : kfmt)(boosted > 0 ? boosted : peak)),
         };
       });
     });
@@ -3540,10 +3576,18 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   // extra band above a row whose plans carry projected values, so the marker labels
   // have somewhere to sit that is not on top of the bar above them
   const PROJ_H = 12;
-  const rowHasProj = (r) => r.plans.some(pl => (pl.projections || []).length > 0);
+  const planHasProj = (pl) => (pl.projections || []).length > 0;
+  // each lane reserves its own label band, so two plans sharing a row never share ticks
+  const laneOffset = (row, pi) => {
+    let y = ROW_PAD;
+    for (let i = 0; i < pi; i++) y += (planHasProj(row.plans[i]) ? PROJ_H : 0) + LANE_H + LANE_GAP;
+    return y + (planHasProj(row.plans[pi]) ? PROJ_H : 0);
+  };
   const span = Math.max(win.a1 - win.a0, 1);
   const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
-  const rowH = (r) => r.plans.length ? r.plans.length * LANE_H + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2 + (rowHasProj(r) ? PROJ_H : 0) : EMPTY_H;
+  const rowH = (r) => r.plans.length
+    ? r.plans.reduce((a, pl) => a + LANE_H + (planHasProj(pl) ? PROJ_H : 0), 0) + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2
+    : EMPTY_H;
   const secH = (s) => SEC_H + s.rows.reduce((a, r) => a + rowH(r), 0);
   const plotH = Math.max(sections.reduce((a, s) => a + secH(s), 0), 40);
   const totalH = AXIS_H + plotH + BOT_H;
@@ -3673,10 +3717,25 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             points={`${gPay.x0},${midY - LANE_H * 0.18} ${gPay.x0 + gPay.w},${y} ${gPay.x0 + gPay.w},${y + LANE_H} ${gPay.x0},${midY + LANE_H * 0.18}`}
             fill={svFill(p.insured.color, "grad")} opacity={opacity} {...common} />
         )}
+        {/* income starts here — the same marker SPK uses for its lump sum, since both are
+            the moment money begins reaching the client */}
+        {clipX(payC, payC) && (
+          <g pointerEvents="none">
+            <rect x={x(payC) - 4.5} y={midY - 4.5} width="9" height="9" transform={`rotate(45 ${x(payC)} ${midY})`}
+              fill="#f59e0b" stroke="#fff" strokeWidth="1" />
+            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fontWeight="700"
+              stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{"payout from " + p.payoutStart}</text>
+            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fill="#b45309" fontWeight="700">{"payout from " + p.payoutStart}</text>
+          </g>
+        )}
         {gPay && Math.abs(gPay.x0 + gPay.w - x(endC)) < 1 && (
           <g pointerEvents="none">
             <rect x={x(endC) - 4} y={midY - 4} width="8" height="8" transform={`rotate(45 ${x(endC)} ${midY})`}
               fill="#f59e0b" stroke="#fff" strokeWidth="1" />
+            {p.terminalDividend > 0 && (<>
+              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fontWeight="700" stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{kfmt(p.terminalDividend)}</text>
+              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fill="#b45309" fontWeight="700">{kfmt(p.terminalDividend)}</text>
+            </>)}
           </g>
         )}
         {gPrem && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gPrem, y)}
@@ -3688,15 +3747,15 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   // A projected value is a point in time, so it reads as a tick across the row at the age
   // it lands on, labelled with the rate that produced it. Several rates usually share one
   // horizon, so a tick carries a range and the pinned card breaks it down in full.
-  const projectionMarks = (row, y0) => {
-    if (!rowHasProj(row)) return null;
+  const projectionMarks = (p, laneY) => {
+    if (!planHasProj(p)) return null;
     const byAge = new Map();
-    row.plans.forEach(p => (p.projections || []).forEach(pr => {
+    (p.projections || []).forEach(pr => {
       const age = pr.age + p.offset;
       if (!byAge.has(age)) byAge.set(age, []);
       byAge.get(age).push(pr);
-    }));
-    const top = y0 + PROJ_H - 1, bottom = y0 + rowH(row) - 3;
+    });
+    const top = laneY - PROJ_H + 1, bottom = laneY + LANE_H;
     let lastLabelX = -Infinity;
     return [...byAge.entries()].sort((a, b) => a[0] - b[0]).map(([age, entries]) => {
       if (age < win.a0 || age > win.a1) return null;
@@ -3714,9 +3773,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           <line x1={cx} y1={top} x2={cx} y2={bottom} stroke="#0f172a" strokeWidth="1" strokeDasharray="2 2" opacity="0.55" />
           <polygon points={`${cx - 3},${top} ${cx + 3},${top} ${cx},${top + 4}`} fill="#0f172a" opacity="0.75" />
           {room && (<>
-            <text x={cx} y={y0 + PROJ_H - 4} textAnchor="middle" fontSize="7.5" fontWeight="700"
+            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fontWeight="700"
               stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{text}</text>
-            <text x={cx} y={y0 + PROJ_H - 4} textAnchor="middle" fontSize="7.5" fill="#0f172a" fontWeight="700">{text}</text>
+            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fill="#0f172a" fontWeight="700">{text}</text>
           </>)}
         </g>
       );
@@ -3783,9 +3842,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                   return (
                     <g key={row.category}>
                       <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
-                      {projectionMarks(row, y0)}
                       {row.plans.map((p, pi) => {
-                        const y = y0 + ROW_PAD + (rowHasProj(row) ? PROJ_H : 0) + pi * (LANE_H + LANE_GAP);
+                        const y = y0 + laneOffset(row, pi);
                         const cs = p.start + p.offset, ce = p.end + p.offset;
                         const active = hover?.item.id === p.id || selected?.id === p.id;
                         const common = {
@@ -3823,6 +3881,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                               {gA && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gA, y)}
                               {gB && gB.w > 60 && haloLabel(p.spkAnnuityMonthly > 0 ? money(p.spkAnnuityMonthly) + "/mo" : "annuity", gB, y)}
                               {premBracket(p, y)}
+                              {projectionMarks(p, y)}
                             </g>
                           );
                         }
@@ -3846,6 +3905,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                             <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
                             {(p.savings && !dead ? haloLabel : barLabel)(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
+                            {projectionMarks(p, y)}
                           </g>
                         );
                       })}
