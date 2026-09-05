@@ -2257,6 +2257,10 @@ const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit",
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
 const SPK_PAYOUT_AGE = 60;
+// SPK is a statutory deduction taken straight off salary, and compute() already removes it
+// from gross to reach take-home income. Counting the contribution again as a savings
+// commitment would charge the client for it twice, so every premium total skips it.
+const isSpkHolding = (r) => r?.type === "SPK";
 // SPK is a statutory scheme, so its two figures belong to the holding itself rather than
 // being retyped under Retirement Planning: a lump sum at 60, then a fixed monthly annuity
 // scaled to the member's average serviced salary. A figure typed on the objective still
@@ -2653,6 +2657,7 @@ const currentPremiumSplit = (c) => {
     if (planTypeMeta(pl.planType)?.group === "savings") savings += m; else protection += m;
   });
   (c.existingInvestments || []).forEach(iv => {
+    if (isSpkHolding(iv)) return; // deducted from salary, not committed out of take-home pay
     const m = freqMonthlyEquiv(iv.allocation, iv.allocationFreq);
     if (m > 0) savings += m;
   });
@@ -2933,7 +2938,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
     ...(client.existingInvestments || []).filter(x => (x.insured || "self") === id).map(x => ({
       kind: "investment", id: x.id, policyNo: x.policyNumber, date: x.policyDate,
       name: x.description || x.type || "Investment", sub: x.type && x.description ? x.type : "",
-      status: "active",
+      status: "active", offSalary: isSpkHolding(x),
       cover: num(x.currentValue) > 0 ? ["Current value: " + money(num(x.currentValue))] : [],
       premium: num(x.allocation), freq: x.allocationFreq,
     })),
@@ -2949,7 +2954,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
       {groups.map(g => {
         // frequencies differ per policy, so the only honest total is a monthly equivalent —
         // and only for policies actually being paid for right now
-        const monthly = g.rows.filter(r => statusPaysPremium(r.status))
+        const monthly = g.rows.filter(r => statusPaysPremium(r.status) && !r.offSalary)
           .reduce((sum, r) => sum + freqMonthlyEquiv(r.premium, r.freq), 0);
         return (
           <div key={g.id} style={{ breakInside: "avoid" }} className={report ? "" : "mb-5"}>
@@ -2979,6 +2984,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
                         {r.sub ? <div className="text-xs text-slate-500">{r.sub}</div> : null}
                         {r.kind === "investment" && <div className="text-xs text-slate-500">Investment portfolio</div>}
                         {r.status !== "active" && <div className="text-xs font-semibold" style={{ color: dead ? "#64748b" : "#b45309" }}>{statusLabel(r.status)}</div>}
+                        {r.offSalary && <div className="text-xs text-slate-500">Deducted from salary — not counted in the total</div>}
                       </td>
                       <td className={td}>{r.cover.length ? r.cover.map((c, j) => <div key={j}>{c}</div>) : "—"}</td>
                       <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? money(r.premium, 2) : "—"}</td>
