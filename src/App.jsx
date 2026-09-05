@@ -2479,6 +2479,13 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
             {INVESTMENT_CATEGORIES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
+        {row.category === "Others" && (
+          <div className="col-span-2">
+            <label className="text-xs text-slate-500">Name this category</label>
+            <Input value={row.categoryLabel || ""} onChange={e => set("categoryLabel", e.target.value)} placeholder="e.g. Endowment"
+              title="Names this holding's row on the Overview timeline — leave blank to show as “Others”" />
+          </div>
+        )}
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Insured</label>
           {ownerOptions("insured")}
@@ -3394,7 +3401,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           id: r.id || "inv" + i,
           origin: "current",
           label: r.description || r.type || "Investment",
-          category: r.category || "Investment Portfolio", start, end, insured: who, offset: offsetOf(who),
+          // a named "Others" holding gets its own timeline row under that name
+          category: (r.category === "Others" && String(r.categoryLabel || "").trim()) || r.category || "Investment Portfolio",
+          start, end, insured: who, offset: offsetOf(who),
           covShort: r.type === "SPK"
             // SPK's story is the two things it pays, not its running balance
             ? [num(r.spkLumpSum) > 0 ? kfmt(num(r.spkLumpSum)) + " at " + SPK_PAYOUT_AGE : null,
