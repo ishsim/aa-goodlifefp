@@ -43,6 +43,15 @@ const calcAge = (dob) => {
   return a;
 };
 // how old the insured person was on a given date — lets policy dates drive the age fields
+// whole months between a date and today — used to place a loan on the timeline and to
+// suggest how many instalments have been paid
+const monthsSince = (from) => {
+  if (!from) return 0;
+  const a = new Date(from), b = new Date();
+  if (isNaN(a)) return 0;
+  const m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) - (b.getDate() < a.getDate() ? 1 : 0);
+  return Math.max(0, m);
+};
 const ageAtDate = (dob, when) => {
   if (!dob || !when) return "";
   const b = new Date(dob), d = new Date(when);
@@ -1524,6 +1533,35 @@ const carSplitLoan = (carPrice, rateA, termYearsA, monthsPaidA, rateB, termYears
   };
 };
 
+// Remaining balance after a given number of months, whatever the loan's shape. The timeline
+// walks this forward to show what is still owed at each milestone age.
+const loanBalanceAt = (loan, monthsPaid) => {
+  if (!loan) return 0;
+  if (loan.type === "carSplit") {
+    const c = carSplitLoan(loan.carPrice, loan.rateA, loan.termYearsA, monthsPaid, loan.rateB, loan.termYearsB, monthsPaid);
+    return c.combinedRemaining;
+  }
+  const fn = loan.type === "carSimple" ? simpleLoan : amortize;
+  return fn(loan.principal, loan.rate, loan.termYears, monthsPaid).remainingBalance;
+};
+const loanTermYears = (loan) => {
+  if (!loan) return 0;
+  // a split car loan runs for the longer of its two tranches
+  return loan.type === "carSplit"
+    ? Math.max(num(loan.termYearsA), num(loan.termYearsB))
+    : num(loan.termYears);
+};
+const loanPrincipal = (loan) => num(loan?.type === "carSplit" ? loan.carPrice : loan?.principal);
+const loanMonthly = (loan) => {
+  if (!loan) return 0;
+  if (loan.type === "carSplit") {
+    const c = carSplitLoan(loan.carPrice, loan.rateA, loan.termYearsA, 0, loan.rateB, loan.termYearsB, 0);
+    return c.a.monthly + c.b.monthly;
+  }
+  const fn = loan.type === "carSimple" ? simpleLoan : amortize;
+  return fn(loan.principal, loan.rate, loan.termYears, 0).monthly;
+};
+
 const LOAN_TYPES = [
   { id: "amortized", label: "Amortized (Personal / Housing)" },
   { id: "carSimple", label: "Car Loan (simple interest)" },
@@ -1531,8 +1569,8 @@ const LOAN_TYPES = [
 ];
 const loanDefaults = (type) => (
   type === "carSplit"
-    ? { type, carPrice: "", rateA: "", termYearsA: "7", monthsPaidA: "0", rateB: "", termYearsB: "3", monthsPaidB: "0" }
-    : { type, principal: "", rate: "", termYears: "", monthsPaid: "0" }
+    ? { type, startDate: "", carPrice: "", rateA: "", termYearsA: "7", monthsPaidA: "0", rateB: "", termYearsB: "3", monthsPaidB: "0" }
+    : { type, startDate: "", principal: "", rate: "", termYears: "", monthsPaid: "0" }
 );
 
 const BreakdownTable = ({ rows }) => (
@@ -1629,6 +1667,19 @@ const LiabilityRows = ({ rows, onChange }) => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{LOAN_TYPES.find(lt => lt.id === loanType)?.label}</span>
                   <button onClick={() => setRow({ loan: null })} className="text-xs text-red-500 hover:underline">Change / remove calculator</button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                  <Field label="Loan start date" hint="Optional — places the loan on the Overview timeline">
+                    <Input type="date" value={r.loan.startDate || ""} onChange={e => setLoan({ startDate: e.target.value })} />
+                  </Field>
+                  {r.loan.startDate && (() => {
+                    const paid = monthsSince(r.loan.startDate);
+                    return paid > 0 ? (
+                      <div className="flex items-end pb-2 text-xs text-slate-500">
+                        {paid} months elapsed since then
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
                 {loanType === "carSplit" ? (
                   <>
@@ -2254,6 +2305,8 @@ const CATEGORY_BUCKET = {
 };
 // Overview timeline row buckets, in display order
 const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)", "Retirement", "Child Savings", "Others"];
+// debt is not cover, so it never appears as a "gap" row — it only shows when there is one
+const LIABILITY_ROW = "Loans & Liabilities";
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)"];
 // the two critical-illness stage rows, kept together so gap logic can treat them as a pair
@@ -3406,6 +3459,52 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         }));
       });
 
+    // Debt runs alongside cover on the same age axis: a housing loan finishing at 58 and a
+    // policy paying out at 60 are the same conversation. Only loans with a start date and a
+    // term can be placed, since without both there is no span to draw.
+    const buildLiabilityItems = () => (client.liabilities || []).flatMap((r, i) => {
+      const loan = r.loan;
+      const term = loanTermYears(loan);
+      if (!loan || !loan.startDate || term <= 0) return [];
+      const self = insuredById("self");
+      const startAge = ageAtDate(client.dob, loan.startDate);
+      if (startAge === "") return [];
+      const start = Math.max(0, Math.min(num(startAge), TIMELINE_MAX_AGE));
+      const end = Math.min(start + term, TIMELINE_MAX_AGE);
+      const principal = loanPrincipal(loan);
+      const monthly = loanMonthly(loan);
+      const paidNow = monthsSince(loan.startDate);
+      // a balance marker every five years, plus the year it clears
+      const marks = [];
+      for (let yr = 5; yr < term; yr += 5) marks.push(yr);
+      marks.push(term);
+      const projections = marks.map(yr => {
+        const bal = loanBalanceAt(loan, yr * 12);
+        return { age: start + yr, years: yr, projected: bal, text: bal > 0 ? kfmt(bal) + " left" : "cleared" };
+      });
+      return [{
+        id: "liab-" + (r.id || i),
+        kind: "liability", origin: "current",
+        label: r.name || "Loan",
+        category: "Loans & Liabilities",
+        start, end, insured: self, offset: 0,
+        covShort: kfmt(principal),
+        stepAge: null, stepAmt: null, status: "active", savings: false,
+        payoutStart: null, lumpSumAge: null, premStart: null, premEnd: null,
+        projections,
+        details: [
+          ["Loan", r.name || "Loan"],
+          ["Type", LOAN_TYPES.find(lt => lt.id === loan.type)?.label || ""],
+          ["Started", fmtDate(loan.startDate) + (num(startAge) > 0 ? " (age " + num(startAge) + ")" : "")],
+          ["Term", term + " years — clears at age " + Math.round(end)],
+          ["Amount borrowed", principal > 0 ? money(principal) : ""],
+          ["Instalment", monthly > 0 ? money(monthly, 2) + " / month" : ""],
+          ["Paid so far", paidNow > 0 ? paidNow + " months" : ""],
+          ["Outstanding today", money(loanBalanceAt(loan, paidNow))],
+        ].filter(([, v]) => v),
+      }];
+    });
+
     if (mode === "current") {
       const plans = buildPlanItems();
       const invs = (client.existingInvestments || []).map((r, i) => {
@@ -3463,7 +3562,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           projections,
         };
       });
-      return [...plans, ...invs];
+      return [...plans, ...invs, ...buildLiabilityItems()];
     }
 
     // recommended mode: layer current plans (muted) under the recommended products
@@ -3524,8 +3623,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         };
       });
     });
-    return [...buildPlanItems(), ...recommended];
-  }, [mode, client.existingPlans, client.existingInvestments, client.products, clientAge, insuredList]);
+    return [...buildPlanItems(), ...recommended, ...buildLiabilityItems()];
+  }, [mode, client.existingPlans, client.existingInvestments, client.products, client.liabilities, client.dob, clientAge, insuredList]);
 
   // one section per insured person (client first), each with its own category rows;
   // the client's section also lists categories with no coverage yet as gaps
@@ -3696,6 +3795,15 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     });
   }, [insuredList]);
   const svFill = (color, kind) => "url(#sv" + color.replace("#", "") + (kind === "hatch" ? "h" : "g") + ")";
+  // Debt is the one thing on this chart the client does not own, so it is drawn against the
+  // grain of everything else: rose, hatched, and outlined rather than solid.
+  const LIABILITY_COLOR = "#be123c";
+  const liabilityDefs = (
+    <pattern id="liabHatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="7" height="7" fill={LIABILITY_COLOR} opacity="0.13" />
+      <line x1="0" y1="0" x2="0" y2="7" stroke={LIABILITY_COLOR} strokeWidth="2.5" opacity="0.55" />
+    </pattern>
+  );
 
   // A deferred annuity is drawn as: hatched premium bar → thin deferral connector →
   // wedge that widens across the payout years (dividends building) → terminal-dividend diamond.
@@ -3756,26 +3864,30 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       byAge.get(age).push(pr);
     });
     const top = laneY - PROJ_H + 1, bottom = laneY + LANE_H;
+    const markColor = p.kind === "liability" ? LIABILITY_COLOR : "#0f172a";
     let lastLabelX = -Infinity;
     return [...byAge.entries()].sort((a, b) => a[0] - b[0]).map(([age, entries]) => {
       if (age < win.a0 || age > win.a1) return null;
       const cx = x(age);
       const vals = entries.map(e => e.projected);
       const lo = Math.min(...vals), hi = Math.max(...vals);
-      const text = entries.length === 1
-        ? entries[0].rate + "% · " + kfmt(hi)
-        : kfmt(lo) + "–" + kfmt(hi);
+      const text = entries[0].text
+        // a loan milestone names what is still owed rather than a growth rate
+        ? entries[0].text
+        : entries.length === 1
+          ? entries[0].rate + "% · " + kfmt(hi)
+          : kfmt(lo) + "–" + kfmt(hi);
       // drop a label rather than let two overlap; the tick itself always stays
       const room = cx - lastLabelX > 54;
       if (room) lastLabelX = cx;
       return (
         <g key={"pr" + age} pointerEvents="none">
-          <line x1={cx} y1={top} x2={cx} y2={bottom} stroke="#0f172a" strokeWidth="1" strokeDasharray="2 2" opacity="0.55" />
-          <polygon points={`${cx - 3},${top} ${cx + 3},${top} ${cx},${top + 4}`} fill="#0f172a" opacity="0.75" />
+          <line x1={cx} y1={top} x2={cx} y2={bottom} stroke={markColor} strokeWidth="1" strokeDasharray="2 2" opacity="0.55" />
+          <polygon points={`${cx - 3},${top} ${cx + 3},${top} ${cx},${top + 4}`} fill={markColor} opacity="0.75" />
           {room && (<>
             <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fontWeight="700"
               stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{text}</text>
-            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fill="#0f172a" fontWeight="700">{text}</text>
+            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fill={markColor} fontWeight="700">{text}</text>
           </>)}
         </g>
       );
@@ -3810,7 +3922,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       ) : (
         <>
         <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
-          <defs>{savingsDefs}</defs>
+          <defs>{savingsDefs}{liabilityDefs}</defs>
           <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
           {ticks.map(t => (
             <g key={t}>
@@ -3895,6 +4007,30 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                               {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
                               {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
                               {premBracket(p, y)}
+                            </g>
+                          );
+                        }
+                        if (p.kind === "liability") {
+                          const gl = clipX(cs, ce);
+                          if (!gl) return null;
+                          return (
+                            <g key={p.id}>
+                              <rect x={gl.x0} y={y + 1} width={gl.w} height={LANE_H - 2} rx="3"
+                                fill="url(#liabHatch)" stroke={LIABILITY_COLOR} strokeWidth="1.25"
+                                opacity={active ? 1 : 0.9} {...common} />
+                              {/* the age it clears is the number that matters, so it is called out */}
+                              {Math.abs(gl.x0 + gl.w - x(ce)) < 1 && (
+                                <g pointerEvents="none">
+                                  <line x1={x(ce)} y1={y - 1} x2={x(ce)} y2={y + LANE_H + 1} stroke={LIABILITY_COLOR} strokeWidth="1.5" />
+                                  <text x={x(ce) + 3} y={y + LANE_H / 2 + 3} fontSize="7.5" fill={LIABILITY_COLOR} fontWeight="700">cleared {Math.round(p.end)}</text>
+                                </g>
+                              )}
+                              {gl.w > 40 && (
+                                <text x={gl.x0 + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#881337" fontWeight="700" pointerEvents="none">
+                                  {p.label}{p.covShort ? " · " + p.covShort : ""}
+                                </text>
+                              )}
+                              {projectionMarks(p, y)}
                             </g>
                           );
                         }
@@ -3988,6 +4124,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             <span className="inline-flex items-center gap-1.5">
               <svg width="24" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="#0f172a" strokeWidth="2" /><line x1="2" y1="1" x2="2" y2="9" stroke="#0f172a" strokeWidth="2" /><line x1="22" y1="1" x2="22" y2="9" stroke="#0f172a" strokeWidth="2" /></svg>
               premium / contribution period
+            </span>
+          )}
+          {items.some(it => it.kind === "liability") && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="22" height="12"><rect x="1" y="1.5" width="20" height="9" rx="2" fill="#be123c" fillOpacity="0.18" stroke="#be123c" strokeWidth="1.25" /></svg>
+              loan / liability — balance still owed
             </span>
           )}
           {items.some(it => (it.projections || []).length > 0) && (
