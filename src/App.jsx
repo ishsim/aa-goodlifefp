@@ -108,6 +108,13 @@ const sectionStamps = (before, after, at) => {
 };
 const shortDate = (ts) => ts ? new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—";
 
+// Couples who plan together want both names on the cover; where one of them holds the
+// relationship, only theirs. Left blank, nothing changes.
+const coverNames = (c) => {
+  const partner = String(c.partnerName || "").trim();
+  return (c.name || "—") + (partner ? " & " + partner : "");
+};
+
 const maskedName = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return parts.map(w => w[0].toUpperCase() + "*".repeat(Math.max(w.length - 1, 0))).join(" ");
@@ -583,7 +590,7 @@ const defaultExpenses = () => Object.fromEntries(
 
 const blankClient = () => ({
   id: uid(),
-  name: "", dob: "", occupation: "", occDetails: "", email: "", meetingDate: "", riskProfile: "",
+  name: "", partnerName: "", dob: "", occupation: "", occDetails: "", email: "", meetingDate: "", riskProfile: "",
   dependents: [],
   priorities: ["", "", "", "", ""],
   concernsNote: "",
@@ -3069,8 +3076,11 @@ const CurrentPlansTable = ({ client, report = false }) => {
               <tbody>
                 {g.rows.map((r, i) => {
                   const dead = statusIsDead(r.status);
+                  // a statutory scheme is not a policy the client chose to buy, so it is
+                  // tinted to sit apart from the plans around it
+                  const rowStyle = dead ? { opacity: 0.55 } : r.offSalary ? { background: "#fdf4e3" } : undefined;
                   return (
-                    <tr key={r.id || i} style={dead ? { opacity: 0.55 } : undefined}>
+                    <tr key={r.id || i} style={rowStyle}>
                       <td className={td}>{r.policyNo || "—"}</td>
                       <td className={td}>{fmtDate(r.date) || "—"}</td>
                       <td className={td}>
@@ -3078,7 +3088,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
                         {r.sub ? <div className="text-xs text-slate-500">{r.sub}</div> : null}
                         {r.kind === "investment" && <div className="text-xs text-slate-500">Investment portfolio</div>}
                         {r.status !== "active" && <div className="text-xs font-semibold" style={{ color: dead ? "#64748b" : "#b45309" }}>{statusLabel(r.status)}</div>}
-                        {r.offSalary && <div className="text-xs text-slate-500">Deducted from salary — not counted in the total</div>}
+                        {r.offSalary && <div className="text-xs font-semibold" style={{ color: "#b45309" }}>Statutory — deducted from salary, not counted in the total</div>}
                       </td>
                       <td className={td}>{r.cover.length ? r.cover.map((c, j) => <div key={j}>{c}</div>) : "—"}</td>
                       <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? money(r.premium, 2) : "—"}</td>
@@ -4837,7 +4847,7 @@ export default function App() {
             <div className="text-center" style={{ marginTop: 90 }}>
               <div className="serif text-2xl italic text-slate-600">Recommendation Report</div>
               <div className="serif text-xl italic text-slate-600 mb-4">specially prepared for</div>
-              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{client.name || "—"}</h1>
+              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{coverNames(client)}</h1>
             </div>
             <div style={{ flex: 1 }} />
             <div className="text-left text-sm">
@@ -5307,7 +5317,7 @@ export default function App() {
             <div className="text-center" style={{ marginTop: 90 }}>
               <div className="serif text-2xl italic text-slate-600">Financial Planning &amp; Insurance Summary</div>
               <div className="serif text-xl italic text-slate-600 mb-4">prepared for</div>
-              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{client.name || "—"}</h1>
+              <h1 className="serif text-4xl font-bold text-purple-900 uppercase tracking-wide">{coverNames(client)}</h1>
               <div className="text-sm text-slate-500 mt-3">Overview of current planning based on our latest meeting</div>
             </div>
             <div style={{ flex: 1 }} />
@@ -5565,6 +5575,10 @@ export default function App() {
           <SectionCard title="Client profile (KYC)">
             <div className="grid md:grid-cols-3 gap-4">
               <Field label="Full name"><Input value={client.name} onChange={e => update({ name: e.target.value })} /></Field>
+              <Field label="Partner / spouse on the cover" hint="Optional — both names appear on the report cover as “Client & Partner”. Leave blank when the client is planning alone.">
+                <Input value={client.partnerName || ""} onChange={e => update({ partnerName: e.target.value })}
+                  placeholder={(client.dependents || []).find(dep => /wife|husband|spouse|partner/i.test(dep.relationship || ""))?.name || ""} />
+              </Field>
               <Field label="Date of birth"><Input type="date" value={client.dob} onChange={e => update({ dob: e.target.value })} /></Field>
               <Field label="Age"><Input value={calcAge(client.dob)} readOnly className="bg-slate-50" /></Field>
               <Field label="Target retirement age" hint="drives the default planning horizons in the Objectives step"><NumInput value={client.retirementAge} onChange={e => update({ retirementAge: e.target.value })} /></Field>
