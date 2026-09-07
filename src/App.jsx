@@ -619,7 +619,7 @@ const blankClient = () => ({
   // Annual Review report — separate narrative from the first-time client report above
   // meetingNotes is the advisor's raw notes from the review meeting — kept on the record
   // so a draft can be regenerated later without retyping them
-  review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "", meetingNotes: "" },
+  review: { exec: "", keyPoints: "", financialHealthDone: false, contingencyDiscussed: true, contingencyNote: "", whatsNext: "", meetingNotes: "" },
   sections: { education: true, hierarchy: true, ratios: true, allocation: true },
   updated: Date.now(),
 });
@@ -2834,6 +2834,12 @@ const snapshotFrom = (c, d, date) => {
   };
 };
 const byDate = (a, b) => String(a.date || "").localeCompare(String(b.date || ""));
+// Contingency planning is skipped in plenty of reviews. When it is, the emergency-fund
+// figures are not a finding — printing a "shortfall" for something never raised invents a
+// concern the meeting did not have. The flag is explicit; a note of just "n/a" (or similar)
+// is taken to mean the same, since that is the natural thing to type.
+const NOT_DISCUSSED = /^\s*(n\/?a|nil|none|not\s+(discussed|applicable|covered)|-{1,2}|\u2014)\s*$/i;
+const contingencySkipped = (rv) => rv?.contingencyDiscussed === false || NOT_DISCUSSED.test(String(rv?.contingencyNote || ""));
 const histYear = (h) => String(h.date || "").slice(0, 4) || "—";
 
 // Two small charts drawn as plain SVG so they print with the rest of the report: net income
@@ -5146,6 +5152,7 @@ export default function App() {
     // no subtotals, no budget guideline — see reportMode on the client record
     const optionsMode = client.reportMode === "options";
     const rv = client.review || { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" };
+    const skipContingency = contingencySkipped(rv);
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>);
     // key points / action items: bold the lead phrase before the em-dash or colon
     const paraLead = (t, sep) => (t || "").split(/\n+/).filter(s => s.trim()).map((p, i) => {
@@ -5431,10 +5438,16 @@ export default function App() {
             <tr><td>Emergency Funds</td><td>{rv.contingencyNote || ("Allocate " + money(d.ef3) + " as emergency funds")}</td><td className="tnum italic text-slate-500">No Return</td></tr>
           </tbody></table>
           <h3 id="rv-plans">{optionsMode ? "Plan Options" : "4-3-2-1 Recommended Plans"}</h3>
+          {skipContingency && <p className="text-xs text-slate-500 mb-1">Emergency funds were not reviewed at this meeting, so no target or shortfall is stated below.</p>}
           <table><tbody>
-            <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{money(d.ef3)} – {money(d.ef6)}</td></tr>
-            <tr><td>Amount saved</td><td className="tnum">{money(d.cash)}</td></tr>
-            <tr><td className="font-semibold">{d.cash >= d.ef3 ? "Within target" : "Shortfall to 3-month target"}</td><td className={"tnum font-semibold " + (d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>{money(Math.max(0, d.ef3 - d.cash))}</td></tr>
+            <tr><td>Emergency fund needed (3–6 months of expenses)</td><td className="tnum">{skipContingency ? "n/a" : money(d.ef3) + " – " + money(d.ef6)}</td></tr>
+            <tr><td>Amount saved</td><td className="tnum">{skipContingency ? "n/a" : money(d.cash)}</td></tr>
+            <tr>
+              <td className="font-semibold">{skipContingency || d.cash < d.ef3 ? "Shortfall to 3-month target" : "Within target"}</td>
+              <td className={"tnum font-semibold " + (skipContingency ? "" : d.cash >= d.ef3 ? "text-purple-900" : "text-red-700")}>
+                {skipContingency ? "n/a" : money(Math.max(0, d.ef3 - d.cash))}
+              </td>
+            </tr>
           </tbody></table>
           {d.insuredGroups.length === 0 && <p className="italic text-slate-400">No recommended plans yet — add them in the Recommended Plans step.</p>}
           <QuotationTables groups={d.insuredGroups} grandMonthly={d.premMonthly} grandAnnual={d.premAnnual} optionsMode={optionsMode} />
@@ -5941,6 +5954,11 @@ export default function App() {
               Financial Health Check completed this meeting (finances/ratios are up to date)
             </label>
             <p className="text-xs text-slate-400 mb-3 ml-6">Leave unchecked to show a "not yet conducted" note instead of the ratio tables — use this when the client hasn't updated their income/expenses since the last review.</p>
+            <label className="flex items-center gap-2 text-sm py-1">
+              <input type="checkbox" checked={client.review.contingencyDiscussed !== false} onChange={e => updateDeep("review", { contingencyDiscussed: e.target.checked })} className="w-4 h-4 accent-purple-700" />
+              Contingency planning (emergency funds) discussed this meeting
+            </label>
+            <p className="text-xs text-slate-400 mb-3 ml-6">Untick and the report prints n/a for the emergency fund target, the amount saved and the shortfall, rather than raising a concern the meeting never had. Typing just &ldquo;n/a&rdquo; in the note below does the same.</p>
             <Field label="Contingency planning note" hint={"Auto-suggested from your Emergency Fund step: " + money(d.ef3) + " (3 months of expenses). Leave blank to use this."}><TextArea rows={2} value={client.review.contingencyNote} onChange={e => updateDeep("review", { contingencyNote: e.target.value })} placeholder={"Allocate " + money(d.ef3) + " as emergency funds — no return"} /></Field>
             <div className="h-4" />
             <Field label="What's next (numbered)" hint="Same numbered 'Title: detail' format as the Action Plan."><TextArea rows={6} value={client.review.whatsNext} onChange={e => updateDeep("review", { whatsNext: e.target.value })} /></Field>
