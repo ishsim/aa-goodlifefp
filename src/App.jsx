@@ -115,6 +115,14 @@ const coverNames = (c) => {
   return (c.name || "—") + (partner ? " & " + partner : "");
 };
 
+// The advisor's own licence details, in one place — they appear on both report covers and
+// were previously duplicated, which is how a stale number survived in both.
+const ADVISOR_LICENCE = [
+  "Authorised representative of AIA Singapore",
+  "Representative No. 020 | AIA",
+  "BDCB Capital Market Representative License BDCB/R/CMU/A2-R93",
+];
+
 const maskedName = (name) => {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return parts.map(w => w[0].toUpperCase() + "*".repeat(Math.max(w.length - 1, 0))).join(" ");
@@ -4859,9 +4867,7 @@ export default function App() {
             </div>
             <div className="flex items-end justify-between mt-10">
               <div className="text-left text-xs italic text-slate-600" style={{ maxWidth: "55%" }}>
-                <div>Authorised representative of AIA Singapore</div>
-                <div>(Ref No. RFC20004468)</div>
-                <div>BDCB License No: 129/AIA &amp; 288/AIA</div>
+                {ADVISOR_LICENCE.map(line => <div key={line}>{line}</div>)}
               </div>
               <div className="text-center">
                 <img src={LOGO} alt="GoodLife Financial Planning" style={{ maxWidth: 240, width: "100%" }} />
@@ -5330,9 +5336,7 @@ export default function App() {
             </div>
             <div className="flex items-end justify-between mt-10">
               <div className="text-left text-xs italic text-slate-600" style={{ maxWidth: "55%" }}>
-                <div>Authorised representative of AIA Singapore</div>
-                <div>(Ref No. RFC20004468)</div>
-                <div>BDCB License No: 129/AIA &amp; 288/AIA</div>
+                {ADVISOR_LICENCE.map(line => <div key={line}>{line}</div>)}
               </div>
               <div className="text-center">
                 <img src={LOGO} alt="GoodLife Financial Planning" style={{ maxWidth: 240, width: "100%" }} />
