@@ -3687,10 +3687,10 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     }).filter(s => s.rows.length > 0);
   }, [items, insuredList, mode]);
 
-  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 34, BOT_H = 32, LANE_H = 16, LANE_GAP = 4, ROW_PAD = 7, EMPTY_H = 20, SEC_H = 22;
+  const LABEL_W = 170, PLOT_W = 620, PAD_R = 10, AXIS_H = 38, BOT_H = 34, LANE_H = 24, LANE_GAP = 6, ROW_PAD = 9, EMPTY_H = 26, SEC_H = 26;
   // extra band above a row whose plans carry projected values, so the marker labels
   // have somewhere to sit that is not on top of the bar above them
-  const PROJ_H = 12;
+  const PROJ_H = 14;
   const planHasProj = (pl) => (pl.projections || []).length > 0;
   // each lane reserves its own label band, so two plans sharing a row never share ticks
   const laneOffset = (row, pi) => {
@@ -3752,21 +3752,21 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   };
 
   const barLabel = (txt, g, y, bold) => g.w > 60 && (
-    <text x={g.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#fff" fontWeight={bold ? 700 : 400} pointerEvents="none">
-      {txt.length > Math.floor(g.w / 5.3) ? txt.slice(0, Math.floor(g.w / 5.3) - 1) + "…" : txt}
+    <text x={g.x0 + 7} y={y + LANE_H / 2 + 4} fontSize="11" fill="#fff" fontWeight={bold ? 700 : 600} pointerEvents="none">
+      {txt.length > Math.floor(g.w / 6.4) ? txt.slice(0, Math.floor(g.w / 6.4) - 1) + "…" : txt}
     </text>
   );
   // White-on-fill is unreadable over a hatch or the light end of an accumulation gradient,
   // so savings bars label themselves with dark glyphs carrying a white halo instead.
   const haloLabel = (txt, g, y, dy) => {
     if (g.w <= 46) return null;
-    const max = Math.floor(g.w / 5.1);
+    const max = Math.floor(g.w / 6.2);
     const t = txt.length > max ? txt.slice(0, max - 1) + "…" : txt;
-    const ty = y + (dy == null ? LANE_H / 2 + 3 : dy);
+    const ty = y + (dy == null ? LANE_H / 2 + 4 : dy);
     return (
       <g pointerEvents="none">
-        <text x={g.x0 + 5} y={ty} fontSize="8.5" fontWeight="700" fill="none" stroke="#fff" strokeWidth="3" strokeLinejoin="round">{t}</text>
-        <text x={g.x0 + 5} y={ty} fontSize="8.5" fontWeight="700" fill="#3a1955">{t}</text>
+        <text x={g.x0 + 7} y={ty} fontSize="11" fontWeight="700" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinejoin="round">{t}</text>
+        <text x={g.x0 + 7} y={ty} fontSize="11" fontWeight="700" fill="#3a1955">{t}</text>
       </g>
     );
   };
@@ -3847,9 +3847,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           <g pointerEvents="none">
             <rect x={x(payC) - 4.5} y={midY - 4.5} width="9" height="9" transform={`rotate(45 ${x(payC)} ${midY})`}
               fill="#f59e0b" stroke="#fff" strokeWidth="1" />
-            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fontWeight="700"
-              stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{"payout from " + p.payoutStart}</text>
-            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fill="#b45309" fontWeight="700">{"payout from " + p.payoutStart}</text>
+            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="9.5" fontWeight="700"
+              stroke="#fff" strokeWidth="3" strokeLinejoin="round">{"payout from " + p.payoutStart}</text>
+            <text x={x(payC)} y={y - 2.5} textAnchor="middle" fontSize="9.5" fill="#b45309" fontWeight="700">{"payout from " + p.payoutStart}</text>
           </g>
         )}
         {gPay && Math.abs(gPay.x0 + gPay.w - x(endC)) < 1 && (
@@ -3857,8 +3857,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             <rect x={x(endC) - 4} y={midY - 4} width="8" height="8" transform={`rotate(45 ${x(endC)} ${midY})`}
               fill="#f59e0b" stroke="#fff" strokeWidth="1" />
             {p.terminalDividend > 0 && (<>
-              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fontWeight="700" stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{kfmt(p.terminalDividend)}</text>
-              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="7.5" fill="#b45309" fontWeight="700">{kfmt(p.terminalDividend)}</text>
+              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="9.5" fontWeight="700" stroke="#fff" strokeWidth="3" strokeLinejoin="round">{kfmt(p.terminalDividend)}</text>
+              <text x={x(endC)} y={y - 2.5} textAnchor="middle" fontSize="9.5" fill="#b45309" fontWeight="700">{kfmt(p.terminalDividend)}</text>
             </>)}
           </g>
         )}
@@ -3894,16 +3894,16 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           ? entries[0].rate + "% · " + kfmt(hi)
           : kfmt(lo) + "–" + kfmt(hi);
       // drop a label rather than let two overlap; the tick itself always stays
-      const room = cx - lastLabelX > 54;
+      const room = cx - lastLabelX > 62;
       if (room) lastLabelX = cx;
       return (
         <g key={"pr" + age} pointerEvents="none">
           <line x1={cx} y1={top} x2={cx} y2={bottom} stroke={markColor} strokeWidth="1" strokeDasharray="2 2" opacity="0.55" />
           <polygon points={`${cx - 3},${top} ${cx + 3},${top} ${cx},${top + 4}`} fill={markColor} opacity="0.75" />
           {room && (<>
-            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fontWeight="700"
-              stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{text}</text>
-            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="7.5" fill={markColor} fontWeight="700">{text}</text>
+            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="9.5" fontWeight="700"
+              stroke="#fff" strokeWidth="3" strokeLinejoin="round">{text}</text>
+            <text x={cx} y={laneY - 3} textAnchor="middle" fontSize="9.5" fill={markColor} fontWeight="700">{text}</text>
           </>)}
         </g>
       );
@@ -3939,11 +3939,11 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         <>
         <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
           <defs>{savingsDefs}{liabilityDefs}</defs>
-          <text x={LABEL_W} y={10} fontSize="9" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
+          <text x={LABEL_W} y={11} fontSize="10" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
           {ticks.map(t => (
             <g key={t}>
               <line x1={x(t)} y1={AXIS_H - 6} x2={x(t)} y2={AXIS_H + plotH} stroke="#e2e8f0" strokeWidth="1" />
-              <text x={x(t)} y={AXIS_H - 10} textAnchor="middle" fontSize="9" fill="#94a3b8">{t}</text>
+              <text x={x(t)} y={AXIS_H - 11} textAnchor="middle" fontSize="10.5" fill="#94a3b8">{t}</text>
             </g>
           ))}
           {sections.map((sec, si) => {
@@ -3951,8 +3951,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             return (
               <g key={sec.person.id}>
                 <rect x={0} y={secY} width={LABEL_W + PLOT_W + PAD_R} height={SEC_H - 4} fill="#f8fafc" />
-                <circle cx={8} cy={secY + (SEC_H - 4) / 2} r="4" fill={sec.person.color} />
-                <text x={18} y={secY + (SEC_H - 4) / 2 + 3.5} fontSize="10.5" fill={sec.person.color} fontWeight="700">
+                <circle cx={9} cy={secY + (SEC_H - 4) / 2} r="4.5" fill={sec.person.color} />
+                <text x={20} y={secY + (SEC_H - 4) / 2 + 4} fontSize="12" fill={sec.person.color} fontWeight="700">
                   {sec.person.name}{sec.person.age != null ? " — age " + sec.person.age + " today" : ""}
                 </text>
                 {sec.rows.map((row, ri) => {
@@ -3961,15 +3961,15 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                     const g = clipX(win.a0, win.a1);
                     return (
                       <g key={row.category}>
-                        <text x={LABEL_W - 10} y={y0 + EMPTY_H / 2 + 3} textAnchor="end" fontSize="9.5" fill="#94a3b8" fontStyle="italic">{row.category}</text>
+                        <text x={LABEL_W - 10} y={y0 + EMPTY_H / 2 + 4} textAnchor="end" fontSize="11" fill="#94a3b8" fontStyle="italic">{row.category}</text>
                         <rect x={g.x0} y={y0 + 3} width={g.w} height={EMPTY_H - 7} rx="4" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" />
-                        <text x={g.x0 + g.w / 2} y={y0 + EMPTY_H / 2 + 3} textAnchor="middle" fontSize="8.5" fill="#94a3b8" fontStyle="italic">not covered yet</text>
+                        <text x={g.x0 + g.w / 2} y={y0 + EMPTY_H / 2 + 4} textAnchor="middle" fontSize="10" fill="#94a3b8" fontStyle="italic">not covered yet</text>
                       </g>
                     );
                   }
                   return (
                     <g key={row.category}>
-                      <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 3} textAnchor="end" fontSize="10" fill="#334155" fontWeight="600">{row.category}</text>
+                      <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 4} textAnchor="end" fontSize="11.5" fill="#334155" fontWeight="600">{row.category}</text>
                       {row.plans.map((p, pi) => {
                         const y = y0 + laneOffset(row, pi);
                         const cs = p.start + p.offset, ce = p.end + p.offset;
@@ -4021,7 +4021,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                               {g1 && <rect x={g1.x0} y={y} width={g1.w} height={LANE_H} rx="3" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
                               {g2 && <rect x={g2.x0} y={y + LANE_H * 0.25} width={g2.w} height={LANE_H * 0.55} rx="3" fill={fill} opacity={opacity * 0.65} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />}
                               {g1 && barLabel(p.label + (p.covShort ? " · " + p.covShort : ""), g1, y)}
-                              {g2 && g2.w > 40 && <text x={g2.x0 + 5} y={y + LANE_H / 2 + 3} fontSize="8" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
+                              {g2 && g2.w > 40 && <text x={g2.x0 + 6} y={y + LANE_H / 2 + 4} fontSize="10" fill="#fff" pointerEvents="none">{kfmt(p.stepAmt)} from {p.stepAge}</text>}
                               {premBracket(p, y)}
                             </g>
                           );
@@ -4038,11 +4038,11 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                               {Math.abs(gl.x0 + gl.w - x(ce)) < 1 && (
                                 <g pointerEvents="none">
                                   <line x1={x(ce)} y1={y - 1} x2={x(ce)} y2={y + LANE_H + 1} stroke={LIABILITY_COLOR} strokeWidth="1.5" />
-                                  <text x={x(ce) + 3} y={y + LANE_H / 2 + 3} fontSize="7.5" fill={LIABILITY_COLOR} fontWeight="700">cleared {Math.round(p.end)}</text>
+                                  <text x={x(ce) + 4} y={y + LANE_H / 2 + 4} fontSize="9.5" fill={LIABILITY_COLOR} fontWeight="700">cleared {Math.round(p.end)}</text>
                                 </g>
                               )}
                               {gl.w > 40 && (
-                                <text x={gl.x0 + 6} y={y + LANE_H / 2 + 3} fontSize="8.5" fill="#881337" fontWeight="700" pointerEvents="none">
+                                <text x={gl.x0 + 7} y={y + LANE_H / 2 + 4} fontSize="11" fill="#881337" fontWeight="700" pointerEvents="none">
                                   {p.label}{p.covShort ? " · " + p.covShort : ""}
                                 </text>
                               )}
@@ -4073,8 +4073,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                   return (
                     <g key={"m" + m}>
                       <line x1={x(mAge)} y1={secTop} x2={x(mAge)} y2={secBot} stroke="#059669" strokeWidth={under18 ? 2 : 1.25} strokeDasharray={under18 ? "none" : "3 2"} opacity={under18 ? 0.85 : 0.55} />
-                      {under18 && <rect x={x(mAge) - 10} y={secTop - 1} width={20} height={11} rx="3" fill="#059669" />}
-                      <text x={x(mAge)} y={secTop + 7} textAnchor="middle" fontSize="8" fill={under18 ? "#fff" : "#059669"} fontWeight="700">{m}</text>
+                      {under18 && <rect x={x(mAge) - 11} y={secTop - 1} width={22} height={13} rx="3" fill="#059669" />}
+                      <text x={x(mAge)} y={secTop + 8.5} textAnchor="middle" fontSize="9.5" fill={under18 ? "#fff" : "#059669"} fontWeight="700">{m}</text>
                     </g>
                   );
                 })}
@@ -4084,7 +4084,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           {clientAge > 0 && clientAge >= win.a0 && clientAge <= win.a1 && (
             <g>
               <line x1={x(clientAge)} y1={AXIS_H - 4} x2={x(clientAge)} y2={AXIS_H + plotH} stroke={BRAND.seal} strokeWidth="1.5" strokeDasharray="4 3" />
-              <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="9" fill={BRAND.seal} fontWeight="600">today</text>
+              <text x={x(clientAge)} y={AXIS_H + plotH + 12} textAnchor="middle" fontSize="10.5" fill={BRAND.seal} fontWeight="600">today</text>
             </g>
           )}
           {retireAge > 0 && retireAge >= win.a0 && retireAge <= win.a1 && (
