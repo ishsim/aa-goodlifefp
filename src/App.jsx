@@ -2394,7 +2394,12 @@ const spkAnnuityMonthlyOf = (c) => num(c.retirement?.spkAnnuityMonthly) > 0 ? nu
 // intentionally overlaps EXISTING_PLAN_CATEGORIES (e.g. "Retirement", "Child Savings") so an
 // investment tagged the same way merges into that category's row on the Overview timeline
 const INVESTMENT_CATEGORIES = ["Investment Portfolio", "Retirement", "Child Savings", "Education", "Emergency Fund", "Property", "Others"];
-const ALLOCATION_FREQS = [["monthly", "Monthly", 12], ["quarterly", "Quarterly", 4], ["semiannual", "Semi-annual", 2], ["annual", "Annual", 1]];
+// The third entry is instalments per year, which is what every recurring total is built
+// from. A single premium pays nought times a year: the money was real, but it is not an
+// ongoing commitment, so it drops out of the monthly-equivalent and 4-3-2-1 figures
+// instead of being annualised as though it repeats.
+const ALLOCATION_FREQS = [["monthly", "Monthly", 12], ["quarterly", "Quarterly", 4], ["semiannual", "Semi-annual", 2], ["annual", "Annual", 1], ["single", "Single / lump sum", 0]];
+const isOneTimeFreq = (freq) => freq === "single";
 const freqLabel = (freq) => (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[1];
 const freqMonthlyEquiv = (amt, freq) => { const per = (ALLOCATION_FREQS.find(f => f[0] === freq) || ALLOCATION_FREQS[0])[2]; return num(amt) * per / 12; };
 
@@ -2857,7 +2862,7 @@ const CurrentPremiumBudget = ({ client, d }) => {
       <p className="text-xs text-slate-500 mb-1">
         As a guideline, about <b>10%</b> of take-home income goes to protection and <b>20%</b> to savings and investments.
         Against a take-home income of <b>{money(d.net)} / month</b> — <b>{money(annualIncome)} / year</b> — this is what your
-        in-force plans are already using. Lapsed, surrendered, APL and ETI policies are excluded.
+        in-force plans are already using. Lapsed, surrendered, APL and ETI policies are excluded, as are one-time payments.
       </p>
       {split.fx && <p className="text-xs text-slate-500 mb-1" style={{ fontStyle: "italic" }}>{FX_NOTE}</p>}
       <table>
@@ -3163,6 +3168,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
                         {r.kind === "investment" && <div className="text-xs text-slate-500">Investment portfolio</div>}
                         {r.status !== "active" && <div className="text-xs font-semibold" style={{ color: dead ? "#64748b" : "#b45309" }}>{statusLabel(r.status)}</div>}
                         {r.offSalary && <div className="text-xs font-semibold" style={{ color: "#b45309" }}>Statutory — deducted from salary, not counted in the total</div>}
+                        {isOneTimeFreq(r.freq) && <div className="text-xs text-slate-500">One-time payment — not part of the ongoing commitment</div>}
                       </td>
                       <td className={td}>{r.cover.length ? r.cover.map((c, j) => <div key={j}>{c}</div>) : "—"}</td>
                       <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? moneyIn(r.currency || BASE_CURRENCY, r.premium, 2) : "—"}</td>
