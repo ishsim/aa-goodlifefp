@@ -31,15 +31,15 @@ const planCurrency = (x) => {
   const code = String(x?.currency || "").trim().toUpperCase();
   return CURRENCIES.some(([c]) => c === code) ? code : BASE_CURRENCY;
 };
-// Sums kept per currency, so a mixed set of plans reports each total separately rather than
-// adding francs to dollars. One currency in, one figure out — the ordinary case is unchanged.
-const emptyTotals = () => new Map();
-const addTo = (map, code, amount) => { map.set(code, (map.get(code) || 0) + amount); return map; };
-const totalsText = (map, dp = 0) => [...map.entries()]
-  .filter(([, v]) => v !== 0)
-  .sort((a, b) => (a[0] === BASE_CURRENCY ? -1 : b[0] === BASE_CURRENCY ? 1 : a[0].localeCompare(b[0])))
-  .map(([code, v]) => moneyIn(code, v, dp))
-  .join(" · ") || moneyIn(BASE_CURRENCY, 0, dp);
+// Brunei and Singapore dollars are pegged at par, so they total together untouched. US$
+// converts at the rate held here — the single place to change it. Any total that used a
+// conversion says so underneath, because one combined figure otherwise hides the assumption.
+const FX_USD_TO_BASE = 1.3;
+const FX_TO_BASE = { BND: 1, SGD: 1, USD: FX_USD_TO_BASE };
+const toBase = (code, n) => num(n) * (FX_TO_BASE[planCurrency({ currency: code })] || 1);
+const usesFx = (items) => (items || []).some(x => planCurrency(x) === "USD");
+const FX_NOTE = "Totals include US$ amounts converted at US$1 = " + money(FX_USD_TO_BASE, 2)
+  + ". Brunei and Singapore dollars are treated as equivalent.";
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 // immutably set a value at a dot path (numeric segments address array indices), e.g.
 // setDeep(obj, "savingsMaturity.0.age", "55") clones just the touched branch
@@ -2211,11 +2211,11 @@ const TableOfContents = ({ entries }) => (
 
 // Totals are taken from the plans themselves and kept per currency, so a US$ plan is never
 // added to a BND one. With a single currency the output is identical to a plain sum.
-const premiumTotals = (items) => {
-  const m = emptyTotals(), a = emptyTotals();
-  (items || []).forEach(p => { const c = planCurrency(p); addTo(m, c, num(p.monthly)); addTo(a, c, num(p.annual)); });
-  return { monthly: m, annual: a };
-};
+const premiumTotals = (items) => ({
+  monthly: (items || []).reduce((s, p) => s + toBase(planCurrency(p), p.monthly), 0),
+  annual: (items || []).reduce((s, p) => s + toBase(planCurrency(p), p.annual), 0),
+  fx: usesFx(items),
+});
 const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = false }) => (
   <>
     {groups.map(g => (
@@ -2258,7 +2258,7 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
           return (
             <table><tbody><tr>
               <td className="font-semibold">Subtotal — {g.name}</td>
-              <td className="tnum font-semibold">{totalsText(t.monthly, 2)} / month · {totalsText(t.annual, 2)} / year</td>
+              <td className="tnum font-semibold">{money(t.monthly, 2)} / month · {money(t.annual, 2)} / year</td>
             </tr></tbody></table>
           );
         })()}
@@ -2267,10 +2267,13 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
     {groups.length > 0 && !optionsMode && (() => {
       const t = premiumTotals(groups.flatMap(g => g.items));
       return (
-        <table><tbody><tr>
-          <td className="font-bold">Total of plans shown</td>
-          <td className="tnum font-bold">{totalsText(t.monthly, 2)} / month · {totalsText(t.annual, 2)} / year</td>
-        </tr></tbody></table>
+        <>
+          <table><tbody><tr>
+            <td className="font-bold">Total of plans shown</td>
+            <td className="tnum font-bold">{money(t.monthly, 2)} / month · {money(t.annual, 2)} / year</td>
+          </tr></tbody></table>
+          {t.fx && <p className="text-xs text-slate-500" style={{ fontStyle: "italic", marginTop: -4 }}>{FX_NOTE}</p>}
+        </>
       );
     })()}
   </>
@@ -2802,28 +2805,29 @@ const HierarchyPyramid = ({ title = true }) => {
 // paid-up, so neither is money leaving the client's pocket. Investments sit with savings.
 const currentPremiumSplit = (c) => {
   let protection = 0, savings = 0;
-  // This figure is measured against take-home income, which is in base currency. A plan
-  // denominated in something else cannot join that sum without an exchange rate the app
-  // does not hold, so it is set aside and reported separately rather than converted.
-  const foreign = emptyTotals();
+  // Measured against take-home income, so everything is brought to base currency first:
+  // SGD at par, US$ at the held rate. Whether a conversion was needed is reported, since
+  // the resulting figure depends on a rate that will move.
+  let fx = false;
   (c.existingPlans || []).forEach(pl => {
     if (!statusPaysPremium(pl.status)) return;
     const m = freqMonthlyEquiv(pl.allocation ?? pl.monthly, pl.allocationFreq);
     if (m <= 0) return;
     const cur = planCurrency(pl);
-    if (cur !== BASE_CURRENCY) { addTo(foreign, cur, m); return; }
+    if (cur === "USD") fx = true;
+    const b = toBase(cur, m);
     // an untyped plan is far more likely to be insurance than an endowment
-    if (planTypeMeta(pl.planType)?.group === "savings") savings += m; else protection += m;
+    if (planTypeMeta(pl.planType)?.group === "savings") savings += b; else protection += b;
   });
   (c.existingInvestments || []).forEach(iv => {
     if (isSpkHolding(iv)) return; // deducted from salary, not committed out of take-home pay
     const m = freqMonthlyEquiv(iv.allocation, iv.allocationFreq);
     if (m <= 0) return;
     const cur = planCurrency(iv);
-    if (cur !== BASE_CURRENCY) { addTo(foreign, cur, m); return; }
-    savings += m;
+    if (cur === "USD") fx = true;
+    savings += toBase(cur, m);
   });
-  return { protection, savings, total: protection + savings, foreign };
+  return { protection, savings, total: protection + savings, fx };
 };
 
 // Annualised commitment against the 10% protection / 20% savings guidelines, so the client
@@ -2855,12 +2859,7 @@ const CurrentPremiumBudget = ({ client, d }) => {
         Against a take-home income of <b>{money(d.net)} / month</b> — <b>{money(annualIncome)} / year</b> — this is what your
         in-force plans are already using. Lapsed, surrendered, APL and ETI policies are excluded.
       </p>
-      {split.foreign.size > 0 && (
-        <p className="text-xs text-slate-500 mb-1">
-          Held separately, because there is no exchange rate on file to measure them against your income:{" "}
-          <b>{totalsText(split.foreign, 2)} / month</b> in plans denominated in another currency.
-        </p>
-      )}
+      {split.fx && <p className="text-xs text-slate-500 mb-1" style={{ fontStyle: "italic" }}>{FX_NOTE}</p>}
       <table>
         <thead><tr>
           <th>Allocation</th>
@@ -3130,8 +3129,8 @@ const CurrentPlansTable = ({ client, report = false }) => {
         // frequencies differ per policy, so the only honest total is a monthly equivalent —
         // and only for policies actually being paid for right now
         const paying = g.rows.filter(r => statusPaysPremium(r.status) && !r.offSalary);
-        const monthlyByCur = paying.reduce((m, r) => addTo(m, r.currency || BASE_CURRENCY, freqMonthlyEquiv(r.premium, r.freq)), emptyTotals());
-        const monthly = paying.reduce((sum, r) => sum + freqMonthlyEquiv(r.premium, r.freq), 0);
+        const monthly = paying.reduce((sum, r) => sum + toBase(r.currency, freqMonthlyEquiv(r.premium, r.freq)), 0);
+        const groupFx = usesFx(g.rows);
         return (
           <div key={g.id} style={{ breakInside: "avoid" }} className={report ? "" : "mb-5"}>
             <div className={report ? "" : "font-semibold text-sm text-purple-900 mb-1"}>
@@ -3174,12 +3173,13 @@ const CurrentPlansTable = ({ client, report = false }) => {
                 {monthly > 0 && (
                   <tr>
                     <td className={td} colSpan={4} style={{ fontWeight: 600 }}>Total being paid — monthly equivalent</td>
-                    <td className={td} style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{totalsText(monthlyByCur, 2)}</td>
+                    <td className={td} style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{money(monthly, 2)}</td>
                     <td className={td}>Monthly</td>
                   </tr>
                 )}
               </tbody>
             </table>
+            {groupFx && <p className={report ? undefined : "text-xs text-slate-500 mt-1"} style={{ fontSize: 11, color: "#64748b", fontStyle: "italic", marginTop: 4 }}>{FX_NOTE}</p>}
           </div>
         );
       })}
@@ -3295,12 +3295,11 @@ const NEEDS_TRIANGLE_GROUPS = [
 function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
   const autoTotal = (categories) => plans
     .filter(p => (p.insured || "self") === person.id)
-    // only base-currency cover is summed: adding a US$ sum assured to a BND one would
-    // report a total the client does not have
-    .filter(p => planCurrency(p) === BASE_CURRENCY)
-    .flatMap(p => p.coverages || [])
+    // sums assured are brought to base currency before being added, so a US$ policy
+    // contributes what it is worth here rather than being counted at face value
+    .flatMap(p => (p.coverages || []).map(c => ({ ...c, currency: planCurrency(p) })))
     .filter(c => categories.includes(c.category))
-    .reduce((s, c) => s + num(c.amount), 0);
+    .reduce((s, c) => s + toBase(c.currency, c.amount), 0);
   const values = NEEDS_TRIANGLE_GROUPS.map(g => {
     const auto = autoTotal(g.categories);
     const raw = overrides[g.key];
@@ -3449,6 +3448,7 @@ function InsuranceNeedsSummary({ client, update }) {
 
   return (
     <div>
+      {usesFx(plans) && <p className="text-xs text-slate-500 mb-2" style={{ fontStyle: "italic" }}>{FX_NOTE}</p>}
       <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
       <div className="space-y-8">
         {persons.map(person => (

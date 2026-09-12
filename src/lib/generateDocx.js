@@ -20,13 +20,15 @@ const money = (n, dp = 0) => "$" + fmt(n, dp);
 const CUR_SYMBOLS = { BND: "$", SGD: "S$", USD: "US$" };
 const curOf = (x) => (CUR_SYMBOLS[String(x?.currency || "").toUpperCase()] ? String(x.currency).toUpperCase() : "BND");
 const moneyIn = (code, n, dp = 0) => (CUR_SYMBOLS[code] || "$") + fmt(n, dp);
-const totalsOf = (items, key, dp = 2) => {
-  const m = new Map();
-  (items || []).forEach(p => { const c = curOf(p); m.set(c, (m.get(c) || 0) + num(p[key])); });
-  return [...m.entries()].filter(([, v]) => v !== 0)
-    .sort((a, b) => (a[0] === "BND" ? -1 : b[0] === "BND" ? 1 : a[0].localeCompare(b[0])))
-    .map(([c, v]) => moneyIn(c, v, dp)).join(" \u00b7 ") || moneyIn("BND", 0, dp);
-};
+// BND and SGD are pegged at par; US$ converts at the same rate the app uses
+const FX_USD_TO_BASE = 1.3;
+const FX_TO_BASE = { BND: 1, SGD: 1, USD: FX_USD_TO_BASE };
+const toBase = (code, n) => num(n) * (FX_TO_BASE[code] || 1);
+const usesFx = (items) => (items || []).some(p => curOf(p) === "USD");
+const FX_NOTE = "Totals include US$ amounts converted at US$1 = " + money(FX_USD_TO_BASE, 2)
+  + ". Brunei and Singapore dollars are treated as equivalent.";
+const totalsOf = (items, key, dp = 2) =>
+  money((items || []).reduce((s, p) => s + toBase(curOf(p), p[key]), 0), dp);
 const todayLong = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 // ---- paragraph helpers ----
@@ -386,6 +388,10 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     children.push(buildTable([], [
       [{ text: "Total of plans shown", bold: true }, { text: totalsOf(groups.flatMap(g => g.items), "monthly") + " / month · " + totalsOf(groups.flatMap(g => g.items), "annual") + " / year", bold: true, align: AlignmentType.RIGHT }],
     ], [5400, 3600]));
+    // a converted total must carry its rate, same as on screen
+    if (usesFx(groups.flatMap(g => g.items))) {
+      children.push(new Paragraph({ children: [new TextRun({ text: FX_NOTE, italics: true, size: 18, color: GREY })] }));
+    }
   }
 
   // ---- 5. Plan Explanations ----
