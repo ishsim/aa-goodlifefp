@@ -16,6 +16,17 @@ const fmt = (n, dp = 0) => {
   return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 };
 const money = (n, dp = 0) => "$" + fmt(n, dp);
+// mirrors the app: a plan's premium prints in its own currency, and totals stay per-currency
+const CUR_SYMBOLS = { BND: "$", SGD: "S$", USD: "US$" };
+const curOf = (x) => (CUR_SYMBOLS[String(x?.currency || "").toUpperCase()] ? String(x.currency).toUpperCase() : "BND");
+const moneyIn = (code, n, dp = 0) => (CUR_SYMBOLS[code] || "$") + fmt(n, dp);
+const totalsOf = (items, key, dp = 2) => {
+  const m = new Map();
+  (items || []).forEach(p => { const c = curOf(p); m.set(c, (m.get(c) || 0) + num(p[key])); });
+  return [...m.entries()].filter(([, v]) => v !== 0)
+    .sort((a, b) => (a[0] === "BND" ? -1 : b[0] === "BND" ? 1 : a[0].localeCompare(b[0])))
+    .map(([c, v]) => moneyIn(c, v, dp)).join(" \u00b7 ") || moneyIn("BND", 0, dp);
+};
 const todayLong = () => new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
 // ---- paragraph helpers ----
@@ -358,8 +369,8 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
         items.map(p => [
           { text: p.label + (!optionsMode && tierMeta?.[p.tier] ? "  [" + tierMeta[p.tier].label + "]" : "") + (p.termText ? "\n" + p.termText : ""), bold: true },
           p.coverageText || "",
-          { text: money(num(p.monthly), 2), align: AlignmentType.RIGHT },
-          { text: money(num(p.annual), 2), align: AlignmentType.RIGHT },
+          { text: moneyIn(curOf(p), num(p.monthly), 2), align: AlignmentType.RIGHT },
+          { text: moneyIn(curOf(p), num(p.annual), 2), align: AlignmentType.RIGHT },
           p.returns || "",
         ]),
         [2800, 1600, 1300, 1300, 2000],
@@ -367,13 +378,13 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     });
     if (groups.length > 1 && !optionsMode) {
       children.push(buildTable([], [
-        [{ text: "Subtotal — " + g.name, bold: true }, { text: money(g.monthly, 2) + " / month · " + money(g.annual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
+        [{ text: "Subtotal — " + g.name, bold: true }, { text: totalsOf(g.items, "monthly") + " / month · " + totalsOf(g.items, "annual") + " / year", bold: true, align: AlignmentType.RIGHT }],
       ], [5400, 3600]));
     }
   });
   if (d.selected.length && !optionsMode) {
     children.push(buildTable([], [
-      [{ text: "Total of plans shown", bold: true }, { text: money(d.premMonthly, 2) + " / month · " + money(d.premAnnual, 2) + " / year", bold: true, align: AlignmentType.RIGHT }],
+      [{ text: "Total of plans shown", bold: true }, { text: totalsOf(groups.flatMap(g => g.items), "monthly") + " / month · " + totalsOf(groups.flatMap(g => g.items), "annual") + " / year", bold: true, align: AlignmentType.RIGHT }],
     ], [5400, 3600]));
   }
 

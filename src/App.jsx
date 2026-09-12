@@ -19,6 +19,27 @@ const fmt = (n, dp = 0) => {
   return v.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
 };
 const money = (n, dp = 0) => "$" + fmt(n, dp);
+// A plan can be denominated in something other than Brunei dollars. Only the plan's own
+// figures follow its currency — the client's income, assets and liabilities are always base
+// currency, and nothing here converts between them: without a rate on file, a converted
+// total would be a guess presented as a fact.
+const BASE_CURRENCY = "BND";
+const CURRENCIES = [["BND", "$"], ["SGD", "S$"], ["USD", "US$"]];
+const curSymbol = (code) => (CURRENCIES.find(([c]) => c === code) || CURRENCIES[0])[1];
+const moneyIn = (code, n, dp = 0) => curSymbol(code) + fmt(n, dp);
+const planCurrency = (x) => {
+  const code = String(x?.currency || "").trim().toUpperCase();
+  return CURRENCIES.some(([c]) => c === code) ? code : BASE_CURRENCY;
+};
+// Sums kept per currency, so a mixed set of plans reports each total separately rather than
+// adding francs to dollars. One currency in, one figure out — the ordinary case is unchanged.
+const emptyTotals = () => new Map();
+const addTo = (map, code, amount) => { map.set(code, (map.get(code) || 0) + amount); return map; };
+const totalsText = (map, dp = 0) => [...map.entries()]
+  .filter(([, v]) => v !== 0)
+  .sort((a, b) => (a[0] === BASE_CURRENCY ? -1 : b[0] === BASE_CURRENCY ? 1 : a[0].localeCompare(b[0])))
+  .map(([code, v]) => moneyIn(code, v, dp))
+  .join(" · ") || moneyIn(BASE_CURRENCY, 0, dp);
 const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 // immutably set a value at a dot path (numeric segments address array indices), e.g.
 // setDeep(obj, "savingsMaturity.0.age", "55") clones just the touched branch
@@ -538,13 +559,13 @@ const planCoverageRows = (p) => {
   // a premium waiver has no insured amount of its own, so it is kept on its category alone
   const rows = (p.coverages || []).filter(c => c.category && (num(c.amount) > 0 || isWaiver(c.category)));
   if (p.key === "RS" && num(p.monthlyIncome) > 0) {
-    return [{ id: "rs", category: "Retirement income", amount: p.monthlyIncome, display: money(num(p.monthlyIncome)) + "/month" + (p.retirementAge ? " from age " + p.retirementAge : "") }];
+    return [{ id: "rs", category: "Retirement income", amount: p.monthlyIncome, display: moneyIn(planCurrency(p), num(p.monthlyIncome)) + "/month" + (p.retirementAge ? " from age " + p.retirementAge : "") }];
   }
   return rows.map(c => ({ ...c,
     category: String(c.label || "").trim() || c.category,
     display: isWaiver(c.category) && !(num(c.amount) > 0)
       ? "Premiums waived on claim"
-      : withUnit(c.category, money(num(c.amount))) }));
+      : withUnit(c.category, moneyIn(planCurrency(p), num(c.amount))) }));
 };
 const planCoverageText = (p) => {
   const rows = planCoverageRows(p);
@@ -1175,6 +1196,13 @@ function buildReviewPrompt(c, d, notes) {
 }
 
 // ---------- small UI atoms ----------
+const CurrencySelect = ({ value, onChange, className = "" }) => (
+  <select value={planCurrency({ currency: value })} onChange={onChange}
+    title="Currency this plan is denominated in"
+    className={"w-full rounded-lg border border-slate-300 px-1.5 py-1.5 text-sm bg-white " + className}>
+    {CURRENCIES.map(([code]) => <option key={code} value={code}>{code}</option>)}
+  </select>
+);
 const Field = ({ label, children, hint }) => (
   <label className="block">
     <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">{label}</span>
@@ -1864,6 +1892,7 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
             <option value="optional">Worth considering (outside budget)</option>
             <option value="future">Future option</option>
           </select>
+          <span className="w-20"><CurrencySelect value={p.currency} onChange={e => setP({ currency: e.target.value })} /></span>
           <select value={p.insuredBy || "self"} onChange={e => setP({ insuredBy: e.target.value })} title="Move this plan to another person's table" className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
             {insuredOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
@@ -2180,6 +2209,13 @@ const TableOfContents = ({ entries }) => (
   </div>
 );
 
+// Totals are taken from the plans themselves and kept per currency, so a US$ plan is never
+// added to a BND one. With a single currency the output is identical to a plain sum.
+const premiumTotals = (items) => {
+  const m = emptyTotals(), a = emptyTotals();
+  (items || []).forEach(p => { const c = planCurrency(p); addTo(m, c, num(p.monthly)); addTo(a, c, num(p.annual)); });
+  return { monthly: m, annual: a };
+};
 const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = false }) => (
   <>
     {groups.map(g => (
@@ -2209,28 +2245,34 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
                       {term && <div className="text-xs text-slate-500 mt-1">{term}</div>}
                     </td>
                     <td>{planCoverageRows(p).map((cv, k) => <div key={k}>{cv.category}: {cv.display}</div>)}</td>
-                    <td className="tnum">{money(num(p.monthly), 2)}</td>
-                    <td className="tnum">{money(num(p.annual), 2)}</td>
+                    <td className="tnum">{moneyIn(planCurrency(p), num(p.monthly), 2)}</td>
+                    <td className="tnum">{moneyIn(planCurrency(p), num(p.annual), 2)}</td>
                     <td className="text-xs">{(p.returns || "").split(/\n+|\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
                   </tr>
                 );
               })}</tbody>
             </table>
           ))}
-        {groups.length > 1 && !optionsMode && (
-          <table><tbody><tr>
-            <td className="font-semibold">Subtotal — {g.name}</td>
-            <td className="tnum font-semibold">{money(g.monthly, 2)} / month · {money(g.annual, 2)} / year</td>
-          </tr></tbody></table>
-        )}
+        {groups.length > 1 && !optionsMode && (() => {
+          const t = premiumTotals(g.items);
+          return (
+            <table><tbody><tr>
+              <td className="font-semibold">Subtotal — {g.name}</td>
+              <td className="tnum font-semibold">{totalsText(t.monthly, 2)} / month · {totalsText(t.annual, 2)} / year</td>
+            </tr></tbody></table>
+          );
+        })()}
       </div>
     ))}
-    {groups.length > 0 && !optionsMode && (
-      <table><tbody><tr>
-        <td className="font-bold">Total of plans shown</td>
-        <td className="tnum font-bold">{money(grandMonthly, 2)} / month · {money(grandAnnual, 2)} / year</td>
-      </tr></tbody></table>
-    )}
+    {groups.length > 0 && !optionsMode && (() => {
+      const t = premiumTotals(groups.flatMap(g => g.items));
+      return (
+        <table><tbody><tr>
+          <td className="font-bold">Total of plans shown</td>
+          <td className="tnum font-bold">{totalsText(t.monthly, 2)} / month · {totalsText(t.annual, 2)} / year</td>
+        </tr></tbody></table>
+      );
+    })()}
   </>
 );
 
@@ -2395,7 +2437,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
             {EXISTING_PLAN_TYPES.map(t => <option key={t.type}>{t.type}</option>)}
           </select>
         </div>
-        <div className="col-span-3">
+        <div className="col-span-2">
           <label className="text-xs text-slate-500">Plan name</label>
           <Input value={row.planName || ""} onChange={e => set("planName", e.target.value)} />
         </div>
@@ -2409,6 +2451,10 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
             className={"w-full rounded-lg border px-2 py-1.5 text-sm " + (statusIsDead(row.status) ? "border-slate-400 bg-slate-200 text-slate-600" : statusPaysPremium(row.status) ? "border-slate-300 bg-white" : "border-amber-300 bg-amber-50 text-amber-900")}>
             {POLICY_STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+        </div>
+        <div className="col-span-1">
+          <label className="text-xs text-slate-500">Currency</label>
+          <CurrencySelect value={row.currency} onChange={e => set("currency", e.target.value)} />
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Insured</label>
@@ -2602,6 +2648,10 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
           <label className="text-xs text-slate-500">To age</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} placeholder="e.g. 100" />
         </div>
+        <div className="col-span-1">
+          <label className="text-xs text-slate-500">Currency</label>
+          <CurrencySelect value={row.currency} onChange={e => set("currency", e.target.value)} />
+        </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Current value $</label>
           <NumInput value={row.currentValue || ""} onChange={e => set("currentValue", e.target.value)} />
@@ -2752,19 +2802,28 @@ const HierarchyPyramid = ({ title = true }) => {
 // paid-up, so neither is money leaving the client's pocket. Investments sit with savings.
 const currentPremiumSplit = (c) => {
   let protection = 0, savings = 0;
+  // This figure is measured against take-home income, which is in base currency. A plan
+  // denominated in something else cannot join that sum without an exchange rate the app
+  // does not hold, so it is set aside and reported separately rather than converted.
+  const foreign = emptyTotals();
   (c.existingPlans || []).forEach(pl => {
     if (!statusPaysPremium(pl.status)) return;
     const m = freqMonthlyEquiv(pl.allocation ?? pl.monthly, pl.allocationFreq);
     if (m <= 0) return;
+    const cur = planCurrency(pl);
+    if (cur !== BASE_CURRENCY) { addTo(foreign, cur, m); return; }
     // an untyped plan is far more likely to be insurance than an endowment
     if (planTypeMeta(pl.planType)?.group === "savings") savings += m; else protection += m;
   });
   (c.existingInvestments || []).forEach(iv => {
     if (isSpkHolding(iv)) return; // deducted from salary, not committed out of take-home pay
     const m = freqMonthlyEquiv(iv.allocation, iv.allocationFreq);
-    if (m > 0) savings += m;
+    if (m <= 0) return;
+    const cur = planCurrency(iv);
+    if (cur !== BASE_CURRENCY) { addTo(foreign, cur, m); return; }
+    savings += m;
   });
-  return { protection, savings, total: protection + savings };
+  return { protection, savings, total: protection + savings, foreign };
 };
 
 // Annualised commitment against the 10% protection / 20% savings guidelines, so the client
@@ -2796,6 +2855,12 @@ const CurrentPremiumBudget = ({ client, d }) => {
         Against a take-home income of <b>{money(d.net)} / month</b> — <b>{money(annualIncome)} / year</b> — this is what your
         in-force plans are already using. Lapsed, surrendered, APL and ETI policies are excluded.
       </p>
+      {split.foreign.size > 0 && (
+        <p className="text-xs text-slate-500 mb-1">
+          Held separately, because there is no exchange rate on file to measure them against your income:{" "}
+          <b>{totalsText(split.foreign, 2)} / month</b> in plans denominated in another currency.
+        </p>
+      )}
       <table>
         <thead><tr>
           <th>Allocation</th>
@@ -3040,15 +3105,16 @@ const CurrentPlansTable = ({ client, report = false }) => {
       kind: "plan", id: x.id, policyNo: x.policyNumber, date: x.policyDate,
       name: x.planName || x.planType || "Existing plan", sub: x.planName ? x.planType : "",
       status: x.status || "active",
+      currency: planCurrency(x),
       cover: (x.coverages || []).filter(c => c.category && num(c.amount) > 0)
-        .map(c => c.category + ": " + money(num(c.amount))),
+        .map(c => c.category + ": " + withUnit(c.category, moneyIn(planCurrency(x), num(c.amount)))),
       premium: num(x.allocation ?? x.monthly), freq: x.allocationFreq,
     })),
     ...(client.existingInvestments || []).filter(x => (x.insured || "self") === id).map(x => ({
       kind: "investment", id: x.id, policyNo: x.policyNumber, date: x.policyDate,
       name: x.description || x.type || "Investment", sub: x.type && x.description ? x.type : "",
-      status: "active", offSalary: isSpkHolding(x),
-      cover: num(x.currentValue) > 0 ? ["Current value: " + money(num(x.currentValue))] : [],
+      status: "active", offSalary: isSpkHolding(x), currency: planCurrency(x),
+      cover: num(x.currentValue) > 0 ? ["Current value: " + moneyIn(planCurrency(x), num(x.currentValue))] : [],
       premium: num(x.allocation), freq: x.allocationFreq,
     })),
   ];
@@ -3063,8 +3129,9 @@ const CurrentPlansTable = ({ client, report = false }) => {
       {groups.map(g => {
         // frequencies differ per policy, so the only honest total is a monthly equivalent —
         // and only for policies actually being paid for right now
-        const monthly = g.rows.filter(r => statusPaysPremium(r.status) && !r.offSalary)
-          .reduce((sum, r) => sum + freqMonthlyEquiv(r.premium, r.freq), 0);
+        const paying = g.rows.filter(r => statusPaysPremium(r.status) && !r.offSalary);
+        const monthlyByCur = paying.reduce((m, r) => addTo(m, r.currency || BASE_CURRENCY, freqMonthlyEquiv(r.premium, r.freq)), emptyTotals());
+        const monthly = paying.reduce((sum, r) => sum + freqMonthlyEquiv(r.premium, r.freq), 0);
         return (
           <div key={g.id} style={{ breakInside: "avoid" }} className={report ? "" : "mb-5"}>
             <div className={report ? "" : "font-semibold text-sm text-purple-900 mb-1"}>
@@ -3099,7 +3166,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
                         {r.offSalary && <div className="text-xs font-semibold" style={{ color: "#b45309" }}>Statutory — deducted from salary, not counted in the total</div>}
                       </td>
                       <td className={td}>{r.cover.length ? r.cover.map((c, j) => <div key={j}>{c}</div>) : "—"}</td>
-                      <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? money(r.premium, 2) : "—"}</td>
+                      <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.premium > 0 ? moneyIn(r.currency || BASE_CURRENCY, r.premium, 2) : "—"}</td>
                       <td className={td}>{r.premium > 0 ? freqLabel(r.freq) : "—"}</td>
                     </tr>
                   );
@@ -3107,7 +3174,7 @@ const CurrentPlansTable = ({ client, report = false }) => {
                 {monthly > 0 && (
                   <tr>
                     <td className={td} colSpan={4} style={{ fontWeight: 600 }}>Total being paid — monthly equivalent</td>
-                    <td className={td} style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{money(monthly, 2)}</td>
+                    <td className={td} style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{totalsText(monthlyByCur, 2)}</td>
                     <td className={td}>Monthly</td>
                   </tr>
                 )}
@@ -3228,6 +3295,9 @@ const NEEDS_TRIANGLE_GROUPS = [
 function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
   const autoTotal = (categories) => plans
     .filter(p => (p.insured || "self") === person.id)
+    // only base-currency cover is summed: adding a US$ sum assured to a BND one would
+    // report a total the client does not have
+    .filter(p => planCurrency(p) === BASE_CURRENCY)
     .flatMap(p => p.coverages || [])
     .filter(c => categories.includes(c.category))
     .reduce((s, c) => s + num(c.amount), 0);
@@ -3427,7 +3497,10 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   const insuredById = (id) => insuredList.find(p => p.id === id) || insuredList[0];
   // bars sit on the CLIENT's age axis: shift each insured person's ages by the age gap
   const offsetOf = (who) => (who.age != null && clientAge > 0 ? clientAge - who.age : 0);
-  const kfmt = (v) => v >= 1000000 ? "$" + fmt(v / 1000000, 1) + "M" : v >= 1000 ? "$" + fmt(v / 1000, v % 1000 ? 1 : 0) + "k" : v > 0 ? "$" + fmt(v) : "";
+  const kfmt = (v, code = BASE_CURRENCY) => { const sym = curSymbol(code);
+    return v >= 1000000 ? sym + fmt(v / 1000000, 1) + "M" : v >= 1000 ? sym + fmt(v / 1000, v % 1000 ? 1 : 0) + "k" : v > 0 ? sym + fmt(v) : ""; };
+  // a bar states its own plan's currency; a rate-based benefit is written out in full
+  const amtFor = (code, cat, v) => withUnit(cat, hasUnit(cat) ? moneyIn(code, v) : kfmt(v, code));
 
   const items = useMemo(() => {
     // a plan can carry coverage in several granular categories at once (e.g. Death +
@@ -3446,6 +3519,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const allocAmt = num(p.allocation ?? p.monthly);
         const premEnd = policyPremiumEndAge(p, dob);
         const label = p.planName || p.planType || "Existing plan";
+        const cur = planCurrency(p);
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
           const bucket = CATEGORY_BUCKET[c.category] || "Others";
@@ -3457,7 +3531,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           id: (p.id || "cur" + i) + "-" + bucket,
           origin: "current",
           label, category: bucket, start, end, insured: who, offset: offsetOf(who),
-          covShort: withUnit(covs[0]?.category, (hasUnit(covs[0]?.category) ? money : kfmt)(Math.max(...covs.map(c => num(c.amount))))),
+          currency: cur,
+          covShort: amtFor(cur, covs[0]?.category, Math.max(...covs.map(c => num(c.amount)))),
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           status: p.status || "active",
@@ -3535,6 +3610,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const invDob = insuredById(r.insured || "self").dob;
         const start = Math.max(0, Math.min(policyStartAge(r, invDob), TIMELINE_MAX_AGE));
         const monthlyEquiv = freqMonthlyEquiv(r.allocation, r.allocationFreq);
+        const cur = planCurrency(r);
         // flatten rate groups → individual horizon points for the headline figure + details list
         const horizons = (r.returnRates || []).flatMap(g => (g.horizons || []).map(h => ({
           rate: num(g.rate), years: num(h.years), atAge: num(h.atAge),
@@ -3563,12 +3639,13 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           // a named "Others" holding gets its own timeline row under that name
           category: (r.category === "Others" && String(r.categoryLabel || "").trim()) || r.category || "Investment Portfolio",
           start, end, insured: who, offset: offsetOf(who),
+          currency: cur,
           covShort: r.type === "SPK"
             // SPK's story is the two things it pays, not its running balance
-            ? [num(r.spkLumpSum) > 0 ? kfmt(num(r.spkLumpSum)) + " at " + SPK_PAYOUT_AGE : null,
-               num(r.spkAnnuityMonthly) > 0 ? money(num(r.spkAnnuityMonthly)) + "/mo after" : null]
-                .filter(Boolean).join(" · ") || kfmt(num(r.currentValue))
-            : kfmt(num(r.currentValue)) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected) : ""),
+            ? [num(r.spkLumpSum) > 0 ? kfmt(num(r.spkLumpSum), cur) + " at " + SPK_PAYOUT_AGE : null,
+               num(r.spkAnnuityMonthly) > 0 ? moneyIn(cur, num(r.spkAnnuityMonthly)) + "/mo after" : null]
+                .filter(Boolean).join(" · ") || kfmt(num(r.currentValue), cur)
+            : kfmt(num(r.currentValue), cur) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected, cur) : ""),
           spkAnnuityMonthly: num(r.spkAnnuityMonthly),
           stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
           lumpSumAge: r.type === "SPK" && end > SPK_PAYOUT_AGE ? SPK_PAYOUT_AGE : null,
@@ -3610,7 +3687,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       const covRows = planCoverageRows(p);
       const common = {
         origin: "recommended",
-        label: p.label, start, end, insured: who, offset: offsetOf(who),
+        label: p.label, start, end, insured: who, offset: offsetOf(who), currency: planCurrency(p),
         stepAge: hasStep ? 65 : null, stepAmt: hasStep ? baseTotal : null,
         status: "active", savings: p.category !== "Risk Management",
         payoutStart: p.key === "RS" && num(p.retirementAge) > 0 ? num(p.retirementAge) : null,
@@ -3628,7 +3705,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       };
       // an annuity has no coverage breakdown — it sits on the Retirement row on its own
       if (p.key === "RS") {
-        return [{ ...common, id: "reco-" + p.id + "-RS", category: "Retirement", covShort: money(num(p.monthlyIncome)) + "/mo" }];
+        return [{ ...common, id: "reco-" + p.id + "-RS", category: "Retirement", covShort: moneyIn(planCurrency(p), num(p.monthlyIncome)) + "/mo" }];
       }
       const byBucket = new Map();
       (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
@@ -3643,7 +3720,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           ...common,
           id: "reco-" + (p.id || i) + "-" + bucket,
           category: bucket,
-          covShort: withUnit(covs[0]?.category, (hasUnit(covs[0]?.category) ? money : kfmt)(boosted > 0 ? boosted : peak)),
+          covShort: amtFor(planCurrency(p), covs[0]?.category, boosted > 0 ? boosted : peak),
         };
       });
     });
@@ -3899,8 +3976,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         // a loan milestone names what is still owed rather than a growth rate
         ? entries[0].text
         : entries.length === 1
-          ? entries[0].rate + "% · " + kfmt(hi)
-          : kfmt(lo) + "–" + kfmt(hi);
+          ? entries[0].rate + "% · " + kfmt(hi, p.currency)
+          : kfmt(lo, p.currency) + "–" + kfmt(hi, p.currency);
       // drop a label rather than let two overlap; the tick itself always stays
       const room = cx - lastLabelX > 62;
       if (room) lastLabelX = cx;
@@ -4015,7 +4092,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                                   fill="#f59e0b" stroke="#fff" strokeWidth="1" pointerEvents="none" />
                               )}
                               {gA && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gA, y)}
-                              {gB && gB.w > 60 && haloLabel(p.spkAnnuityMonthly > 0 ? money(p.spkAnnuityMonthly) + "/mo" : "annuity", gB, y)}
+                              {gB && gB.w > 60 && haloLabel(p.spkAnnuityMonthly > 0 ? moneyIn(p.currency || BASE_CURRENCY, p.spkAnnuityMonthly) + "/mo" : "annuity", gB, y)}
                               {premBracket(p, y)}
                               {projectionMarks(p, y)}
                             </g>
