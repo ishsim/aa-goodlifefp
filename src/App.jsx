@@ -3555,6 +3555,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const label = p.planName || p.planType || "Existing plan";
         const cur = planCurrency(p);
         const coupon = num(p.couponAmount), couponStart = num(p.couponStartAge);
+        const couponsShown = coupon > 0 && couponStart > 0;
+        // the coupon run ends a stated number of years on, or at maturity if left open
+        const couponEnd = Math.min(num(p.couponYears) > 0 ? couponStart + num(p.couponYears) : end, end);
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
           const bucket = CATEGORY_BUCKET[c.category] || "Others";
@@ -3575,13 +3578,20 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           // a deferred annuity reads in three acts: pay in, wait, then draw income
           payoutStart: p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? num(p.payoutStartAge) : null,
           terminalDividend: num(p.terminalDividend),
-          // A coupon-paying endowment has two dates worth seeing: when the coupons start,
-          // and what lands at maturity. Accumulated is the headline, since leaving them in
-          // is the default; the withdrawn figure sits in the details beside it.
-          maturityAmount: num(p.maturityAccumulated) || num(p.maturityWithdrawn),
-          projections: coupon > 0 && couponStart > 0
-            ? [{ age: couponStart, text: moneyIn(cur, coupon) + "/yr" + (num(p.couponYears) > 0 ? " x" + num(p.couponYears) : "") }]
-            : [],
+          // A coupon-paying endowment pays out across a span, so the span is drawn rather
+          // than just its first year. Once the coupons are on the chart, the honest maturity
+          // figure is the one that assumes they were taken: showing money leaving the policy
+          // every year alongside the accumulated maturity states two different plans at once.
+          couponAmount: coupon,
+          couponStart: couponsShown ? couponStart : 0,
+          couponEnd: couponsShown ? couponEnd : 0,
+          maturityAmount: couponsShown
+            ? (num(p.maturityWithdrawn) || num(p.maturityAccumulated))
+            : (num(p.maturityAccumulated) || num(p.maturityWithdrawn)),
+          // named on the bar, so the reader knows which of the two figures they are seeing
+          maturityBasis: couponsShown
+            ? (num(p.maturityWithdrawn) > 0 ? "drawn" : "accumulated")
+            : (num(p.maturityAccumulated) > 0 ? "accumulated" : "drawn"),
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Plan type", p.planType], ["Status", statusLabel(p.status)],
@@ -3825,7 +3835,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   // extra band above a row whose plans carry projected values, so the marker labels
   // have somewhere to sit that is not on top of the bar above them
   const PROJ_H = 14;
-  const planHasProj = (pl) => (pl.projections || []).length > 0;
+  const planHasProj = (pl) => (pl.projections || []).length > 0 || pl.couponStart > 0;
   // each lane reserves its own label band, so two plans sharing a row never share ticks
   const laneOffset = (row, pi) => {
     let y = ROW_PAD;
@@ -3998,6 +4008,34 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         )}
         {gPrem && haloLabel(p.label + (p.covShort ? " · " + p.covShort : ""), gPrem, y)}
         {gPay && gPay.w > 46 && haloLabel("payout", gPay, y)}
+      </g>
+    );
+  };
+
+  // Premiums go in, coupons come out. The premium bracket is a dark rule above the bar;
+  // coupons get a teal band below it with its own end caps, so the two directions of money
+  // never read as the same thing.
+  const COUPON_COLOR = "#0d9488";
+  // "$30.5k at 55 · drawn" — the basis matters when the two figures differ by tens of thousands
+  const maturityLabel = (p) => kfmt(p.maturityAmount, p.currency) + " at " + Math.round(p.end)
+    + (p.maturityBasis ? " \u00b7 " + p.maturityBasis : "");
+  const couponBand = (p, y) => {
+    if (!(p.couponStart > 0) || !(p.couponEnd > p.couponStart)) return null;
+    const g = clipX(p.couponStart + p.offset, p.couponEnd + p.offset);
+    if (!g) return null;
+    const top = y + LANE_H - 4.5, h = 3.5;
+    const label = (p.couponAmount > 0 ? moneyIn(p.currency || BASE_CURRENCY, p.couponAmount) + "/yr" : "coupons")
+      + " · ages " + Math.round(p.couponStart) + "\u2013" + Math.round(p.couponEnd);
+    return (
+      <g key="coupon" pointerEvents="none">
+        <rect x={g.x0} y={top} width={g.w} height={h} rx="1.5" fill={COUPON_COLOR} />
+        <line x1={g.x0} y1={top - 3.5} x2={g.x0} y2={top + h + 2} stroke={COUPON_COLOR} strokeWidth="2" />
+        <line x1={g.x0 + g.w} y1={top - 3.5} x2={g.x0 + g.w} y2={top + h + 2} stroke={COUPON_COLOR} strokeWidth="2" />
+        {g.w > 64 && (<>
+          <text x={g.x0 + g.w / 2} y={y - 3} textAnchor="middle" fontSize="7.5" fontWeight="700"
+            stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{label}</text>
+          <text x={g.x0 + g.w / 2} y={y - 3} textAnchor="middle" fontSize="7.5" fill="#0f766e" fontWeight="700">{label}</text>
+        </>)}
       </g>
     );
   };
@@ -4191,6 +4229,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                             <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={fill} opacity={opacity} stroke={stroke} strokeWidth="1.5" strokeDasharray={dash} {...common} />
                             {(p.savings && !dead ? haloLabel : barLabel)(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
+                            {couponBand(p, y)}
                             {projectionMarks(p, y)}
                             {/* what matures, where it matures — labelled to the side so it
                                 never fights the bar's own label for space */}
@@ -4199,8 +4238,8 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                                 <rect x={x(ce) - 4.5} y={y + LANE_H / 2 - 4.5} width="9" height="9" transform={`rotate(45 ${x(ce)} ${y + LANE_H / 2})`}
                                   fill="#f59e0b" stroke="#fff" strokeWidth="1" />
                                 <text x={x(ce) + 7} y={y + LANE_H / 2 + 3} fontSize="7.5" fontWeight="700"
-                                  stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{kfmt(p.maturityAmount, p.currency) + " at " + Math.round(p.end)}</text>
-                                <text x={x(ce) + 7} y={y + LANE_H / 2 + 3} fontSize="7.5" fill="#b45309" fontWeight="700">{kfmt(p.maturityAmount, p.currency) + " at " + Math.round(p.end)}</text>
+                                  stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{maturityLabel(p)}</text>
+                                <text x={x(ce) + 7} y={y + LANE_H / 2 + 3} fontSize="7.5" fill="#b45309" fontWeight="700">{maturityLabel(p)}</text>
                               </g>
                             )}
                           </g>
@@ -4285,6 +4324,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             <span className="inline-flex items-center gap-1.5">
               <svg width="24" height="10"><line x1="2" y1="5" x2="22" y2="5" stroke="#0f172a" strokeWidth="2" /><line x1="2" y1="1" x2="2" y2="9" stroke="#0f172a" strokeWidth="2" /><line x1="22" y1="1" x2="22" y2="9" stroke="#0f172a" strokeWidth="2" /></svg>
               premium / contribution period
+            </span>
+          )}
+          {items.some(it => it.couponStart > 0) && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="26" height="12"><rect x="1" y="6" width="24" height="3.5" rx="1.5" fill="#0d9488" /><line x1="1" y1="3" x2="1" y2="11" stroke="#0d9488" strokeWidth="2" /><line x1="25" y1="3" x2="25" y2="11" stroke="#0d9488" strokeWidth="2" /></svg>
+              coupon pay-out period
             </span>
           )}
           {items.some(it => it.kind === "liability") && (
