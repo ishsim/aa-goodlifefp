@@ -531,15 +531,15 @@ const PRODUCT_CATALOGUE = [
   { key: "STP", label: "Income Protection: Death, Disability + Critical Illness", category: "Risk Management", monthly: 106.79, annual: 1227.5, returns: "No returns", tier: "optional",
     covers: [["Death", "500000"], ["Disability", "500000"], ["Health (Major Critical Illness)", "120000"]] },
   { key: "ILP", label: "Investment with Unit Trusts — Growth Fund", category: "Goal Planning", monthly: 250, annual: 3000, returns: "Projection at 4–8%: Age 50 $35,300–45,700 · Age 60 $74,400–122,500 · Age 68 $113,500–228,100", tier: "future",
-    covers: [["Others", "15000"]] },
+    covers: [["Savings / Investments", "15000"]] },
   { key: "RS", label: "Guaranteed Annuity for Retirement", category: "Retirement Planning", monthly: 327.99, annual: 3770, returns: "Capital $82,940 · Income $90,000 · Dividends $48,715 · Terminal $56,055", tier: "future",
     covers: [["Retirement", "500"]], retirementAge: "60", monthlyIncome: "500" },
   { key: "SWB", label: "Wealth Accumulation Endowment", category: "Goal Planning", monthly: 0, annual: 0, returns: "Participating plan — Reversionary and Terminal Bonuses are not guaranteed. Projected at 4.25% p.a. investment return.", tier: "future",
-    covers: [["Others", "50000"]] },
+    covers: [["Savings / Investments", "50000"]] },
   { key: "SFR", label: "Guaranteed Yearly Coupons", category: "Goal Planning", monthly: 0, annual: 0, returns: "Guaranteed yearly coupons plus non-guaranteed Reversionary and Terminal Bonuses.", tier: "future",
-    covers: [["Others", "50000"]] },
+    covers: [["Savings / Investments", "50000"]] },
   { key: "SFG", label: "Fixed-Term Savings with Guaranteed Maturity", category: "Goal Planning", monthly: 0, annual: 0, returns: "Guaranteed Maturity Amount of 525%–575% of the Insured Amount depending on policy term, plus non-guaranteed Reversionary and Terminal Bonuses.", tier: "future",
-    covers: [["Others", "50000"]] },
+    covers: [["Savings / Investments", "50000"]] },
 ];
 // ASCC's coverage option doubles as its coverage end age
 const ASCC_OPTIONS = [["65", "Value Plan (to Age 65)"], ["75", "Value Plan (to Age 75)"], ["100", "Life Plan (to Age 100)"]];
@@ -2417,7 +2417,7 @@ const PLAN_COVERAGE_CATEGORIES = [
   "Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)",
   "Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)",
   "Premium Waiver (Payor)", "Premium Waiver (Insured)",
-  "Retirement", "Child Savings", "Others",
+  "Retirement", "Savings / Investments", "Child Savings", "Others",
 ];
 // Some benefits are a rate, not a sum assured — a hospital income plan paying "$50" pays
 // $50 a day, and reading it as a lump sum overstates the cover badly.
@@ -2447,9 +2447,18 @@ const CATEGORY_BUCKET = {
   // a waiver pays no sum assured — it keeps the policy alive, so it sits with "Others"
   "Premium Waiver (Payor)": "Others", "Premium Waiver (Insured)": "Others",
   "Retirement": "Retirement", "Child Savings": "Child Savings", "Others": "Others",
+  "Savings / Investments": "Savings & Investments",
+};
+const SAVINGS_BUCKET = "Savings & Investments";
+// An endowment or investment plan filed under the catch-all belongs with savings rather
+// than sitting among premium waivers and odds and ends. Resolving it here rather than by
+// rewriting records means plans saved before this category existed move too.
+const bucketFor = (category, savings) => {
+  const b = CATEGORY_BUCKET[category] || "Others";
+  return b === "Others" && savings ? SAVINGS_BUCKET : b;
 };
 // Overview timeline row buckets, in display order
-const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)", "Retirement", "Child Savings", "Others"];
+const EXISTING_PLAN_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)", "Retirement", "Savings & Investments", "Child Savings", "Others"];
 // debt is not cover, so it never appears as a "gap" row — it only shows when there is one
 const LIABILITY_ROW = "Loans & Liabilities";
 // gap categories checked for dependents on the Overview — retirement/child-savings/others aren't flagged as "missing" for a child
@@ -3648,7 +3657,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const couponTotal = coupon * couponRunYears;
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
-          const bucket = CATEGORY_BUCKET[c.category] || "Others";
+          const bucket = bucketFor(c.category, isSavingsPlanType(p.planType));
           if (!byBucket.has(bucket)) byBucket.set(bucket, []);
           byBucket.get(bucket).push(c);
         });
@@ -3867,7 +3876,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       }
       const byBucket = new Map();
       (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
-        const bucket = CATEGORY_BUCKET[c.category] || "Others";
+        const bucket = bucketFor(c.category, p.category !== "Risk Management");
         if (!byBucket.has(bucket)) byBucket.set(bucket, []);
         byBucket.get(bucket).push(c);
       });
