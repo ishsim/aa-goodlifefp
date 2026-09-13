@@ -3558,6 +3558,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const couponsShown = coupon > 0 && couponStart > 0;
         // the coupon run ends a stated number of years on, or at maturity if left open
         const couponEnd = Math.min(num(p.couponYears) > 0 ? couponStart + num(p.couponYears) : end, end);
+        // taken off the same span the band draws, so the total and the chart cannot disagree
+        const couponRunYears = couponsShown ? Math.max(0, Math.round(couponEnd - couponStart)) : 0;
+        const couponTotal = coupon * couponRunYears;
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
           const bucket = CATEGORY_BUCKET[c.category] || "Others";
@@ -3604,8 +3607,18 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                 + (couponStart > 0 ? " from age " + couponStart : "")
                 + (num(p.couponYears) > 0 ? " for " + num(p.couponYears) + " years" : "")
               : ""],
+            ["Coupons available in total", couponTotal > 0
+              ? moneyIn(cur, couponTotal) + " over " + couponRunYears + " years" : ""],
             ["Maturity — coupons accumulated", num(p.maturityAccumulated) > 0 ? moneyIn(cur, num(p.maturityAccumulated)) : ""],
             ["Maturity — coupons withdrawn yearly", num(p.maturityWithdrawn) > 0 ? moneyIn(cur, num(p.maturityWithdrawn)) : ""],
+            // The two routes are only comparable once the coupons taken are added back to
+            // the lower maturity figure — otherwise accumulating looks better than it is.
+            ["Coupons drawn + maturity", couponTotal > 0 && num(p.maturityWithdrawn) > 0
+              ? moneyIn(cur, couponTotal + num(p.maturityWithdrawn))
+                + (num(p.maturityAccumulated) > 0
+                  ? " · accumulating instead: " + moneyIn(cur, num(p.maturityAccumulated))
+                  : "")
+              : ""],
             ["Policy date", fmtDate(p.policyDate)],
             ...covs.map(c => [c.category, withUnit(c.category, moneyIn(cur, num(c.amount)))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
