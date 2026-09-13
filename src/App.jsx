@@ -2536,6 +2536,34 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
             </div>
           </>
         )}
+        {row.planType === "Endowment" && (
+          <>
+            <div className="col-span-12 -mb-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mt-1">Guaranteed yearly coupons (leave blank if the plan pays none)</div>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-slate-500">Yearly coupon</label>
+              <NumInput value={row.couponAmount || ""} onChange={e => set("couponAmount", e.target.value)} placeholder="$ / year" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-slate-500">Coupons start at age</label>
+              <NumInput value={row.couponStartAge || ""} onChange={e => set("couponStartAge", e.target.value)} placeholder="e.g. 38" />
+              <div className="text-[11px] text-slate-400 mt-0.5">2nd anniversary on 5-pay, 4th on 10-pay</div>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-slate-500">Payable for (years)</label>
+              <NumInput value={row.couponYears || ""} onChange={e => set("couponYears", e.target.value)} placeholder="e.g. 16" />
+            </div>
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Maturity if accumulated</label>
+              <NumInput value={row.maturityAccumulated || ""} onChange={e => set("maturityAccumulated", e.target.value)} placeholder="$ coupons left with AIA" />
+            </div>
+            <div className="col-span-3">
+              <label className="text-xs text-slate-500">Maturity if withdrawn yearly</label>
+              <NumInput value={row.maturityWithdrawn || ""} onChange={e => set("maturityWithdrawn", e.target.value)} placeholder="$ coupons taken each year" />
+            </div>
+          </>
+        )}
         <div className="col-span-2">
           <label className="text-xs text-slate-500">{row.planType === "Retirement Annuity" ? "Payout to age" : "To age"}</label>
           <NumInput value={row.toAge || ""} onChange={e => set("toAge", e.target.value)} />
@@ -3526,6 +3554,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         const premEnd = policyPremiumEndAge(p, dob);
         const label = p.planName || p.planType || "Existing plan";
         const cur = planCurrency(p);
+        const coupon = num(p.couponAmount), couponStart = num(p.couponStartAge);
         const byBucket = new Map();
         (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
           const bucket = CATEGORY_BUCKET[c.category] || "Others";
@@ -3546,18 +3575,32 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           // a deferred annuity reads in three acts: pay in, wait, then draw income
           payoutStart: p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? num(p.payoutStartAge) : null,
           terminalDividend: num(p.terminalDividend),
+          // A coupon-paying endowment has two dates worth seeing: when the coupons start,
+          // and what lands at maturity. Accumulated is the headline, since leaving them in
+          // is the default; the withdrawn figure sits in the details beside it.
+          maturityAmount: num(p.maturityAccumulated) || num(p.maturityWithdrawn),
+          projections: coupon > 0 && couponStart > 0
+            ? [{ age: couponStart, text: moneyIn(cur, coupon) + "/yr" + (num(p.couponYears) > 0 ? " x" + num(p.couponYears) : "") }]
+            : [],
           details: [
             ["Insured", who.name + (who.age != null ? " (age " + who.age + ")" : "")],
             ["Plan type", p.planType], ["Status", statusLabel(p.status)],
             ["Policy number", p.policyNumber],
             ["Annuity payout", p.planType === "Retirement Annuity" && num(p.payoutStartAge) > 0 ? "age " + num(p.payoutStartAge) + " – " + end : ""],
             ["Expected dividends", num(p.dividendPayout) > 0 ? money(num(p.dividendPayout)) : ""],
-            ["Terminal dividend", num(p.terminalDividend) > 0 ? money(num(p.terminalDividend)) : ""],
+            ["Terminal dividend", num(p.terminalDividend) > 0 ? moneyIn(cur, num(p.terminalDividend)) : ""],
+            ["Yearly coupon", coupon > 0
+              ? moneyIn(cur, coupon) + " / year"
+                + (couponStart > 0 ? " from age " + couponStart : "")
+                + (num(p.couponYears) > 0 ? " for " + num(p.couponYears) + " years" : "")
+              : ""],
+            ["Maturity — coupons accumulated", num(p.maturityAccumulated) > 0 ? moneyIn(cur, num(p.maturityAccumulated)) : ""],
+            ["Maturity — coupons withdrawn yearly", num(p.maturityWithdrawn) > 0 ? moneyIn(cur, num(p.maturityWithdrawn)) : ""],
             ["Policy date", fmtDate(p.policyDate)],
-            ...covs.map(c => [c.category, money(num(c.amount))]),
+            ...covs.map(c => [c.category, withUnit(c.category, moneyIn(cur, num(c.amount)))]),
             ["Coverage ages", start + " – " + end + " (own age)"],
             ["Steps down", hasStep ? "to " + money(stepAmt) + " at age " + stepAge : ""],
-            ["Allocation", allocAmt > 0 ? money(allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : ""],
+            ["Allocation", allocAmt > 0 ? moneyIn(cur, allocAmt, 2) + " / " + freqLabel(p.allocationFreq).toLowerCase() : ""],
             ["Premium ends", premEnd > 0 ? "age " + premEnd + (p.policyExpiry ? " (" + fmtDate(p.policyExpiry) + ")" : "") : ""],
             ["Notes", p.notes],
           ].filter(([, v]) => v),
@@ -4149,6 +4192,17 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                             {(p.savings && !dead ? haloLabel : barLabel)(p.label + (p.covShort ? " · " + p.covShort : ""), g, y)}
                             {premBracket(p, y)}
                             {projectionMarks(p, y)}
+                            {/* what matures, where it matures — labelled to the side so it
+                                never fights the bar's own label for space */}
+                            {p.maturityAmount > 0 && !dead && clipX(ce, ce) && (
+                              <g pointerEvents="none">
+                                <rect x={x(ce) - 4.5} y={y + LANE_H / 2 - 4.5} width="9" height="9" transform={`rotate(45 ${x(ce)} ${y + LANE_H / 2})`}
+                                  fill="#f59e0b" stroke="#fff" strokeWidth="1" />
+                                <text x={x(ce) + 7} y={y + LANE_H / 2 + 3} fontSize="7.5" fontWeight="700"
+                                  stroke="#fff" strokeWidth="2.5" strokeLinejoin="round">{kfmt(p.maturityAmount, p.currency) + " at " + Math.round(p.end)}</text>
+                                <text x={x(ce) + 7} y={y + LANE_H / 2 + 3} fontSize="7.5" fill="#b45309" fontWeight="700">{kfmt(p.maturityAmount, p.currency) + " at " + Math.round(p.end)}</text>
+                              </g>
+                            )}
                           </g>
                         );
                       })}
