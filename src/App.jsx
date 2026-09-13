@@ -567,6 +567,33 @@ const planCoverageRows = (p) => {
       ? "Premiums waived on claim"
       : withUnit(c.category, moneyIn(planCurrency(p), num(c.amount))) }));
 };
+// Illustrated surrender / maturity values for a recommended plan, entered by age from the
+// Benefit Illustration. Same rate-then-horizon shape the investment portfolio uses, so the
+// Overview markers and the pinned table read it without special cases — but the figures are
+// typed rather than projected, because a par plan's values come off AIA's illustration.
+const planProjections = (p, baseAge = 0) => (p.returnRates || []).flatMap(g =>
+  (g.horizons || []).map(h => {
+    const age = num(h.atAge), value = num(h.value);
+    if (!(age > 0) || !(value > 0)) return null;
+    const years = Math.max(0, age - num(baseAge));
+    return { rate: num(g.rate), age, years, year: new Date().getFullYear() + years, projected: value, note: h.note || "" };
+  }).filter(Boolean));
+// One line per age, rates alongside each other — the quotation column is narrow, and "at 60
+// it is worth this" is the question being answered.
+const planProjectionLines = (p) => {
+  const byAge = new Map();
+  planProjections(p).forEach(pr => {
+    if (!byAge.has(pr.age)) byAge.set(pr.age, []);
+    byAge.get(pr.age).push(pr);
+  });
+  return [...byAge.entries()].sort((a, b) => a[0] - b[0]).map(([age, list]) => {
+    const cur = planCurrency(p);
+    const parts = list.sort((a, b) => a.rate - b.rate)
+      .map(pr => moneyIn(cur, pr.projected) + (pr.rate > 0 ? " (" + fmt(pr.rate, pr.rate % 1 ? 2 : 0) + "%)" : ""));
+    const note = list.map(pr => pr.note).filter(Boolean)[0];
+    return "Age " + age + ": " + parts.join(" · ") + (note ? " — " + note : "");
+  });
+};
 const planCoverageText = (p) => {
   const rows = planCoverageRows(p);
   if (!rows.length) return p.coverage || "";
@@ -1057,7 +1084,7 @@ function compute(c) {
     const items = selected
       .filter(p => (p.insuredBy || "self") === person.id)
       // pre-rendered strings so the DOCX exporter doesn't need the display helpers
-      .map(p => ({ ...p, coverageText: planCoverageText(p), termText: planTermText(p) }));
+      .map(p => ({ ...p, coverageText: planCoverageText(p), termText: planTermText(p), projectionsText: planProjectionLines(p).join("\n") }));
     return { ...person, items, monthly: items.reduce((s, p) => s + num(p.monthly), 0), annual: items.reduce((s, p) => s + num(p.annual), 0) };
   }).filter(g => g.items.length);
   const premMonthly = selected.reduce((s, p) => s + num(p.monthly), 0);
@@ -1849,6 +1876,15 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
   const rateMeta = RATED_PRODUCTS[p.key] || null;
   const rating = p.rating || {};
   const insuredAge = insuredOptions.find(o => o.id === (p.insuredBy || "self"))?.age;
+  // illustrated values, in the same rate-then-age shape the investment portfolio uses
+  const projRates = p.returnRates || [];
+  const setProjRates = (next) => setP({ returnRates: next });
+  const addProjRate = () => setProjRates([...projRates, { id: uid(), rate: "", horizons: [{ id: uid(), atAge: "", value: "", note: "" }] }]);
+  const removeProjRate = (gi) => setProjRates(projRates.filter((_, i) => i !== gi));
+  const setProjRate = (gi, k, v) => setProjRates(projRates.map((g, i) => i === gi ? { ...g, [k]: v } : g));
+  const addProjAge = (gi) => setProjRates(projRates.map((g, i) => i !== gi ? g : { ...g, horizons: [...(g.horizons || []), { id: uid(), atAge: "", value: "", note: "" }] }));
+  const removeProjAge = (gi, hi) => setProjRates(projRates.map((g, i) => i !== gi ? g : { ...g, horizons: (g.horizons || []).filter((_, j) => j !== hi) }));
+  const setProjAge = (gi, hi, k, v) => setProjRates(projRates.map((g, i) => i !== gi ? g : { ...g, horizons: (g.horizons || []).map((h, j) => j === hi ? { ...h, [k]: v } : h) }));
   const ratedAge = num(rating.ageOverride) > 0 ? num(rating.ageOverride)
     : (num(insuredAge) > 0 ? num(insuredAge) + (rateMeta?.ageBasis === "next" ? 1 : 0) : 0);
   const quote = rateMeta ? quotePremium(p.key, {
@@ -2078,9 +2114,55 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
         </div>
       )}
 
+      <div className="mt-3 border-t border-slate-100 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Projected values — what it is worth if surrendered, and at maturity</span>
+          <button onClick={addProjRate} className="text-xs text-purple-700 hover:underline">+ Add rate</button>
+        </div>
+        {projRates.length === 0 && (
+          <div className="text-xs text-slate-400 mb-2">Nothing illustrated yet. Add a rate from the Benefit Illustration, then the ages you want shown — these appear in the report's Projected returns column and as markers on the Overview.</div>
+        )}
+        <div className="space-y-2">
+          {projRates.map((g, gi) => (
+            <div key={g.id || gi} className="rounded-lg border border-slate-200 bg-white p-2">
+              <div className="flex items-end gap-2 mb-2">
+                <div className="w-32">
+                  <label className="text-xs text-slate-500">Return % p.a.</label>
+                  <NumInput value={g.rate || ""} onChange={e => setProjRate(gi, "rate", e.target.value)} placeholder="e.g. 4.25" />
+                </div>
+                <button onClick={() => addProjAge(gi)} className="text-xs text-purple-700 hover:underline mb-1.5">+ Add age</button>
+                <div className="flex-1" />
+                <button onClick={() => removeProjRate(gi)} className="text-red-500 text-sm mb-1.5">✕ Remove rate</button>
+              </div>
+              <div className="space-y-1.5 pl-3 border-l-2 border-purple-100">
+                {(g.horizons || []).map((h, hi) => (
+                  <div key={h.id || hi} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-2">
+                      <label className="text-xs text-slate-500">At age</label>
+                      <NumInput value={h.atAge || ""} onChange={e => setProjAge(gi, hi, "atAge", e.target.value)} placeholder="60" />
+                    </div>
+                    <div className="col-span-4">
+                      <label className="text-xs text-slate-500">Value $</label>
+                      <NumInput value={h.value || ""} onChange={e => setProjAge(gi, hi, "value", e.target.value)} placeholder="surrender / maturity value" />
+                    </div>
+                    <div className="col-span-5">
+                      <label className="text-xs text-slate-500">Note</label>
+                      <Input value={h.note || ""} onChange={e => setProjAge(gi, hi, "note", e.target.value)} placeholder="e.g. maturity, guaranteed only" />
+                    </div>
+                    <div className="col-span-1 flex items-end justify-end">
+                      <button onClick={() => removeProjAge(gi, hi)} className="text-red-500 text-sm">✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-3">
-        <Field label="Projected returns note" hint="Shown in the report's Projected returns column — blank lines start a new paragraph.">
-          <TextArea rows={4} value={p.returns} onChange={e => setP({ returns: e.target.value })} />
+        <Field label="Projected returns note" hint="Free text shown under the illustrated values above — blank lines start a new paragraph.">
+          <TextArea rows={3} value={p.returns} onChange={e => setP({ returns: e.target.value })} />
         </Field>
       </div>
 
@@ -2247,7 +2329,10 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
                     <td>{planCoverageRows(p).map((cv, k) => <div key={k}>{cv.category}: {cv.display}</div>)}</td>
                     <td className="tnum">{moneyIn(planCurrency(p), num(p.monthly), 2)}</td>
                     <td className="tnum">{moneyIn(planCurrency(p), num(p.annual), 2)}</td>
-                    <td className="text-xs">{(p.returns || "").split(/\n+|\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}</td>
+                    <td className="text-xs">
+                      {planProjectionLines(p).map((line, li) => <div key={"pv" + li} style={{ fontWeight: 600 }}>{line}</div>)}
+                      {(p.returns || "").split(/\n+|\s*·\s*/).filter(Boolean).map((seg, si) => <div key={si}>{seg}</div>)}
+                    </td>
                   </tr>
                 );
               })}</tbody>
@@ -3757,6 +3842,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       const boosted = p.stepsDown && num(p.boostedAmount) > baseTotal ? num(p.boostedAmount) : 0;
       const hasStep = boosted > 0 && start < 65 && end > 65;
       const covRows = planCoverageRows(p);
+      const recoProjections = planProjections(p, baseAge);
       const common = {
         origin: "recommended",
         label: p.label, start, end, insured: who, offset: offsetOf(who), currency: planCurrency(p),
@@ -3777,7 +3863,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       };
       // an annuity has no coverage breakdown — it sits on the Retirement row on its own
       if (p.key === "RS") {
-        return [{ ...common, id: "reco-" + p.id + "-RS", category: "Retirement", covShort: moneyIn(planCurrency(p), num(p.monthlyIncome)) + "/mo" }];
+        return [{ ...common, id: "reco-" + p.id + "-RS", category: "Retirement", covShort: moneyIn(planCurrency(p), num(p.monthlyIncome)) + "/mo", projections: recoProjections }];
       }
       const byBucket = new Map();
       (p.coverages || []).filter(c => c.category && num(c.amount) > 0).forEach(c => {
@@ -3786,13 +3872,16 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         byBucket.get(bucket).push(c);
       });
       if (byBucket.size === 0) return [];
-      return [...byBucket.entries()].map(([bucket, covs]) => {
+      return [...byBucket.entries()].map(([bucket, covs], bi) => {
         const peak = Math.max(...covs.map(c => num(c.amount)));
         return {
           ...common,
           id: "reco-" + (p.id || i) + "-" + bucket,
           category: bucket,
           covShort: amtFor(planCurrency(p), covs[0]?.category, boosted > 0 ? boosted : peak),
+          // a plan spanning several cover rows marks only its first: the same four values
+          // repeated down every row is noise, not information
+          projections: bi === 0 ? recoProjections : [],
         };
       });
     });

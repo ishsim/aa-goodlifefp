@@ -373,7 +373,7 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
           p.coverageText || "",
           { text: moneyIn(curOf(p), num(p.monthly), 2), align: AlignmentType.RIGHT },
           { text: moneyIn(curOf(p), num(p.annual), 2), align: AlignmentType.RIGHT },
-          p.returns || "",
+          [p.projectionsText, p.returns].filter(Boolean).join("\n") || "",
         ]),
         [2800, 1600, 1300, 1300, 2000],
       ));
