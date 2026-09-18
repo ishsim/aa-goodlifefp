@@ -966,6 +966,188 @@ async function signedPlanImageUrl(path) {
   return data.signedUrl;
 }
 
+// ---------- goal planning ----------
+// The yearly saving that reaches a target: an ordinary annuity, paid at each year end —
+// the convention behind "$30,000 in 20 years at 5% needs $907.28 a year". Money already set
+// aside compounds on its own and shortens the gap; if it covers the target, nothing more is
+// needed.
+const goalRequiredSaving = (target, years, current, ratePct) => {
+  const n = num(years), r = num(ratePct) / 100, FV = num(target), PV = num(current);
+  if (!(n > 0) || !(FV > 0)) return 0;
+  const g = Math.pow(1 + r, n);
+  const gap = FV - PV * g;
+  if (gap <= 0) return 0;
+  return r > 0 ? gap * r / (g - 1) : gap / n;
+};
+const goalValueAt = (t, current, ratePct, yearly) => {
+  const r = num(ratePct) / 100, PV = num(current), g = Math.pow(1 + r, t);
+  return PV * g + (r > 0 ? num(yearly) * (g - 1) / r : num(yearly) * t);
+};
+// every goal has at least a plain-savings route, so the chart always has its baseline
+const goalVehicles = (o) => (o.vehicles && o.vehicles.length)
+  ? o.vehicles
+  : [{ id: "base", label: "Savings (no returns)", rate: "0", planned: "" }];
+// A route saves what the goal needs unless the advisor states what the client will really
+// put in — then its line shows where that actually lands, short of the target or past it.
+const vehicleSaving = (o, v) => num(v.planned) > 0 ? num(v.planned) : goalRequiredSaving(o.target, o.years, o.currentSavings, v.rate);
+const GOAL_COLORS = ["#64748b", "#7c3aed", "#0d9488", "#d97706", "#be185d"];
+
+// Target on one axis, age on the other: a straight line for money that only accumulates,
+// a curve for money that compounds. Both routes reach the same point — the curve is the
+// argument for investing, because it starts lower and needs less put in.
+const GoalChart = ({ goal, startAge = 0 }) => {
+  const n = num(goal.years), target = num(goal.target);
+  if (!(n > 0) || !(target > 0)) return null;
+  const vehicles = goalVehicles(goal).map((v, i) => {
+    const yearly = vehicleSaving(goal, v);
+    const pts = [];
+    for (let t = 0; t <= n; t += n > 30 ? 1 : 0.5) pts.push([t, goalValueAt(t, goal.currentSavings, v.rate, yearly)]);
+    if (pts[pts.length - 1][0] !== n) pts.push([n, goalValueAt(n, goal.currentSavings, v.rate, yearly)]);
+    return { ...v, yearly, pts, end: pts[pts.length - 1][1], color: GOAL_COLORS[i % GOAL_COLORS.length] };
+  });
+  const top = Math.max(target, ...vehicles.map(v => v.end)) * 1.1;
+  const W = 540, H = 210, L = 56, R = 76, T = 14, B = 28, iw = W - L - R, ih = H - T - B;
+  const x = (t) => L + (t / n) * iw;
+  const y = (v) => T + ih - (Math.max(0, v) / top) * ih;
+  const step = n <= 10 ? 1 : n <= 25 ? 5 : 10;
+  const ticks = [];
+  for (let t = 0; t <= n; t += step) ticks.push(t);
+  if (ticks[ticks.length - 1] !== n) ticks.push(n);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W }} role="img" aria-label={"Savings path to " + (goal.name || "goal")}>
+      {[0, 0.5, 1].map(f => (
+        <g key={f}>
+          <line x1={L} y1={T + ih - f * ih} x2={L + iw} y2={T + ih - f * ih} stroke="#eef2f7" />
+          <text x={L - 6} y={T + ih - f * ih + 3} textAnchor="end" fontSize="8" fill="#94a3b8">{money(top * f)}</text>
+        </g>
+      ))}
+      {ticks.map(t => (
+        <text key={t} x={x(t)} y={H - 10} textAnchor="middle" fontSize="8" fill="#64748b">
+          {startAge > 0 ? "age " + Math.round(startAge + t) : "yr " + t}
+        </text>
+      ))}
+      {/* the target, and where it falls due */}
+      <line x1={L} y1={y(target)} x2={L + iw} y2={y(target)} stroke="#b45309" strokeWidth="1.25" strokeDasharray="4 3" />
+      <text x={L + iw + 5} y={y(target) + 3} fontSize="8.5" fontWeight="700" fill="#b45309">{money(target)}</text>
+      <text x={L + iw + 5} y={y(target) + 13} fontSize="7.5" fill="#b45309">target</text>
+      {vehicles.map(v => (
+        <polyline key={v.id} fill="none" stroke={v.color} strokeWidth="2.25" strokeLinejoin="round"
+          points={v.pts.map(([t, val]) => x(t) + "," + y(val)).join(" ")} />
+      ))}
+      {/* a route that misses or overshoots says where it actually ends */}
+      {vehicles.filter(v => Math.abs(v.end - target) > 1).map(v => (
+        <text key={"e" + v.id} x={L + iw + 5} y={y(v.end) + 3} fontSize="7.5" fontWeight="700" fill={v.color}>{money(v.end)}</text>
+      ))}
+      <rect x={x(n) - 4} y={y(target) - 4} width="8" height="8" transform={`rotate(45 ${x(n)} ${y(target)})`} fill="#f59e0b" stroke="#fff" strokeWidth="1" />
+    </svg>
+  );
+};
+
+// One line per route: what it assumes, what it asks for each year and month, where it lands.
+const GoalRoutes = ({ goal, compact = false }) => (
+  <table className={compact ? "w-full text-xs" : undefined}>
+    <thead><tr>
+      <th>Route</th><th className="tnum">Return p.a.</th><th className="tnum">Saving / year</th><th className="tnum">Saving / month</th><th className="tnum">Reaches</th>
+    </tr></thead>
+    <tbody>
+      {goalVehicles(goal).map((v, i) => {
+        const yearly = vehicleSaving(goal, v);
+        const end = goalValueAt(num(goal.years), goal.currentSavings, v.rate, yearly);
+        const short = end < num(goal.target) - 1;
+        return (
+          <tr key={v.id || i}>
+            <td><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: GOAL_COLORS[i % GOAL_COLORS.length], marginRight: 6 }} />{v.label || "Route " + (i + 1)}</td>
+            <td className="tnum">{fmt(num(v.rate), num(v.rate) % 1 ? 2 : 0)}%</td>
+            <td className="tnum">{money(yearly, 2)}</td>
+            <td className="tnum">{money(yearly / 12, 2)}</td>
+            <td className="tnum" style={{ color: short ? "#b91c1c" : "#15803d", fontWeight: 600 }}>{money(end)}{short ? " — short" : ""}</td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+);
+
+// The advisor's side of a goal: what is already put aside, and the routes to the target.
+// A route can be tied to a recommended plan so the proposal and the goal it serves line up.
+function GoalPlanner({ goal, onChange, products = [], startAge = 0 }) {
+  const [open, setOpen] = useState(false);
+  const routes = goalVehicles(goal);
+  const setRoutes = (next) => onChange({ ...goal, vehicles: next });
+  const setRoute = (i, patch) => setRoutes(routes.map((r, j) => j === i ? { ...r, ...patch } : r));
+  const addRoute = (planId) => {
+    const plan = products.find(pp => pp.id === planId);
+    // a linked plan brings its name, and its first illustrated rate when it has one
+    const rate = plan ? String((plan.returnRates || [])[0]?.rate || "") : "";
+    setRoutes([...routes, { id: uid(), label: plan ? plan.label : "", rate, planned: "", planId: plan ? plan.id : "" }]);
+  };
+  const ready = num(goal.target) > 0 && num(goal.years) > 0;
+  return (
+    <div className="col-span-12">
+      <button onClick={() => setOpen(v => !v)} className="text-xs text-purple-700 hover:underline font-semibold">
+        {open ? "▾" : "▸"} Plan to reach this goal
+        {ready && !open && <span className="text-slate-400 font-normal"> — {routes.length} route{routes.length > 1 ? "s" : ""}</span>}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          {!ready && <div className="text-xs text-slate-400 mb-2">Enter a target and a number of years above to plan this goal.</div>}
+          <div className="grid grid-cols-12 gap-2 mb-3">
+            <div className="col-span-4">
+              <Field label="Already saved toward this goal">
+                <NumInput value={goal.currentSavings || ""} onChange={e => onChange({ ...goal, currentSavings: e.target.value })} placeholder="$0" />
+              </Field>
+            </div>
+            <div className="col-span-8 flex items-end pb-1 text-xs text-slate-500">
+              {ready && startAge > 0 && <>Due at age <b className="mx-1">{Math.round(startAge + num(goal.years))}</b> — {goal.years} years from now.</>}
+            </div>
+          </div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Routes to the target</div>
+          <div className="space-y-2">
+            {routes.map((r, i) => {
+              const yearly = vehicleSaving(goal, r);
+              return (
+                <div key={r.id || i} className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <label className="text-xs text-slate-500 flex items-center gap-1.5">
+                      <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: GOAL_COLORS[i % GOAL_COLORS.length] }} />
+                      Route
+                    </label>
+                    <Input value={r.label || ""} onChange={e => setRoute(i, { label: e.target.value })} placeholder="e.g. Savings account, Unit Trust" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-500">Return % p.a.</label>
+                    <NumInput value={r.rate || ""} onChange={e => setRoute(i, { rate: e.target.value })} placeholder="0" />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="text-xs text-slate-500">Will save / year (optional)</label>
+                    <NumInput value={r.planned || ""} onChange={e => setRoute(i, { planned: e.target.value })} placeholder={ready ? fmt(goalRequiredSaving(goal.target, goal.years, goal.currentSavings, r.rate), 2) : ""} />
+                  </div>
+                  <div className="col-span-2 text-right text-xs tabular-nums pb-2">
+                    {ready ? <><b>{money(yearly, 2)}</b>/yr<br /><span className="text-slate-500">{money(yearly / 12, 2)}/mo</span></> : "—"}
+                  </div>
+                  <div className="col-span-1 flex items-end justify-end pb-2">
+                    {routes.length > 1 && <button onClick={() => setRoutes(routes.filter((_, j) => j !== i))} className="text-red-500 text-sm">✕</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2">
+            <select value="" onChange={e => { if (e.target.value) addRoute(e.target.value === "__other" ? "" : e.target.value); }}
+              className="text-xs rounded-lg border border-slate-300 px-2 py-1 bg-white text-purple-800">
+              <option value="">+ Add a route…</option>
+              {products.filter(pp => pp.include).map(pp => <option key={pp.id} value={pp.id}>{pp.label}</option>)}
+              <option value="__other">Other (type a name)</option>
+            </select>
+            <span className="text-[11px] text-slate-400 ml-2">Leave "will save" blank to see what each route needs; fill it to see where a set amount lands.</span>
+          </div>
+          {ready && <div className="mt-3 bg-white rounded-lg border border-slate-200 p-2"><GoalChart goal={goal} startAge={startAge} /></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- derived figures ----------
 // future value of a current amount + fixed monthly contribution, at r% p.a. over n years
 function projectFV(o, fallbackYears) {
@@ -5350,9 +5532,21 @@ export default function App() {
             <table>
               <thead><tr><th>Objective</th><th>Remarks</th><th className="tnum">Target</th><th className="tnum">Horizon</th><th className="tnum">Indicative saving</th></tr></thead>
               <tbody>{(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).map(o => (
-                <tr key={o.id}><td>{o.name}</td><td>{o.note}</td><td className="tnum">{money(num(o.target))}</td><td className="tnum">{num(o.years) > 0 ? o.years + " yrs" : "—"}</td><td className="tnum">{num(o.target) > 0 && num(o.years) > 0 ? money(num(o.target) / (num(o.years) * 12)) + "/mo" : "—"}</td></tr>
+                <tr key={o.id}><td>{o.name}</td><td>{o.note}</td><td className="tnum">{money(num(o.target))}</td><td className="tnum">{num(o.years) > 0 ? o.years + " yrs" : "—"}</td><td className="tnum">{num(o.target) > 0 && num(o.years) > 0 ? money(vehicleSaving(o, goalVehicles(o)[0]) / 12) + "/mo" : "—"}</td></tr>
               ))}</tbody>
             </table>
+            {/* each goal with a target and a date gets its path drawn: straight for money that
+                only accumulates, curved for money that compounds, both meeting the target */}
+            {(client.otherObjectives || []).filter(o => num(o.target) > 0 && num(o.years) > 0).map(o => (
+              <div key={"g" + o.id} style={{ breakInside: "avoid", marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#51037c", marginBottom: 2 }}>
+                  {o.name || "Goal"} — {money(num(o.target))} by age {Math.round(num(d.age) + num(o.years))}
+                </div>
+                {num(o.currentSavings) > 0 && <p className="text-xs text-slate-500" style={{ marginBottom: 2 }}>Starting from {money(num(o.currentSavings))} already set aside.</p>}
+                <GoalChart goal={o} startAge={num(d.age)} />
+                <GoalRoutes goal={o} />
+              </div>
+            ))}
           </>)}
 
           <div className="pagebreak" />
@@ -6122,13 +6316,16 @@ export default function App() {
             )}
             <div className="space-y-2">
               {(client.otherObjectives || []).map((o, i) => (
-                <div key={o.id || i} className="grid grid-cols-12 gap-2 items-center">
+                <div key={o.id || i} className="grid grid-cols-12 gap-2 items-center pb-2 border-b border-slate-100">
                   <div className="col-span-3"><Input value={o.name} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, name: e.target.value }; update({ otherObjectives: l }); }} placeholder="Objective" /></div>
                   <div className="col-span-2"><NumInput value={o.target} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, target: e.target.value }; update({ otherObjectives: l }); }} /></div>
                   <div className="col-span-2"><NumInput value={o.years} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, years: e.target.value }; update({ otherObjectives: l }); }} /></div>
-                  <div className="col-span-2 text-right text-xs text-slate-500 tabular-nums">{num(o.target) > 0 && num(o.years) > 0 ? money(num(o.target) / (num(o.years) * 12)) + "/mo" : "—"}</div>
+                  {/* from the first route, so it agrees with the chart and counts savings already made */}
+                  <div className="col-span-2 text-right text-xs text-slate-500 tabular-nums">{num(o.target) > 0 && num(o.years) > 0 ? money(vehicleSaving(o, goalVehicles(o)[0]) / 12) + "/mo" : "—"}</div>
                   <div className="col-span-2"><Input value={o.note} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, note: e.target.value }; update({ otherObjectives: l }); }} placeholder="Remarks (if any)" /></div>
                   <div className="col-span-1 flex items-center"><button onClick={() => update({ otherObjectives: client.otherObjectives.filter((_, j) => j !== i) })} className="text-red-500 text-sm">✕</button></div>
+                  <GoalPlanner goal={o} products={client.products || []} startAge={num(d.age)}
+                    onChange={next => { const l = [...client.otherObjectives]; l[i] = next; update({ otherObjectives: l }); }} />
                 </div>
               ))}
             </div>
