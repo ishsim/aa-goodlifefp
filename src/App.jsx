@@ -338,6 +338,23 @@ const PLAN_LIBRARY = {
         [[{ h: "Renewal Bonus" }, { p: "Provides additional 5% of sum assured for Accidental Death, Accidental Dismemberment and Burns Benefit for each policy renewal, up to a maximum of 5 renewals." }]],
         [[{ h: "Death Benefit" }, { p: "If the insured passes away and no claim has been paid under the Accidental Death, Accidental Dismemberment and Burns Benefit, we will pay the amount of cover. The amount payable under this benefit shall not exceed $1,000 regardless of the number of AIA Star Armour policies insured under." }]],
       ] },
+    // From footnote 3 of the Star Armour product summary (PS-StarA(B) ver 1.2): the diseases
+    // the (Accident & Disease) benefits above respond to, as well as accidental injury.
+    { caption: "Specific Diseases Covered",
+      sub: "Covered alongside accidental injury under the benefits marked (Accident & Disease) above.",
+      head: ["Diseases 1–8", "Diseases 9–16"],
+      align: ["left", "left"],
+      plainList: true,
+      dense: true,
+      rows: [[
+        ["1. Hand, Foot and Mouth Disease", "2. Dengue Fever", "3. Food Poisoning",
+         "4. Severe Acute Respiratory Syndrome (SARS)",
+         "5. Variant Creutzfeldt-Jakob Disease (vCJD) or \u2018Mad Cow Disease\u2019",
+         "6. Nipah Viral Encephalitis", "7. Japanese Viral Encephalitis", "8. Malaria"],
+        ["9. Pulmonary Tuberculosis", "10. Measles", "11. Rabies", "12. Melioidosis",
+         "13. Avian Influenza or \u2018Bird Flu\u2019 due to Influenza A",
+         "14. Chikungunya Fever", "15. Mumps", "16. Rubella"],
+      ]] },
     { caption: "Optional Benefit — Sum Assured (B$)",
       head: ["Optional Benefit", "Option 1", "Option 2", "Option 3"],
       widths: ["49%", "17%", "17%", "17%"],
@@ -345,6 +362,24 @@ const PLAN_LIBRARY = {
       rows: [
         [[{ h: "Child Critical Illnesses Benefit" }, { ul: ["Covers 17 Child Critical Illnesses", "Option to convert this benefit to an AIA whole life or endowment policy from your child's 18th birthday till the policy anniversary following your child's 21st birthday"] }, { p: "This benefit will terminate on the policy anniversary following the child's 21st birthday." }], "30,000", "50,000", "100,000"],
       ] },
+    // From footnote 4 of the same summary. Shown only when the optional benefit was taken,
+    // the same way Secure Term Plus lists its critical illnesses only with the CI rider.
+    { caption: "Child Critical Illnesses Covered",
+      sub: "Under the optional Child Critical Illnesses Benefit. Ends on the policy anniversary after the child\u2019s 21st birthday, and counts toward a B$350,000 critical illness limit per life across all policies and riders.",
+      rider: "childCI",
+      head: ["Illnesses 1–9", "Illnesses 10–17"],
+      align: ["left", "left"],
+      plainList: true,
+      dense: true,
+      rows: [[
+        ["1. Acquired Brain Damage", "2. Aplastic Anaemia", "3. Bone Marrow Transplant", "4. Brain Surgery",
+         "5. Glomerulonephritis", "6. Haemophilia", "7. Death as a result of Hand, Foot & Mouth Disease",
+         "8. Insulin Dependent Diabetes Mellitus", "9. Leukaemia"],
+        ["10. Loss of Limbs due to Sickness", "11. Kawasaki Disease with Heart Complications",
+         "12. Rheumatic Fever with Heart Involvement", "13. Severe Asthma", "14. Severe Epilepsy",
+         "15. Still\u2019s Disease including Severe Juvenile Rheumatoid Arthritis",
+         "16. Tuberculous Meningitis", "17. Viral Encephalitis"],
+      ]] },
   ] },
   CPA: { name: "Comprehensive Accident & Dementia Coverage — Centurion PA", body: "AIA Centurion PA is a personal accident plan designed for individuals aged 40 to 80, providing 24/7 worldwide coverage through to age 100, with an optional dementia benefit group.\n\n\u2022 Accidental Death, Dismemberment and Burns \u2014 with an additional dismemberment and burns benefit on top of the base amount.\n\u2022 Fractures Benefit \u2014 a dedicated payout for fractures, which become materially more likely with age.\n\u2022 Loss of Activities of Daily Living Benefit \u2014 pays out when an accident leaves the insured unable to perform daily activities.\n\u2022 Accidental Medical Reimbursement \u2014 including an extra reimbursement specifically for fractures, plus TCM/chiropractic and ambulance cover.\n\u2022 Daily Accidental Hospital Income and Post-Hospitalisation Home Care \u2014 support during recovery.\n\u2022 Mobility Aid and Home Modification Reimbursement \u2014 helps adapt the home after a disabling accident.\n\u2022 Optional Dementia Benefits Group \u2014 a lump sum on diagnosis of dementia plus a care reimbursement benefit; entry before age 70, covering to age 85.\n\nPlan Limitations:\n\u2234 Entry ages are 40 to 80; ages 81 and above are renewal only.\n\u2234 The dementia option must be the same plan tier as the basic benefits or lower, and terminates at age 85.\n\u2234 As an accident plan, the main benefits are payable only on accidental causes \u2014 the dementia group is the exception.\n\u2234 If nothing should happen, the plan does not provide any return.", tables: [
     { caption: "Basic Benefits — Insured Amount (S$)",
