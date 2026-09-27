@@ -3624,6 +3624,22 @@ const RECO_END_AGE = {
   SFR: (start) => Math.min(start + 20, 100),   // default 20-year policy term
   SFG: (start) => Math.min(start + 20, 100),   // 5-pay, but cover runs to maturity — default 20-year policy term
 };
+// A dot per coverage in the row label, the way the AIA+ app's left rail reads. Colour on the
+// bars still says who is insured, so a household stays legible — this only aids scanning.
+const COVERAGE_DOT = {
+  "Death & Disability": "#312e81",
+  "Major Critical Illness": "#2563eb",
+  "Early-Major Critical Illness": "#0891b2",
+  "Personal Accident": "#b45309",
+  "Hospital Stay (Accident)": "#be123c",
+  "Hospital Stay (Any Cause)": "#db2777",
+  "Retirement": "#7c3aed",
+  "Savings & Investments": "#059669",
+  "Child Savings": "#65a30d",
+  "Loans & Liabilities": "#9f1239",
+  "Others": "#94a3b8",
+};
+const coverageDot = (cat) => COVERAGE_DOT[cat] || "#94a3b8";
 const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
 
 // coverage $ totals per insured, summed from each plan's granular coverage-breakdown
@@ -3825,6 +3841,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   const [win, setWin] = useState(() => printMode ? printedWindow(clientAge, retireAge) : { a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
   const [hover, setHover] = useState(null);       // { item, left, top }
   const [selected, setSelected] = useState(null); // pinned item for the detail card
+  const [expandedRows, setExpandedRows] = useState({}); // coverage rows opened to show their plans
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
   const winRef = useRef(win); winRef.current = win;
@@ -3885,7 +3902,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           label, category: bucket, start, end, insured: who, offset: offsetOf(who),
           currency: cur,
           covShort: amtFor(cur, covs[0]?.category, Math.max(...covs.map(c => num(c.amount)))),
+          // what the bar is worth, in base currency, so a row can be totalled; the unit keeps
+          // a daily benefit from being added to a sum assured
+          amount: toBase(cur, Math.max(...covs.map(c => num(c.amount)))),
+          unit: CATEGORY_UNIT[covs[0]?.category] || "",
           stepAge: hasStep ? stepAge : null, stepAmt: hasStep ? stepAmt : null,
+          stepAmount: hasStep ? toBase(cur, stepAmt) : 0,
           premStart: premEnd > start ? start : null, premEnd: premEnd > start ? premEnd : null,
           status: p.status || "active",
           savings: isSavingsPlanType(p.planType),
@@ -4105,6 +4127,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           id: "reco-" + (p.id || i) + "-" + bucket,
           category: bucket,
           covShort: amtFor(planCurrency(p), covs[0]?.category, boosted > 0 ? boosted : peak),
+          amount: toBase(planCurrency(p), boosted > 0 ? boosted : peak),
+          unit: CATEGORY_UNIT[covs[0]?.category] || "",
+          stepAmount: hasStep ? toBase(planCurrency(p), baseTotal) : 0,
           // a plan spanning several cover rows marks only its first: the same four values
           // repeated down every row is noise, not information
           projections: bi === 0 ? recoProjections : [],
@@ -4164,18 +4189,69 @@ function CoverageTimelinePanel({ client, printMode = false }) {
   // have somewhere to sit that is not on top of the bar above them
   const PROJ_H = 14;
   const planHasProj = (pl) => (pl.projections || []).length > 0 || pl.couponStart > 0;
-  // each lane reserves its own label band, so two plans sharing a row never share ticks
-  const laneOffset = (row, pi) => {
-    let y = ROW_PAD;
-    for (let i = 0; i < pi; i++) y += (planHasProj(row.plans[i]) ? PROJ_H : 0) + LANE_H + LANE_GAP;
-    return y + (planHasProj(row.plans[pi]) ? PROJ_H : 0);
-  };
   const span = Math.max(win.a1 - win.a0, 1);
   const x = (age) => LABEL_W + ((age - win.a0) / span) * PLOT_W;
-  const rowH = (r) => r.plans.length
-    ? r.plans.reduce((a, pl) => a + LANE_H + (planHasProj(pl) ? PROJ_H : 0), 0) + (r.plans.length - 1) * LANE_GAP + ROW_PAD * 2
-    : EMPTY_H;
-  const secH = (s) => SEC_H + s.rows.reduce((a, r) => a + rowH(r), 0);
+
+  // What a row totals to is the question a client actually asks; which policies make it up is
+  // the follow-up. So a row of two or more comparable covers collapses to one stepped bar and
+  // opens on click. Anything that cannot honestly be added stays on its own lane: a lapsed
+  // policy pays nothing, a savings balance is not a sum assured, and a daily benefit is not a
+  // lump sum.
+  const aggExcluded = (p) => p.savings || p.kind === "liability" || p.payoutStart != null
+    || p.lumpSumAge != null || statusIsDead(p.status) || !(num(p.amount) > 0);
+  const rowLayout = (row, personId) => {
+    const able = row.plans.filter(pl => !aggExcluded(pl));
+    const oneUnit = new Set(able.map(pl => pl.unit || "")).size <= 1;
+    if (able.length < 2 || !oneUnit) return { agg: null, lanes: row.plans, open: false };
+    const open = printMode || !!expandedRows[personId + "|" + row.category];
+    const extras = row.plans.filter(pl => !able.includes(pl));
+    return { agg: able, lanes: open ? [...able, ...extras] : extras, open };
+  };
+  // the total steps whenever a plan starts, ends or steps down
+  const aggSegments = (plans) => {
+    const bounds = new Set();
+    plans.forEach(pl => {
+      bounds.add(pl.start + pl.offset);
+      bounds.add(pl.end + pl.offset);
+      if (pl.stepAge != null) bounds.add(pl.stepAge + pl.offset);
+    });
+    const pts = [...bounds].sort((a, b) => a - b);
+    const raw = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], mid = (a + b) / 2;
+      let total = 0;
+      plans.forEach(pl => {
+        const s0 = pl.start + pl.offset, e0 = pl.end + pl.offset;
+        if (mid < s0 || mid >= e0) return;
+        total += pl.stepAge != null && mid >= pl.stepAge + pl.offset ? num(pl.stepAmount) : num(pl.amount);
+      });
+      if (total > 0) raw.push({ a, b, total });
+    }
+    // neighbouring stretches at the same total are one stretch
+    return raw.reduce((acc, seg) => {
+      const last = acc[acc.length - 1];
+      if (last && Math.abs(last.total - seg.total) < 0.5 && Math.abs(last.b - seg.a) < 1e-6) { last.b = seg.b; return acc; }
+      acc.push({ ...seg });
+      return acc;
+    }, []);
+  };
+  const laneList = (row, personId) => rowLayout(row, personId).lanes;
+  const laneTop = (row, personId, li) => {
+    const { agg } = rowLayout(row, personId);
+    const lanes = laneList(row, personId);
+    let y = ROW_PAD + (agg ? LANE_H + (lanes.length ? LANE_GAP : 0) : 0);
+    for (let i = 0; i < li; i++) y += (planHasProj(lanes[i]) ? PROJ_H : 0) + LANE_H + LANE_GAP;
+    return y + (planHasProj(lanes[li]) ? PROJ_H : 0);
+  };
+  const rowH = (r, personId) => {
+    if (!r.plans.length) return EMPTY_H;
+    const { agg } = rowLayout(r, personId);
+    const lanes = laneList(r, personId);
+    const lanesH = lanes.reduce((a, pl) => a + LANE_H + (planHasProj(pl) ? PROJ_H : 0), 0)
+      + Math.max(0, lanes.length - 1) * LANE_GAP;
+    return ROW_PAD * 2 + (agg ? LANE_H + (lanes.length ? LANE_GAP : 0) : 0) + lanesH;
+  };
+  const secH = (s) => SEC_H + s.rows.reduce((a, r) => a + rowH(r, s.person.id), 0);
   const plotH = Math.max(sections.reduce((a, s) => a + secH(s), 0), 40);
   const totalH = AXIS_H + plotH + BOT_H;
   const tickStep = span > 60 ? 10 : span > 25 ? 5 : span > 12 ? 2 : 1;
@@ -4410,6 +4486,56 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     });
   };
 
+  const toggleRow = (pid, cat) => setExpandedRows(m => ({ ...m, [pid + "|" + cat]: !m[pid + "|" + cat] }));
+
+  // The row label: a colour for the coverage, the name, and a chevron when there is a
+  // breakdown to open.
+  const rowLabel = (row, pid, y0, h, layout, muted) => (
+    <g style={layout?.agg && !printMode ? { cursor: "pointer" } : undefined}
+      onClick={layout?.agg && !printMode ? () => toggleRow(pid, row.category) : undefined}>
+      <circle cx={12} cy={y0 + h / 2} r="4" fill={coverageDot(row.category)} opacity={muted ? 0.4 : 1} />
+      <text x={24} y={y0 + h / 2 + 4} fontSize="11" fill={muted ? "#94a3b8" : "#334155"}
+        fontWeight={muted ? 400 : 600} fontStyle={muted ? "italic" : "normal"}>{row.category}</text>
+      {layout?.agg && !printMode && (
+        <text x={LABEL_W - 12} y={y0 + h / 2 + 4} textAnchor="end" fontSize="10" fill="#64748b">{layout.open ? "\u25be" : "\u25b8"}</text>
+      )}
+    </g>
+  );
+
+  // One stepped bar for everything on the row: the figure a client is actually asking for.
+  const aggregateBar = (row, sec, layout, y0) => {
+    const segs = aggSegments(layout.agg);
+    const y = y0 + ROW_PAD;
+    const unit = layout.agg[0]?.unit || "";
+    const pseudo = {
+      id: "agg-" + sec.person.id + "-" + row.category,
+      label: row.category + " — total cover",
+      insured: sec.person,
+      details: [
+        ["Policies", String(layout.agg.length)],
+        ...segs.map(sg => ["Age " + Math.round(sg.a) + "\u2013" + Math.round(sg.b), moneyIn(BASE_CURRENCY, sg.total) + unit]),
+        ...layout.agg.map(pl => [pl.label, moneyIn(BASE_CURRENCY, pl.amount) + unit + " \u00b7 to " + Math.round(pl.end + pl.offset)]),
+      ],
+    };
+    return (
+      <g key="agg">
+        {segs.map((sg, i) => {
+          const g = clipX(sg.a, sg.b);
+          if (!g) return null;
+          return (
+            <g key={i}>
+              <rect x={g.x0} y={y} width={g.w} height={LANE_H} rx="4" fill={sec.person.color} opacity="0.92"
+                style={{ cursor: printMode ? "default" : "pointer" }}
+                onMouseMove={(e) => showHover(e, pseudo)} onMouseLeave={() => setHover(null)}
+                onClick={() => { if (!printMode) toggleRow(sec.person.id, row.category); }} />
+              {g.w > 46 && barLabel(kfmt(sg.total, BASE_CURRENCY) + unit, g, y)}
+            </g>
+          );
+        })}
+      </g>
+    );
+  };
+
   const zoomed = win.a0 > 0 || win.a1 < TIMELINE_MAX_AGE;
 
   return (
@@ -4456,22 +4582,24 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                   {sec.person.name}{sec.person.age != null ? " — age " + sec.person.age + " today" : ""}
                 </text>
                 {sec.rows.map((row, ri) => {
-                  const y0 = secY + SEC_H + sec.rows.slice(0, ri).reduce((a, r) => a + rowH(r), 0);
+                  const y0 = secY + SEC_H + sec.rows.slice(0, ri).reduce((a, r) => a + rowH(r, sec.person.id), 0);
                   if (!row.plans.length) {
                     const g = clipX(win.a0, win.a1);
                     return (
                       <g key={row.category}>
-                        <text x={LABEL_W - 10} y={y0 + EMPTY_H / 2 + 4} textAnchor="end" fontSize="11" fill="#94a3b8" fontStyle="italic">{row.category}</text>
+                        {rowLabel(row, sec.person.id, y0, EMPTY_H, null, true)}
                         <rect x={g.x0} y={y0 + 3} width={g.w} height={EMPTY_H - 7} rx="4" fill="none" stroke="#cbd5e1" strokeDasharray="4 3" />
                         <text x={g.x0 + g.w / 2} y={y0 + EMPTY_H / 2 + 4} textAnchor="middle" fontSize="10" fill="#94a3b8" fontStyle="italic">not covered yet</text>
                       </g>
                     );
                   }
+                  const layout = rowLayout(row, sec.person.id);
                   return (
                     <g key={row.category}>
-                      <text x={LABEL_W - 10} y={y0 + rowH(row) / 2 + 4} textAnchor="end" fontSize="11.5" fill="#334155" fontWeight="600">{row.category}</text>
-                      {row.plans.map((p, pi) => {
-                        const y = y0 + laneOffset(row, pi);
+                      {rowLabel(row, sec.person.id, y0, rowH(row, sec.person.id), layout, false)}
+                      {layout.agg && aggregateBar(row, sec, layout, y0)}
+                      {layout.lanes.map((p, pi) => {
+                        const y = y0 + laneTop(row, sec.person.id, pi);
                         const cs = p.start + p.offset, ce = p.end + p.offset;
                         const active = hover?.item.id === p.id || selected?.id === p.id;
                         const common = {
@@ -4486,7 +4614,10 @@ function CoverageTimelinePanel({ client, printMode = false }) {
                         // a lapsed or surrendered policy stays visible as history, but reads as
                         // grey and washed out so it can never be mistaken for live cover
                         const dead = statusIsDead(p.status);
-                        const opacity = dead ? (active ? 0.6 : 0.38) : active ? 1 : isMutedCurrent ? 0.5 : mode === "current" ? 0.65 : 0.85;
+                        // a plan shown beneath its own total is a detail of that total
+                        const childOfAgg = !!(layout.agg && layout.agg.includes(p));
+                        const opacity = (dead ? (active ? 0.6 : 0.38) : active ? 1 : isMutedCurrent ? 0.5 : mode === "current" ? 0.65 : 0.85)
+                          * (childOfAgg && !active ? 0.55 : 1);
                         const stroke = selected?.id === p.id ? "#0f172a" : dead ? "#94a3b8" : (isMutedCurrent ? "#64748b" : "none");
                         const dash = dead ? "4 3" : isMutedCurrent ? "3 2" : undefined;
                         const fill = dead ? "#94a3b8" : p.savings ? svFill(p.insured.color, "grad") : p.insured.color;
@@ -4758,6 +4889,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           {hover.item.details.slice(0, 5).map(([k, v]) => <div key={k}><span className="text-slate-400">{k}: </span>{v}</div>)}
           <div className="text-slate-400 mt-1 italic">click to pin details</div>
         </div>
+      )}
+      {!printMode && sections.some(sec => sec.rows.some(r => rowLayout(r, sec.person.id).agg)) && (
+        <p className="text-xs text-slate-400 mt-2">A row holding more than one policy shows the total cover, stepping as policies start, reduce and end — click the row to see the policies behind it.</p>
       )}
       {mode === "recommended" && items.length > 0 && (
         <p className="text-xs text-slate-400 mt-2">Bars use each plan's own start/end ages where set; otherwise they run from the insured person's current age to the plan's coverage end (e.g. whole life to 100, term options to their stated age).</p>
