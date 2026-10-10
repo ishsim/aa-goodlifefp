@@ -3550,6 +3550,14 @@ const RetirementSection = ({ client, d, heading, id }) => (
                 <td className="tnum">{money(num(client.retirement.pension))}</td>
                 <td className="tnum">—</td>
               </tr>
+              {d.retCandidates.filter(x => x.included).map(x => (
+                <tr key={x.id}>
+                  <td>{x.name}<span className="text-xs text-slate-500"> — {x.kind.toLowerCase()}{x.detail ? ", " + x.detail : ""}</span></td>
+                  <td className="tnum">—</td>
+                  <td className="tnum">{money(x.projected)}</td>
+                  <td className="tnum">—</td>
+                </tr>
+              ))}
               <tr>
                 <td>Other Annuities (projected)</td>
                 <td className="tnum">—</td>
@@ -3562,14 +3570,6 @@ const RetirementSection = ({ client, d, heading, id }) => (
                 <td className="tnum">{money(d.invTotal)}</td>
                 <td className="tnum">—</td>
               </tr>
-              {d.retCandidates.filter(x => x.included).map(x => (
-                <tr key={x.id}>
-                  <td>{x.name}<span className="text-xs text-slate-500"> — {x.kind.toLowerCase()}{x.detail ? ", " + x.detail : ""}</span></td>
-                  <td className="tnum">—</td>
-                  <td className="tnum">{money(x.projected)}</td>
-                  <td className="tnum">—</td>
-                </tr>
-              ))}
               <tr style={{ background: "#f5f0fa" }}>
                 <td className="font-bold">Total</td>
                 <td className="tnum font-bold">{money(d.rtAdjusted)}</td>
