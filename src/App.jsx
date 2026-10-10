@@ -1001,6 +1001,58 @@ async function signedPlanImageUrl(path) {
   return data.signedUrl;
 }
 
+// Existing plans and holdings that could fund retirement. Whether one should is a
+// judgement call — an endowment may be earmarked for a house — so nothing is counted until
+// it is ticked, except arrangements that are unambiguously retirement: an annuity, or a
+// holding already filed under the Retirement category.
+const retirementCandidates = (c, yearsToRet) => {
+  const out = [];
+  (c.existingPlans || []).forEach(pl => {
+    if (statusIsDead(pl.status)) return;
+    if (planTypeMeta(pl.planType)?.group !== "savings") return;
+    const cur = planCurrency(pl);
+    const contrib = freqMonthlyEquiv(pl.allocation ?? pl.monthly, pl.allocationFreq);
+    if (pl.planType === "Retirement Annuity") {
+      const monthly = num((pl.coverages || []).find(cv => cv.category === "Retirement")?.amount);
+      const yrs = Math.max(0, num(pl.toAge) - num(pl.payoutStartAge));
+      const dividends = num(pl.dividendPayout) + num(pl.terminalDividend);
+      const projected = toBase(cur, monthly * 12 * yrs + dividends);
+      if (!(projected > 0)) return;
+      out.push({ id: "plan-" + pl.id, name: pl.planName || pl.planType, kind: "Annuity",
+        detail: (monthly > 0 ? moneyIn(cur, monthly) + "/mo × " + yrs + " yrs" : "")
+          + (dividends > 0 ? " + " + moneyIn(cur, dividends) + " dividends" : ""),
+        contribMonthly: contrib, projected, defaultOn: true });
+      return;
+    }
+    // an endowment contributes what it matures to, on the same basis the timeline shows
+    const couponsShown = num(pl.couponAmount) > 0 && num(pl.couponStartAge) > 0;
+    const matured = couponsShown
+      ? (num(pl.maturityWithdrawn) || num(pl.maturityAccumulated))
+      : (num(pl.maturityAccumulated) || num(pl.maturityWithdrawn));
+    if (!(matured > 0)) return;
+    out.push({ id: "plan-" + pl.id, name: pl.planName || pl.planType, kind: "Endowment",
+      detail: "matures at " + moneyIn(cur, matured) + (couponsShown ? " (coupons drawn)" : ""),
+      contribMonthly: contrib, projected: toBase(cur, matured), defaultOn: false });
+  });
+  (c.existingInvestments || []).forEach(iv => {
+    if (isSpkHolding(iv)) return; // SPK already has its own two lines
+    const cur = planCurrency(iv);
+    const contrib = freqMonthlyEquiv(iv.allocation, iv.allocationFreq);
+    const current = num(iv.currentValue);
+    if (!(current > 0) && !(contrib > 0)) return;
+    const rate = num((iv.returnRates || [])[0]?.rate);
+    out.push({ id: "inv-" + iv.id, name: iv.description || iv.type || "Investment", kind: iv.type || "Investment",
+      current: toBase(cur, current), contribMonthly: contrib, rate, years: yearsToRet,
+      projected: toBase(cur, projectFV({ current, contrib, rate, years: yearsToRet }, yearsToRet)),
+      defaultOn: (iv.category || "") === "Retirement" });
+  });
+  return out;
+};
+const retirementIncluded = (c, cand) => {
+  const m = (c.retirement || {}).includedPlans || {};
+  return m[cand.id] === undefined ? cand.defaultOn : !!m[cand.id];
+};
+
 // ---------- goal planning ----------
 // The yearly saving that reaches a target: an ordinary annuity, paid at each year end —
 // the convention behind "$30,000 in 20 years at 5% needs $907.28 a year". Money already set
@@ -1287,7 +1339,10 @@ function compute(c) {
   const spkAnnuityTotal = spkMonthly > 0 ? spkMonthly * 12 * num(rt.spkAnnuityYears) : num(rt.spkAnnuityLegacy);
   const annTotal = projectFV(rt.annuities || {}, yearsToRet);
   const invTotal = projectFV(rt.investments || {}, yearsToRet);
-  const rtProjected = spkProjected(c) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal;
+  // plans and holdings on file that the advisor has earmarked for retirement
+  const retCandidates = retirementCandidates(c, yearsToRet).map(x => ({ ...x, included: retirementIncluded(c, x) }));
+  const retPlansTotal = retCandidates.filter(x => x.included).reduce((a, x) => a + x.projected, 0);
+  const rtProjected = spkProjected(c) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal + retPlansTotal;
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
   const rtMonthlyAnnuity = num(rt.years) > 0 ? rtProjected / (num(rt.years) * 12) : 0;
   // products
@@ -1336,7 +1391,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
 function buildClaudePrompt(c, d) {
@@ -3434,6 +3489,98 @@ const ProgressPanel = ({ client, d, update }) => {
     </>
   );
 };
+
+// Income replacement and retirement read the same in a first proposal and in an annual
+// review, so both reports render these rather than keeping two copies that can drift.
+const IncomeReplacementSection = ({ client, d, heading, id }) => (
+  <>
+          <h3 id={id}>{heading}</h3>
+          <p className="mb-2">To provide an income of {money(d.irMonthly)} per month in the event of premature death or total permanent disability, for {d.irYears} years from today (potential income of {money(d.potentialIncome)}).</p>
+          <table>
+            <thead><tr><th>Need</th><th>Guideline</th><th className="tnum">Benchmark</th><th className="tnum">Current</th><th className="tnum">Shortfall</th></tr></thead>
+            <tbody>{d.irRows.map(r => (
+              <tr key={r.name}><td>{r.name}</td><td>{r.guideline}</td><td className="tnum">{money(r.bench)}</td><td className="tnum">{money(r.current)}</td><td className={"tnum " + (r.shortfall > 0 ? "text-red-700 font-semibold" : "text-purple-800")}>{money(r.shortfall)}</td></tr>
+            ))}</tbody>
+          </table>
+          <p className="text-xs text-slate-500 mb-4">Without adequate coverage for death, disability and sickness: (i) your SPK and other income might not be sufficient to support family expenses; (ii) you might have to downgrade to a less desired lifestyle.</p>
+  </>
+);
+
+const RetirementSection = ({ client, d, heading, id }) => (
+  <>
+          <h3 id={id}>{heading}</h3>
+          <p className="mb-2">To provide a minimum of {money(num(client.retirement.monthly))} per month for {client.retirement.years} years after retirement (assuming post-retirement savings follow the rate of inflation).</p>
+          <table>
+            <thead>
+              <tr style={{ background: "#51037c", color: "#fff" }}>
+                <th style={{ color: "#fff" }}>Item</th>
+                <th className="tnum" style={{ color: "#fff" }}>Amount Required</th>
+                <th className="tnum" style={{ color: "#fff" }}>Current Projected Arrangement</th>
+                <th className="tnum" style={{ color: "#fff" }}>Projected Shortfall</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Amount required for {client.retirement.years} years</td>
+                <td className="tnum">{money(d.rtRequired)}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Inflation-adjusted ({client.retirement.inflation}% over {d.yearsToRet} years)</td>
+                <td className="tnum">{money(d.rtAdjusted)}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>SPK — Member Account (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.spkLumpSum)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>SPK Annuity — Employer{d.spkMonthly > 0 ? " (" + money(d.spkMonthly) + "/mo × " + client.retirement.spkAnnuityYears + " yrs)" : ""}</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.spkAnnuityTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Old Age Pension</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(num(client.retirement.pension))}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Other Annuities (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.annTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              <tr>
+                <td>Other Investments (projected)</td>
+                <td className="tnum">—</td>
+                <td className="tnum">{money(d.invTotal)}</td>
+                <td className="tnum">—</td>
+              </tr>
+              {d.retCandidates.filter(x => x.included).map(x => (
+                <tr key={x.id}>
+                  <td>{x.name}<span className="text-xs text-slate-500"> — {x.kind.toLowerCase()}{x.detail ? ", " + x.detail : ""}</span></td>
+                  <td className="tnum">—</td>
+                  <td className="tnum">{money(x.projected)}</td>
+                  <td className="tnum">—</td>
+                </tr>
+              ))}
+              <tr style={{ background: "#f5f0fa" }}>
+                <td className="font-bold">Total</td>
+                <td className="tnum font-bold">{money(d.rtAdjusted)}</td>
+                <td className="tnum font-bold">{money(d.rtProjected)}</td>
+                <td className={"tnum font-bold " + (d.rtShortfall > 0 ? "text-red-700" : "text-purple-900")}>{d.rtShortfall > 0 ? "-" + money(d.rtShortfall) : money(0)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-500">With the current projection you can expect a monthly retirement annuity of approximately <b>{money(d.rtMonthlyAnnuity)}</b>.</p>
+  </>
+);
 
 const CurrentPlansTable = ({ client, report = false }) => {
   const people = [
@@ -5624,78 +5771,9 @@ export default function App() {
               <p className="text-xs text-slate-500 mt-1" style={{ textAlign: "center" }}>Your planning horizon at a glance — where you are today, your target retirement age, your dependents, and the years beyond. Green marks show when each child reaches 18 and 21.</p>
             </div>
           )}
-          <h3 id="sec-income-replacement">3.1 Income Replacement</h3>
-          <p className="mb-2">To provide an income of {money(d.irMonthly)} per month in the event of premature death or total permanent disability, for {d.irYears} years from today (potential income of {money(d.potentialIncome)}).</p>
-          <table>
-            <thead><tr><th>Need</th><th>Guideline</th><th className="tnum">Benchmark</th><th className="tnum">Current</th><th className="tnum">Shortfall</th></tr></thead>
-            <tbody>{d.irRows.map(r => (
-              <tr key={r.name}><td>{r.name}</td><td>{r.guideline}</td><td className="tnum">{money(r.bench)}</td><td className="tnum">{money(r.current)}</td><td className={"tnum " + (r.shortfall > 0 ? "text-red-700 font-semibold" : "text-purple-800")}>{money(r.shortfall)}</td></tr>
-            ))}</tbody>
-          </table>
-          <p className="text-xs text-slate-500 mb-4">Without adequate coverage for death, disability and sickness: (i) your SPK and other income might not be sufficient to support family expenses; (ii) you might have to downgrade to a less desired lifestyle.</p>
-          <h3 id="sec-retirement">3.2 Retirement Planning</h3>
-          <p className="mb-2">To provide a minimum of {money(num(client.retirement.monthly))} per month for {client.retirement.years} years after retirement (assuming post-retirement savings follow the rate of inflation).</p>
-          <table>
-            <thead>
-              <tr style={{ background: "#51037c", color: "#fff" }}>
-                <th style={{ color: "#fff" }}>Item</th>
-                <th className="tnum" style={{ color: "#fff" }}>Amount Required</th>
-                <th className="tnum" style={{ color: "#fff" }}>Current Projected Arrangement</th>
-                <th className="tnum" style={{ color: "#fff" }}>Projected Shortfall</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Amount required for {client.retirement.years} years</td>
-                <td className="tnum">{money(d.rtRequired)}</td>
-                <td className="tnum">—</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>Inflation-adjusted ({client.retirement.inflation}% over {d.yearsToRet} years)</td>
-                <td className="tnum">{money(d.rtAdjusted)}</td>
-                <td className="tnum">—</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>SPK — Member Account (projected)</td>
-                <td className="tnum">—</td>
-                <td className="tnum">{money(d.spkLumpSum)}</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>SPK Annuity — Employer{d.spkMonthly > 0 ? " (" + money(d.spkMonthly) + "/mo × " + client.retirement.spkAnnuityYears + " yrs)" : ""}</td>
-                <td className="tnum">—</td>
-                <td className="tnum">{money(d.spkAnnuityTotal)}</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>Old Age Pension</td>
-                <td className="tnum">—</td>
-                <td className="tnum">{money(num(client.retirement.pension))}</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>Other Annuities (projected)</td>
-                <td className="tnum">—</td>
-                <td className="tnum">{money(d.annTotal)}</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr>
-                <td>Other Investments (projected)</td>
-                <td className="tnum">—</td>
-                <td className="tnum">{money(d.invTotal)}</td>
-                <td className="tnum">—</td>
-              </tr>
-              <tr style={{ background: "#f5f0fa" }}>
-                <td className="font-bold">Total</td>
-                <td className="tnum font-bold">{money(d.rtAdjusted)}</td>
-                <td className="tnum font-bold">{money(d.rtProjected)}</td>
-                <td className={"tnum font-bold " + (d.rtShortfall > 0 ? "text-red-700" : "text-purple-900")}>{d.rtShortfall > 0 ? "-" + money(d.rtShortfall) : money(0)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="text-xs text-slate-500">With the current projection you can expect a monthly retirement annuity of approximately <b>{money(d.rtMonthlyAnnuity)}</b>.</p>
+          <IncomeReplacementSection client={client} d={d} id="sec-income-replacement" heading="3.1 Income Replacement" />
+          <RetirementSection client={client} d={d} id="sec-retirement" heading="3.2 Retirement Planning" />
+
           {(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0 && (<>
             <h3 id="sec-other-objectives">3.3 Other Objectives</h3>
             <table>
@@ -6014,6 +6092,10 @@ export default function App() {
                 sub: currentPremiumSplit(client).total > 0 ? [{ label: "Premium Commitment against the 4-3-2-1 Rule", id: "rv-premium-budget" }] : [] },
               { title: "Current Financial Health", id: "rv-health",
                 sub: (client.history || []).filter(h => h.date).length >= 2 ? [{ label: "Your Progress Since Previous Reviews", id: "rv-progress" }] : [] },
+              { title: "Protection & Retirement", id: "rv-needs", sub: [
+                { label: "Income Replacement", id: "rv-income-replacement" },
+                { label: "Retirement Planning", id: "rv-retirement" },
+              ] },
               { title: "Overview of Plans", id: "rv-overview", sub: [] },
               { title: "Recommendations", id: "rv-recommendations", sub: [
                 ...(rv.contingencyNote ? [{ label: "Contingency Planning", id: "rv-contingency" }] : []),
@@ -6092,6 +6174,13 @@ export default function App() {
               <ProgressTable history={client.history} report />
             </div>
           )}
+
+          {/* Protection and retirement are reviewed each year the same way they are first
+              proposed, so the review carries the same two sections */}
+          <div className="pagebreak" />
+          <h2 id="rv-needs">Protection &amp; Retirement</h2>
+          <IncomeReplacementSection client={client} d={d} id="rv-income-replacement" heading="Income Replacement" />
+          <RetirementSection client={client} d={d} id="rv-retirement" heading="Retirement Planning" />
 
           {/* 5. Overview of Plans */}
           <div className="pagebreak" />
@@ -6453,6 +6542,43 @@ export default function App() {
                 <Field label="Number of years"><NumInput value={client.retirement.spkAnnuityYears} onChange={e => updateDeep("retirement", { spkAnnuityYears: e.target.value })} /></Field>
               </div>
             </div>
+            {d.retCandidates.length > 0 && (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                  Plans &amp; holdings on file — tick what is meant for retirement
+                </div>
+                <p className="text-xs text-slate-400 mb-2">
+                  Annuities and holdings filed under Retirement are counted by default. An endowment or a general
+                  investment might be for something else entirely, so those start unticked.
+                </p>
+                <div className="space-y-2">
+                  {d.retCandidates.map(cand => (
+                    <div key={cand.id} className={"rounded-lg border p-3 " + (cand.included ? "border-purple-300 bg-purple-50/40" : "border-slate-200 bg-slate-50/50")}>
+                      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={cand.included} className="w-4 h-4 accent-purple-700"
+                          onChange={e => updateDeep("retirement", { includedPlans: { ...(client.retirement.includedPlans || {}), [cand.id]: e.target.checked } })} />
+                        {cand.name}
+                        <span className="text-xs font-normal text-slate-400">{cand.kind}</span>
+                        <span className="ml-auto text-xs font-normal text-slate-500">
+                          projected: <b className={cand.included ? "text-purple-900" : "text-slate-400"}>{money(cand.projected)}</b>
+                        </span>
+                      </label>
+                      <div className="grid md:grid-cols-4 gap-3 mt-2 text-xs text-slate-500">
+                        {cand.kind === "Annuity" || cand.kind === "Endowment" ? (
+                          <div className="md:col-span-3"><span className="uppercase tracking-wide text-slate-400">Basis</span><div className="text-slate-700">{cand.detail || "—"}</div></div>
+                        ) : (<>
+                          <div><span className="uppercase tracking-wide text-slate-400">Current amount</span><div className="text-slate-700">{money(cand.current)}</div></div>
+                          <div><span className="uppercase tracking-wide text-slate-400">Return % p.a.</span><div className="text-slate-700">{fmt(cand.rate, cand.rate % 1 ? 2 : 0)}%</div></div>
+                          <div><span className="uppercase tracking-wide text-slate-400">Years</span><div className="text-slate-700">{cand.years}</div></div>
+                        </>)}
+                        <div><span className="uppercase tracking-wide text-slate-400">Contribution ($/mo)</span><div className="text-slate-700">{money(cand.contribMonthly, 2)}</div></div>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-1">Figures come from the plan under Current Coverage — edit them there.</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {[["annuities", "Other: Annuities", d.annTotal], ["investments", "Other: Investments", d.invTotal]].map(([key, label, total]) => (
               <div key={key} className="mt-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{label} — projected: <span className="text-purple-900">{money(total)}</span></div>
