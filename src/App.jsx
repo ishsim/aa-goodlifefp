@@ -1344,7 +1344,16 @@ function compute(c) {
   const retPlansTotal = retCandidates.filter(x => x.included).reduce((a, x) => a + x.projected, 0);
   const rtProjected = spkProjected(c) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal + retPlansTotal;
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
-  const rtMonthlyAnnuity = num(rt.years) > 0 ? rtProjected / (num(rt.years) * 12) : 0;
+  // An income stream and a pot of money are different promises, so they are totalled
+  // apart: annuities and the pension pay out monthly whatever happens, while a lump sum is
+  // a balance the client may well spend on something else along the way.
+  const retAnnuityTotal = spkAnnuityTotal + num(rt.pension) + annTotal
+    + retCandidates.filter(x => x.included && x.kind === "Annuity").reduce((a, x) => a + x.projected, 0);
+  const retLumpTotal = rtProjected - retAnnuityTotal;
+  const retMonths = num(rt.years) * 12;
+  const retAnnuityMonthly = retMonths > 0 ? retAnnuityTotal / retMonths : 0;
+  const retLumpMonthly = retMonths > 0 ? retLumpTotal / retMonths : 0;
+  const rtMonthlyAnnuity = retMonths > 0 ? rtProjected / retMonths : 0;
   // products
   const selected = (c.products || []).filter(p => p.include);
   // one quotation table per insured person — client first, then each dependent that
@@ -1391,7 +1400,8 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal,
+    retAnnuityTotal, retLumpTotal, retAnnuityMonthly, retLumpMonthly, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
 function buildClaudePrompt(c, d) {
@@ -1421,7 +1431,8 @@ function buildClaudePrompt(c, d) {
     `  • Required (inflation-adjusted): ${money(Math.round(d.rtAdjusted), 0)}`,
     `  • Projected: ${money(d.rtProjected, 0)}`,
     `  • Shortfall: ${money(Math.round(d.rtShortfall), 0)}`,
-    `  • Expected monthly annuity: ${money(Math.round(d.rtMonthlyAnnuity), 0)}`,
+    `  • Guaranteed monthly income (annuities and pension): ${money(Math.round(d.retAnnuityMonthly), 0)}`,
+    `  • Lump sums: ${money(Math.round(d.retLumpTotal), 0)} (a further ${money(Math.round(d.retLumpMonthly), 0)}/month if spread evenly)`,
     `- Recommended plans:`,
     ...d.selected.map(p => `  • ${p.label} — coverage: ${planCoverageText(p)}, monthly premium: ${money(p.monthly, 0)}`),
     `- Other objectives:`,
@@ -3578,7 +3589,19 @@ const RetirementSection = ({ client, d, heading, id }) => (
               </tr>
             </tbody>
           </table>
-          <p className="text-xs text-slate-500">With the current projection you can expect a monthly retirement annuity of approximately <b>{money(d.rtMonthlyAnnuity)}</b>.</p>
+          <div className="text-xs text-slate-500" style={{ marginTop: 4 }}>
+            <p style={{ marginBottom: 4 }}>
+              Of the {money(d.rtProjected)} projected, <b>{money(d.retAnnuityTotal)}</b> arrives as guaranteed income —
+              the SPK employer annuity, Old Age Pension and any annuity plans — which over {client.retirement.years} years
+              of retirement is about <b>{money(d.retAnnuityMonthly)} per month</b> you can count on.
+            </p>
+            <p style={{ marginBottom: 0 }}>
+              The remaining <b>{money(d.retLumpTotal)}</b> is held as lump sums. Spread evenly across the same
+              {" " + client.retirement.years} years that would add about <b>{money(d.retLumpMonthly)} per month</b>, bringing
+              the total to {money(d.rtMonthlyAnnuity)} — but a lump sum is usually drawn on for one-off needs along the way
+              rather than taken as a fixed monthly income, so the guaranteed figure above is the one to plan around.
+            </p>
+          </div>
   </>
 );
 
@@ -6595,7 +6618,10 @@ export default function App() {
               <Stat label="Projected arrangement" value={money(d.rtProjected)} />
               <Stat label="Shortfall" value={money(d.rtShortfall)} accent />
             </div>
-            <div className="text-sm text-slate-600 mt-2">Expected monthly retirement annuity at current projection: <b>{money(d.rtMonthlyAnnuity)}</b></div>
+            <div className="text-sm text-slate-600 mt-2">
+              Guaranteed monthly income: <b>{money(d.retAnnuityMonthly)}</b>
+              <span className="text-slate-400"> · lump sums spread evenly add {money(d.retLumpMonthly)} ({money(d.rtMonthlyAnnuity)} in total)</span>
+            </div>
           </SectionCard>
           <SectionCard title="3.3 Other objectives" right={<button onClick={() => update({ otherObjectives: [...(client.otherObjectives || []), { id: uid(), name: "", target: "", years: "", note: "" }] })} className="text-sm text-purple-800 hover:underline">+ Add objective</button>}>
             <div className="flex flex-wrap gap-2 mb-3">
