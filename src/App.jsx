@@ -3715,14 +3715,15 @@ function CurrentCoverageSection({ client, update }) {
         {plans.length === 0 && <div className="text-sm text-slate-400">No existing plans added yet.</div>}
         <div className="space-y-3">
           {plans.map((row, i) => (
+            <div key={row.id || i} id={"anc-plan-" + (row.id || i)} style={{ scrollMarginTop: 64 }}>
             <ExistingPlanRow
-              key={row.id || i}
               row={row}
               dependents={client.dependents || []}
               clientDob={client.dob}
               onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
               onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
             />
+            </div>
           ))}
         </div>
       </Collapsible>
@@ -3734,8 +3735,8 @@ function CurrentCoverageSection({ client, update }) {
         {invs.length === 0 && <div className="text-sm text-slate-400">No investments added yet.</div>}
         <div className="space-y-3">
           {invs.map((row, i) => (
+            <div key={row.id || i} id={"anc-inv-" + (row.id || i)} style={{ scrollMarginTop: 64 }}>
             <ExistingInvestmentRow
-              key={row.id || i}
               row={row}
               dependents={client.dependents || []}
               clientAge={num(calcAge(client.dob))}
@@ -3743,6 +3744,7 @@ function CurrentCoverageSection({ client, update }) {
               onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
               onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
             />
+            </div>
           ))}
         </div>
       </Collapsible>
@@ -6273,6 +6275,47 @@ export default function App() {
 
   // ----- edit view -----
   const sidebarWidth = sidebarExpanded ? 220 : 64;
+  // Long steps get a jump list under their own tab: the plans on file and the plans being
+  // quoted, grouped by who they are for, since that is how the advisor thinks about them.
+  const jumpTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const subNavItems = () => {
+    const people = [
+      { id: "self", name: client.name || "Client" },
+      ...(client.dependents || []).map((dep, i) => ({ id: dep.id, name: dep.name || "Dependent " + (i + 1) })),
+    ];
+    if (step === 3) {
+      return [
+        { id: "anc-obj-income", label: "Income replacement" },
+        { id: "anc-obj-retirement", label: "Retirement planning" },
+        { id: "anc-obj-other", label: "Other objectives" },
+        ...(client.otherObjectives || []).map((o, i) => ({ id: "anc-goal-" + (o.id || i), label: o.name || "Goal " + (i + 1), depth: 1 })),
+      ];
+    }
+    if (step === 4) {
+      return people.flatMap(pp => {
+        const pl = (client.existingPlans || []).filter(x => (x.insured || "self") === pp.id);
+        const iv = (client.existingInvestments || []).filter(x => (x.insured || "self") === pp.id);
+        if (!pl.length && !iv.length) return [];
+        return [
+          { header: true, label: pp.name },
+          ...pl.map((x, i) => ({ id: "anc-plan-" + (x.id || i), label: x.planName || x.planType || "Plan", depth: 1 })),
+          ...iv.map((x, i) => ({ id: "anc-inv-" + (x.id || i), label: x.description || x.type || "Investment", depth: 1 })),
+        ];
+      });
+    }
+    if (step === 5) {
+      return people.flatMap(pp => {
+        const mine = (client.products || []).filter(x => (x.insuredBy || "self") === pp.id);
+        if (!mine.length) return [];
+        return [
+          { id: "anc-person-" + pp.id, label: pp.name },
+          ...mine.map(x => ({ id: "anc-reco-" + x.id, label: x.label, depth: 1, dim: !x.include })),
+        ];
+      });
+    }
+    return [];
+  };
+
   const navRow = (Icon, label, active, onClick, extra = {}) => (
     <button
       onClick={onClick}
@@ -6292,7 +6335,28 @@ export default function App() {
         style={{ width: sidebarWidth, background: "#3a1955", borderRight: "1px solid rgba(255,255,255,0.1)" }}
       >
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {STEPS.map((s, i) => navRow(s.icon, `${i + 1}. ${s.label}`, step === i, () => setStep(i)))}
+          {STEPS.map((s, i) => {
+            const subs = step === i && sidebarExpanded ? subNavItems() : [];
+            return (
+              <React.Fragment key={i}>
+                {navRow(s.icon, `${i + 1}. ${s.label}`, step === i, () => setStep(i))}
+                {subs.length > 0 && (
+                  <div className="pb-1">
+                    {subs.map((it, k) => it.header ? (
+                      <div key={"h" + k} className="text-white/50 uppercase tracking-wide truncate"
+                        style={{ fontSize: 10, fontWeight: 700, padding: "6px 12px 2px 22px" }}>{it.label}</div>
+                    ) : (
+                      <button key={it.id} onClick={() => jumpTo(it.id)} title={it.label}
+                        className="w-full text-left text-white/70 hover:text-white hover:bg-white/10 rounded-md truncate"
+                        style={{ fontSize: 12, padding: "5px 10px", paddingLeft: it.depth ? 34 : 22, opacity: it.dim ? 0.45 : 1 }}>
+                        {it.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
         <div className="p-2 border-t border-white/10 space-y-1">
           <button
@@ -6513,6 +6577,7 @@ export default function App() {
         </>)}
 
         {step === 3 && (<>
+          <div id="anc-obj-income" style={{ scrollMarginTop: 64 }} />
           <SectionCard title="3.1 Income replacement objective">
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <Field label="Income to replace ($/month)" hint={num(client.incomeReplacement.monthly) > 0 ? "" : "using net income: " + money(d.net)}><NumInput value={client.incomeReplacement.monthly} onChange={e => updateDeep("incomeReplacement", { monthly: e.target.value })} placeholder={String(Math.round(d.net))} /></Field>
@@ -6531,6 +6596,7 @@ export default function App() {
               ))}</tbody>
             </table>
           </SectionCard>
+          <div id="anc-obj-retirement" style={{ scrollMarginTop: 64 }} />
           <SectionCard title="3.2 Retirement planning objective">
             <div className="grid md:grid-cols-4 gap-4 mb-4">
               <Field label="Retirement income ($/month)"><NumInput value={client.retirement.monthly} onChange={e => updateDeep("retirement", { monthly: e.target.value })} /></Field>
@@ -6623,6 +6689,7 @@ export default function App() {
               <span className="text-slate-400"> · lump sums spread evenly add {money(d.retLumpMonthly)} ({money(d.rtMonthlyAnnuity)} in total)</span>
             </div>
           </SectionCard>
+          <div id="anc-obj-other" style={{ scrollMarginTop: 64 }} />
           <SectionCard title="3.3 Other objectives" right={<button onClick={() => update({ otherObjectives: [...(client.otherObjectives || []), { id: uid(), name: "", target: "", years: "", note: "" }] })} className="text-sm text-purple-800 hover:underline">+ Add objective</button>}>
             <div className="flex flex-wrap gap-2 mb-3">
               {OBJECTIVE_PRESETS.map(p => (
@@ -6637,7 +6704,7 @@ export default function App() {
             )}
             <div className="space-y-2">
               {(client.otherObjectives || []).map((o, i) => (
-                <div key={o.id || i} className="grid grid-cols-12 gap-2 items-center pb-2 border-b border-slate-100">
+                <div key={o.id || i} id={"anc-goal-" + (o.id || i)} style={{ scrollMarginTop: 64 }} className="grid grid-cols-12 gap-2 items-center pb-2 border-b border-slate-100">
                   <div className="col-span-3"><Input value={o.name} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, name: e.target.value }; update({ otherObjectives: l }); }} placeholder="Objective" /></div>
                   <div className="col-span-2"><NumInput value={o.target} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, target: e.target.value }; update({ otherObjectives: l }); }} /></div>
                   <div className="col-span-2"><NumInput value={o.years} onChange={e => { const l = [...client.otherObjectives]; l[i] = { ...o, years: e.target.value }; update({ otherObjectives: l }); }} /></div>
@@ -6674,8 +6741,8 @@ export default function App() {
             const mine = client.products.filter(p => (p.insuredBy || "self") === person.id);
             const inc = mine.filter(p => p.include);
             return (
+              <div key={person.id} id={"anc-person-" + person.id} style={{ scrollMarginTop: 64 }}>
               <SectionCard
-                key={person.id}
                 title={person.name + (person.relationship ? " (" + person.relationship + ")" : "")}
                 right={<div className="flex items-center gap-3">
                   {inc.length > 0 && <span className="text-sm text-slate-500">{money(inc.reduce((s, p) => s + num(p.monthly), 0), 2)}/mo · {money(inc.reduce((s, p) => s + num(p.annual), 0), 2)}/yr</span>}
@@ -6689,8 +6756,8 @@ export default function App() {
                   ? <div className="text-sm text-slate-400">No plans quoted for {person.name} yet — add one above.</div>
                   : <div className="space-y-3">
                       {mine.map((p, idx) => (
+                        <div key={p.id} id={"anc-reco-" + p.id} style={{ scrollMarginTop: 64 }}>
                         <RecommendedPlanCard
-                          key={p.id}
                           p={p}
                           clientId={client.id}
                           insuredOptions={quoteTargets}
@@ -6709,9 +6776,11 @@ export default function App() {
                           onChange={next => update({ products: client.products.map(x => x.id === p.id ? next : x) })}
                           onRemove={() => update({ products: client.products.filter(x => x.id !== p.id) })}
                         />
+                        </div>
                       ))}
                     </div>}
               </SectionCard>
+              </div>
             );
           })}
           <p className="text-xs text-slate-400 mt-3">Each selected plan automatically brings its full explanation page (from your product library) into the report.</p>
