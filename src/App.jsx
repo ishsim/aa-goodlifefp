@@ -934,6 +934,119 @@ async function deleteClientRow(id) {
   if (error) { console.error("delete failed", error); throw error; }
 }
 
+// ---------- offline store ----------
+// Every record is written to the browser's own database first and to Supabase second, so
+// the app keeps working with no connection and nothing typed is lost. Records that could
+// not be sent sit in an outbox until the connection returns.
+const DB_NAME = "goodlife-offline", DB_VERSION = 1, STORE = "clients", OUTBOX = "outbox";
+const idbReady = () => typeof indexedDB !== "undefined";
+const openDb = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, DB_VERSION);
+  req.onupgradeneeded = () => {
+    const db = req.result;
+    if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+    if (!db.objectStoreNames.contains(OUTBOX)) db.createObjectStore(OUTBOX, { keyPath: "id" });
+  };
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+const idbRun = async (store, mode, fn) => {
+  if (!idbReady()) return null;
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const req = fn(tx.objectStore(store));
+    tx.oncomplete = () => { db.close(); resolve(req ? req.result : undefined); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+};
+const localAll = (store) => idbRun(store, "readonly", (os) => os.getAll()).then(r => r || []).catch(() => []);
+const localPut = (store, value) => idbRun(store, "readwrite", (os) => os.put(value)).catch(() => undefined);
+const localDel = (store, id) => idbRun(store, "readwrite", (os) => os.delete(id)).catch(() => undefined);
+
+// Newest wins, per record: whichever copy carries the later edit is the one kept. A record
+// held locally that the server has never heard of is a pending creation; one the server has
+// dropped and that is not waiting to be sent was deleted elsewhere, so it goes.
+const mergeNewest = (local, server, pendingIds) => {
+  const byId = new Map(server.map(c => [c.id, c]));
+  local.forEach(l => {
+    const remote = byId.get(l.id);
+    if (!remote) {
+      if (pendingIds.has(l.id)) byId.set(l.id, l);
+      return;
+    }
+    if (num(l.updated) > num(remote.updated)) byId.set(l.id, l);
+  });
+  return [...byId.values()].sort((a, b) => num(b.updated) - num(a.updated));
+};
+
+// Reads the server when it can and the local copy when it cannot; either way the local
+// copy is brought up to date so the next cold start has something to show.
+async function loadClientsOffline() {
+  const [cached, outbox] = await Promise.all([localAll(STORE), localAll(OUTBOX)]);
+  const local = cached.map(migrate);
+  const pendingIds = new Set(outbox.map(o => o.id));
+  try {
+    const server = await loadClients();
+    const merged = mergeNewest(local, server, pendingIds);
+    await Promise.all(merged.map(c => localPut(STORE, c)));
+    const keep = new Set(merged.map(c => c.id));
+    await Promise.all(local.filter(c => !keep.has(c.id)).map(c => localDel(STORE, c.id)));
+    return { list: merged, online: true };
+  } catch (e) {
+    console.warn("[offline] working from the local copy:", e?.message || e);
+    return { list: local.sort((a, b) => num(b.updated) - num(a.updated)), online: false };
+  }
+}
+
+// Local first, always; the cloud when it answers. A write that cannot be sent is queued
+// rather than lost, and the caller is told which happened.
+async function persistClient(c) {
+  await localPut(STORE, c);
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    await localPut(OUTBOX, { id: c.id, op: "save", at: Date.now() });
+    return "queued";
+  }
+  let ok = false;
+  try { ok = await saveClient(c); } catch { ok = false; }
+  if (!ok) { await localPut(OUTBOX, { id: c.id, op: "save", at: Date.now() }); return "queued"; }
+  await localDel(OUTBOX, c.id);
+  return "saved";
+}
+async function removeClientOffline(id) {
+  await localDel(STORE, id);
+  try {
+    await deleteClientRow(id);
+    await localDel(OUTBOX, id);
+    return "deleted";
+  } catch {
+    await localPut(OUTBOX, { id, op: "delete", at: Date.now() });
+    return "queued";
+  }
+}
+// Sends everything waiting, oldest first, and reports how much moved.
+async function flushOutbox() {
+  const outbox = await localAll(OUTBOX);
+  if (!outbox.length) return { sent: 0, left: 0 };
+  let sent = 0;
+  for (const item of outbox.sort((a, b) => num(a.at) - num(b.at))) {
+    try {
+      if (item.op === "delete") {
+        await deleteClientRow(item.id);
+      } else {
+        const rows = await idbRun(STORE, "readonly", (os) => os.get(item.id));
+        if (!rows) { await localDel(OUTBOX, item.id); continue; }
+        const ok = await saveClient(rows);
+        if (!ok) continue;
+      }
+      await localDel(OUTBOX, item.id);
+      sent += 1;
+    } catch { /* still offline, or the server refused — leave it queued */ }
+  }
+  const left = (await localAll(OUTBOX)).length;
+  return { sent, left };
+}
+
 // ---------- plan image storage ----------
 // Uploaded diagrams/illustrations for a recommended plan used to be embedded as base64
 // inside the client's JSON record, so editing any field re-wrote every image byte along
@@ -5176,8 +5289,9 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await loadClients();
-        if (!cancelled) setClients(list);
+        const { list, online } = await loadClientsOffline();
+        if (!cancelled) { setClients(list); setOnline(online); }
+        if (!online && !cancelled) toast("Working offline — showing the copy saved on this device.");
       } catch (e) {
         if (!cancelled) toast.error("Could not load clients: " + (e?.message || e));
       } finally {
@@ -5207,12 +5321,53 @@ export default function App() {
   // clients carrying uploaded plan images, where every write re-sends those bytes too.
   const saveTimerRef = useRef(null);
   const pendingSaveRef = useRef(null);
+  const [online, setOnline] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
+  const refreshPending = async () => setPendingCount((await localAll(OUTBOX)).length);
+
+  // Anything written while offline goes out as soon as the connection returns, and again
+  // whenever the app is reopened, so a queue cannot sit forgotten.
+  useEffect(() => {
+    let stop = false;
+    const sync = async () => {
+      if (stop || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
+      const { sent, left } = await flushOutbox();
+      if (stop) return;
+      setPendingCount(left);
+      if (sent > 0) {
+        toast.success(sent === 1 ? "1 change synced" : sent + " changes synced");
+        try {
+          const { list, online: ok } = await loadClientsOffline();
+          if (!stop && ok) { setClients(list); setOnline(true); }
+        } catch { /* keep what is on screen */ }
+      }
+    };
+    const goOnline = () => { setOnline(true); sync(); };
+    const goOffline = () => setOnline(false);
+    if (typeof window !== "undefined") {
+      setOnline(navigator.onLine !== false);
+      window.addEventListener("online", goOnline);
+      window.addEventListener("offline", goOffline);
+    }
+    refreshPending();
+    sync();
+    const iv = setInterval(sync, 60000);
+    return () => {
+      stop = true; clearInterval(iv);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", goOnline);
+        window.removeEventListener("offline", goOffline);
+      }
+    };
+  }, []);
   const flushPendingSave = () => {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     const pending = pendingSaveRef.current;
     if (pending) {
       pendingSaveRef.current = null;
-      saveClient(pending).catch(e => toast.error("Save failed: " + (e?.message || e)));
+      persistClient(pending)
+        .then(r => { if (r === "queued") { setOnline(false); refreshPending(); } })
+        .catch(e => toast.error("Save failed: " + (e?.message || e)));
     }
   };
   useEffect(() => () => flushPendingSave(), []); // flush on unmount so a last edit is never dropped
@@ -5246,8 +5401,9 @@ export default function App() {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     pendingSaveRef.current = null;
     setSaveState("saving");
-    const ok = await saveClient(client);
-    setSaveState(ok ? "saved" : "error");
+    const result = await persistClient(client);
+    if (result === "queued") { setOnline(false); refreshPending(); }
+    setSaveState(result === "saved" ? "saved" : result === "queued" ? "queued" : "error");
     setTimeout(() => setSaveState(""), 2000);
   };
 
@@ -5255,16 +5411,12 @@ export default function App() {
     const c = blankClient();
     setClients(prev => [c, ...prev]);
     setActiveId(c.id); setView("edit"); setStep(0);
-    const ok = await saveClient(c);
-    if (!ok) toast.error("Could not create client in the cloud.");
+    const result = await persistClient(c);
+    if (result === "queued") { setOnline(false); refreshPending(); }
   };
   const removeClient = async (id) => {
-    try {
-      await deleteClientRow(id);
-    } catch (e) {
-      toast.error("Delete failed: " + (e?.message || e));
-      return;
-    }
+    const result = await removeClientOffline(id);
+    if (result === "queued") { setOnline(false); refreshPending(); }
     setClients(prev => prev.filter(c => c.id !== id));
     if (activeId === id) { setActiveId(null); setView("list"); }
   };
@@ -5298,11 +5450,11 @@ export default function App() {
       for (const raw of list) {
         if (!raw || typeof raw !== "object") continue;
         const c = migrate({ ...raw, id: uid(), updated: Date.now() });
-        const ok = await saveClient(c);
-        if (ok) imported.push(c);
+        const result = await persistClient(c);
+        if (result !== "error") imported.push(c);
       }
-      const fresh = await loadClients();
-      setClients(fresh);
+      const refreshed = await loadClientsOffline();
+      setClients(refreshed.list); setOnline(refreshed.online); refreshPending();
       toast.success(`${imported.length} client(s) imported successfully`);
     } catch (err) {
       console.error(err);
@@ -6447,6 +6599,16 @@ export default function App() {
           <div className="flex items-center gap-3">
             <button onClick={() => { persist(); setView("list"); }} className="text-xs text-purple-200 hover:text-white">← Clients</button>
             <span className="font-serif text-lg">GoodLife</span>
+            {(!online || pendingCount > 0) && (
+              <span className="text-[11px] px-2 py-1 rounded"
+                style={{ background: online ? "#fde68a" : "#fca5a5", color: "#422006" }}
+                title={online
+                  ? "Saved on this device and waiting to reach the cloud"
+                  : "No connection — edits are saved on this device and will sync when you are back online"}>
+                {online ? "Syncing " + pendingCount + " change" + (pendingCount === 1 ? "" : "s") + "…" : "Offline"}
+                {!online && pendingCount > 0 ? " · " + pendingCount + " waiting" : ""}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {saveState && <span className="text-xs text-purple-200">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save failed"}</span>}

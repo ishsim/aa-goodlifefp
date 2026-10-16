@@ -70,8 +70,15 @@ export const Route = createFileRoute("/_authenticated")({
     } catch {
       result = null;
     }
-    if (!result || result.error || !result.data.user) throw redirect({ to: "/auth" });
-    return { user: result.data.user };
+    if (result && !result.error && result.data.user) return { user: result.data.user };
+    // getUser() asks the server, so it fails with no connection. The session already on
+    // this device is enough to open the app offline — the server checks the token again on
+    // every request anyway, so nothing is trusted that was not already trusted.
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.user) return { user: data.session.user };
+    } catch { /* no stored session either */ }
+    throw redirect({ to: "/auth" });
   },
   component: () => <Outlet />,
   // Showing the loading screen for an error meant every crash looked like a slow network
