@@ -3824,19 +3824,28 @@ const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "
 // coverage $ totals per insured, summed from each plan's granular coverage-breakdown
 // categories into the three points of coverage — a plan with both a "Death" and a
 // "Health (Major Critical Illness)" entry counts toward both Life and Health
-// What a client is asking is not "how much cover do I hold" but "is it enough", so each
-// point of coverage carries the benchmark it is measured against. For the client those
-// come from income; for a dependent there is no income to work from, so a target is typed
-// or the row simply shows what is held.
+// One row per benefit, never a group of them. Death and disability are alternative
+// triggers on the same life — a policy paying $80,000 on either pays $80,000, not
+// $160,000 — and the same is true of an accident's death and disability benefits, so
+// adding them overstated cover and made every gap look smaller than it is. Summing now
+// happens only across policies, which is the one direction that does add up.
 const NEEDS_GROUPS = [
-  { key: "health", label: "Health Benefits", guideline: "5 years of income", yearsOfIncome: 5,
-    categories: ["Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)"] },
-  { key: "life", label: "Life Protection", guideline: "10 years of income", yearsOfIncome: 10,
-    categories: ["Death", "Disability"] },
-  // a daily hospital income is a rate, not a sum assured, so it is left out of the
-  // accident total rather than added to lump-sum benefits as if it were one
-  { key: "accident", label: "Accident Coverage", guideline: "Inpatient, outpatient & reimbursement", flatTarget: 100000,
-    categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)"] },
+  { key: "death", label: "Life Protection", guideline: "Death — 10 years of income", yearsOfIncome: 10,
+    categories: ["Death"] },
+  { key: "disability", label: "Disability", guideline: "Total & permanent — 10 years of income", yearsOfIncome: 10,
+    categories: ["Disability"] },
+  { key: "majorCI", label: "Major Critical Illness", guideline: "5 years of income", yearsOfIncome: 5,
+    categories: ["Health (Major Critical Illness)"] },
+  { key: "earlyCI", label: "Early-Major Critical Illness", guideline: "3 years of income", yearsOfIncome: 3,
+    categories: ["Health (Early-Major Critical Illness)"] },
+  { key: "hospital", label: "Hospitalisation & Surgery", guideline: "Annual limit — set a target",
+    categories: ["Health (Hospitalisation & Surgery)"] },
+  { key: "accDeath", label: "Accidental Death", guideline: "Accident — set a target",
+    categories: ["Death (Accident)"] },
+  { key: "accDisability", label: "Accidental Disability", guideline: "Accident — set a target",
+    categories: ["Disability (Accident)"] },
+  { key: "accReimburse", label: "Accident Reimbursement", guideline: "Medical expenses — set a target",
+    categories: ["Reimbursement (Accident)"] },
 ];
 
 function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, setTarget, incomeMonthly }) {
@@ -3861,8 +3870,10 @@ function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, set
     const targetSet = rawTarget != null && rawTarget !== "";
     const target = targetSet ? num(rawTarget) : autoTarget;
     return { ...g, auto, cover, coverOverridden, rawCover, target, autoTarget, rawTarget, targetSet, hasTarget: target > 0 };
-  });
+  // a benefit with no cover and nothing expected of it has nothing to say
+  }).filter(r => r.cover > 0 || r.hasTarget);
 
+  if (!rows.length) return <div className="text-sm text-slate-400">No cover on file for this person yet.</div>;
   const scale = Math.max(...rows.map(r => Math.max(r.cover, r.target)), 1) * 1.06;
   const W = 560, L = 150, R = 104, BAR = 22, ROW = 58, T = 10;
   const H = T + rows.length * ROW;
@@ -3903,7 +3914,7 @@ function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, set
           );
         })}
       </svg>
-      <div className="grid grid-cols-3 gap-2 mt-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
         {rows.map(r => (
           <div key={r.key} className="rounded-lg border border-slate-200 p-2">
             <div className="text-[11px] font-semibold text-slate-600 mb-1">{r.label}</div>
@@ -4038,7 +4049,7 @@ function InsuranceNeedsSummary({ client, update }) {
   return (
     <div>
       {usesFx(plans) && <p className="text-xs text-slate-500 mb-2" style={{ fontStyle: "italic" }}>{FX_NOTE}</p>}
-      <p className="text-xs text-slate-500 mb-4">Cover held against what is needed, as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
+      <p className="text-xs text-slate-500 mb-4">Cover held against what is needed, as of {todayLong()} — one line per benefit, since death and disability pay on different events and are not added together. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
       <div className="space-y-8">
         {persons.map(person => (
           <div key={person.id} className={persons.length > 1 ? "pb-6 border-b border-slate-100 last:border-0 last:pb-0" : ""}>
