@@ -19,6 +19,43 @@ function AuthLoading() {
   );
 }
 
+function AuthError({ error, reset }: { error: unknown; reset?: () => void }) {
+  const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center"
+      style={{
+        background: "linear-gradient(120deg, #3a1955 0%, #51037c 55%, #66229d 100%)",
+        fontFamily: "'Source Sans 3', system-ui, sans-serif",
+      }}
+    >
+      <p className="text-white text-lg font-semibold">Something went wrong loading your workspace</p>
+      <p className="text-purple-100 text-sm max-w-xl" style={{ wordBreak: "break-word" }}>{message}</p>
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+        <button
+          onClick={() => { if (reset) reset(); else window.location.reload(); }}
+          className="text-sm px-4 py-2 rounded-lg bg-white text-purple-900 font-semibold"
+        >
+          Try again
+        </button>
+        <button
+          onClick={() => { window.location.href = "/"; }}
+          className="text-sm px-4 py-2 rounded-lg border border-white/40 text-white"
+        >
+          Back to clients
+        </button>
+        <button
+          onClick={async () => { try { await supabase.auth.signOut(); } finally { window.location.href = "/auth"; } }}
+          className="text-sm px-4 py-2 rounded-lg border border-white/40 text-white"
+        >
+          Sign out
+        </button>
+      </div>
+      <p className="text-purple-200/70 text-xs mt-2">If this keeps happening, send me this message — it names the cause.</p>
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   pendingMs: 0,
@@ -37,5 +74,7 @@ export const Route = createFileRoute("/_authenticated")({
     return { user: result.data.user };
   },
   component: () => <Outlet />,
-  errorComponent: () => <AuthLoading />,
+  // Showing the loading screen for an error meant every crash looked like a slow network
+  // and spun forever, with the actual message only visible in a console nobody had open.
+  errorComponent: ({ error, reset }) => <AuthError error={error} reset={reset} />,
 });
