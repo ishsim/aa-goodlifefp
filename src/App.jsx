@@ -704,6 +704,8 @@ const blankClient = () => ({
   existingPlans: [],
   existingInvestments: [],
   insuranceNeedsOverrides: {},
+  // per-person, per-coverage benchmarks; the client's derive from income when unset
+  insuranceNeedsTargets: {},
   insuranceDetailTables: {},
   // recommended plans are added per insured person — starts empty, built up in step 6
   products: [],
@@ -3815,21 +3817,29 @@ const COVERAGE_DOT = {
   "Loans & Liabilities": "#9f1239",
   "Others": "#94a3b8",
 };
+const kfmtBase = (v) => v >= 1000000 ? "$" + fmt(v / 1000000, 1) + "M" : v >= 1000 ? "$" + fmt(v / 1000, v % 1000 ? 1 : 0) + "k" : v > 0 ? "$" + fmt(v) : "$0";
 const coverageDot = (cat) => COVERAGE_DOT[cat] || "#94a3b8";
 const INSURED_COLORS = ["#51037c", "#2563eb", "#059669", "#d97706", "#0891b2", "#be185d", "#65a30d", "#475569"];
 
 // coverage $ totals per insured, summed from each plan's granular coverage-breakdown
 // categories into the three points of coverage — a plan with both a "Death" and a
 // "Health (Major Critical Illness)" entry counts toward both Life and Health
-const NEEDS_TRIANGLE_GROUPS = [
-  { key: "health", label: "Health Benefits", categories: ["Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)"], corner: { x: 108, y: 96 } },
-  { key: "life", label: "Life Protection", categories: ["Death", "Disability"], corner: { x: 352, y: 96 } },
+// What a client is asking is not "how much cover do I hold" but "is it enough", so each
+// point of coverage carries the benchmark it is measured against. For the client those
+// come from income; for a dependent there is no income to work from, so a target is typed
+// or the row simply shows what is held.
+const NEEDS_GROUPS = [
+  { key: "health", label: "Health Benefits", guideline: "5 years of income", yearsOfIncome: 5,
+    categories: ["Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)"] },
+  { key: "life", label: "Life Protection", guideline: "10 years of income", yearsOfIncome: 10,
+    categories: ["Death", "Disability"] },
   // a daily hospital income is a rate, not a sum assured, so it is left out of the
   // accident total rather than added to lump-sum benefits as if it were one
-  { key: "accident", label: "Accident Coverage", categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)"], corner: { x: 230, y: 344 } },
+  { key: "accident", label: "Accident Coverage", guideline: "Inpatient, outpatient & reimbursement", flatTarget: 100000,
+    categories: ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)"] },
 ];
 
-function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
+function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, setTarget, incomeMonthly }) {
   const autoTotal = (categories) => plans
     .filter(p => (p.insured || "self") === person.id)
     // sums assured are brought to base currency before being added, so a US$ policy
@@ -3837,44 +3847,79 @@ function InsuranceNeedsTriangle({ person, plans, overrides, setOverride }) {
     .flatMap(p => (p.coverages || []).map(c => ({ ...c, currency: planCurrency(p) })))
     .filter(c => categories.includes(c.category))
     .reduce((s, c) => s + toBase(c.currency, c.amount), 0);
-  const values = NEEDS_TRIANGLE_GROUPS.map(g => {
+
+  const rows = NEEDS_GROUPS.map(g => {
     const auto = autoTotal(g.categories);
-    const raw = overrides[g.key];
-    const isOverridden = raw != null && raw !== "";
-    return { ...g, auto, value: isOverridden ? num(raw) : auto, isOverridden, raw };
+    const rawCover = overrides[g.key];
+    const coverOverridden = rawCover != null && rawCover !== "";
+    const cover = coverOverridden ? num(rawCover) : auto;
+    // the client's benchmark follows their income; a dependent's is typed or left open
+    const autoTarget = person.id === "self"
+      ? (g.flatTarget != null ? g.flatTarget : incomeMonthly * 12 * g.yearsOfIncome)
+      : 0;
+    const rawTarget = targets[g.key];
+    const targetSet = rawTarget != null && rawTarget !== "";
+    const target = targetSet ? num(rawTarget) : autoTarget;
+    return { ...g, auto, cover, coverOverridden, rawCover, target, autoTarget, rawTarget, targetSet, hasTarget: target > 0 };
   });
-  // Deliberately no combined figure: Health, Life and Accident cover answer different
-  // questions and pay out on different events, so adding them into one "total" would
-  // overstate what the client is actually protected for.
-  const W = 460, H = 440, CENTER = { x: 230, y: 214 }, R_CORNER = 48;
+
+  const scale = Math.max(...rows.map(r => Math.max(r.cover, r.target)), 1) * 1.06;
+  const W = 560, L = 150, R = 104, BAR = 22, ROW = 58, T = 10;
+  const H = T + rows.length * ROW;
+  const x = (v) => L + (Math.max(0, v) / scale) * (W - L - R);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: "block", margin: "0 auto", fontFamily: "inherit" }}>
-      <polygon points={values.map(v => v.corner.x + "," + v.corner.y).join(" ")} fill="#f5f0fa" stroke="#d8b4fe" strokeWidth="2" />
-      {values.map(v => {
-        // the lower corner carries its label beneath the node so it stays clear of the
-        // triangle's edges; the upper two sit above
-        const below = v.corner.y > CENTER.y;
-        const labelY = below ? v.corner.y + R_CORNER + 46 : v.corner.y - R_CORNER - 10;
-        return (
-        <g key={v.key}>
-          <circle cx={v.corner.x} cy={v.corner.y} r={R_CORNER} fill="#fff" stroke={BRAND.primary} strokeWidth="2.5" />
-          <text x={v.corner.x} y={labelY} textAnchor="middle" fontSize="11.5" fontWeight="700" fill="#3a1955">{v.label}</text>
-          <text x={v.corner.x} y={v.corner.y - 10} textAnchor="middle" fontSize="8.5" fill={v.isOverridden ? "#b45309" : "#94a3b8"} fontStyle="italic">{v.isOverridden ? "edited" : "auto-total"}</text>
-          <foreignObject x={v.corner.x - 42} y={v.corner.y - 2} width="84" height="26">
-            <input
-              type="number" inputMode="decimal" step="any"
-              value={v.isOverridden ? v.raw : ""}
-              placeholder={String(Math.round(v.auto))}
-              onChange={e => setOverride(v.key, e.target.value)}
-              style={{ width: "100%", boxSizing: "border-box", textAlign: "center", fontSize: 11, border: "1px solid #c4b5fd", borderRadius: 6, padding: "3px 4px", fontFamily: "inherit" }}
-            />
-          </foreignObject>
-          <text x={v.corner.x} y={v.corner.y + 34} textAnchor="middle" fontSize="9" fill="#7c3aed" fontWeight="600">{money(v.value)}</text>
-        </g>
-        );
-      })}
-    </svg>
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxWidth: W, display: "block", fontFamily: "inherit" }}>
+        {rows.map((r, i) => {
+          const y = T + i * ROW;
+          const short = Math.max(0, r.target - r.cover);
+          const covered = r.hasTarget && short <= 0;
+          return (
+            <g key={r.key}>
+              <text x={L - 10} y={y + 14} textAnchor="end" fontSize="11.5" fontWeight="700" fill="#334155">{r.label}</text>
+              <text x={L - 10} y={y + 27} textAnchor="end" fontSize="8.5" fill="#94a3b8">{r.guideline}</text>
+              {/* the shortfall is the point of the chart, so it is drawn rather than implied */}
+              {r.hasTarget && <rect x={L} y={y + 2} width={Math.max(2, x(r.target) - L)} height={BAR} rx="3" fill="#f3e8ff" />}
+              <rect x={L} y={y + 2} width={Math.max(2, x(r.cover) - L)} height={BAR} rx="3" fill={covered ? "#15803d" : BRAND.primary} />
+              {!covered && r.hasTarget && (
+                <rect x={x(r.cover)} y={y + 2} width={Math.max(0, x(r.target) - x(r.cover))} height={BAR} rx="3" fill="#fecaca" />
+              )}
+              {/* the marker sits inside the bar when cover passes it, so it turns white to
+                  stay legible and its label moves clear of the bar's end */}
+              {r.hasTarget && <line x1={x(r.target)} y1={y - 1} x2={x(r.target)} y2={y + BAR + 5}
+                stroke={covered ? "#ffffff" : "#b45309"} strokeWidth="1.5" strokeDasharray="3 2" opacity={covered ? 0.9 : 1} />}
+              {x(r.cover) - L > 56 && <text x={L + 7} y={y + 17} fontSize="10" fontWeight="700" fill="#fff">{kfmtBase(r.cover)}</text>}
+              {r.hasTarget && (<>
+                <text x={Math.max(x(r.target), x(r.cover)) + 5} y={y + 10} fontSize="9" fontWeight="700" fill="#b45309">{kfmtBase(r.target)}</text>
+                <text x={Math.max(x(r.target), x(r.cover)) + 5} y={y + 21} fontSize="8" fill="#b45309">needed</text>
+              </>)}
+              <text x={L} y={y + BAR + 20} fontSize="9.5" fontWeight="700" fill={covered ? "#15803d" : r.hasTarget ? "#b91c1c" : "#94a3b8"}>
+                {!r.hasTarget ? "holding " + money(r.cover) + " — no target set"
+                  : covered ? "covered — " + money(r.cover) + " against " + money(r.target)
+                  : "short by " + money(short)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        {rows.map(r => (
+          <div key={r.key} className="rounded-lg border border-slate-200 p-2">
+            <div className="text-[11px] font-semibold text-slate-600 mb-1">{r.label}</div>
+            <label className="block text-[10px] uppercase tracking-wide text-slate-400">Cover held</label>
+            <input type="number" inputMode="decimal" step="any" value={r.coverOverridden ? r.rawCover : ""}
+              placeholder={String(Math.round(r.auto))} onChange={e => setOverride(r.key, e.target.value)}
+              className="w-full rounded border border-slate-300 px-1.5 py-1 text-xs mb-1" />
+            <label className="block text-[10px] uppercase tracking-wide text-slate-400">Target</label>
+            <input type="number" inputMode="decimal" step="any" value={r.targetSet ? r.rawTarget : ""}
+              placeholder={r.autoTarget > 0 ? String(Math.round(r.autoTarget)) : "set a target"}
+              onChange={e => setTarget(r.key, e.target.value)}
+              className="w-full rounded border border-slate-300 px-1.5 py-1 text-xs" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -3971,6 +4016,12 @@ function InsuranceNeedsSummary({ client, update }) {
   const plans = useMemo(() => (client.existingPlans || []).filter(p => !statusIsDead(p.status)), [client.existingPlans]);
   const clientAge = num(calcAge(client.dob));
   const overrides = client.insuranceNeedsOverrides || {};
+  const targets = client.insuranceNeedsTargets || {};
+  // the same monthly figure the Income Replacement step works from: what the client said
+  // they need to replace, else their take-home pay
+  const irMonthly = useMemo(() => num(client.incomeReplacement?.monthly) > 0
+    ? num(client.incomeReplacement.monthly)
+    : compute(client).net, [client]);
   const detailTables = client.insuranceDetailTables || {};
   const persons = useMemo(() => [
     { id: "self", name: client.name || "Client", age: clientAge || null },
@@ -3981,17 +4032,20 @@ function InsuranceNeedsSummary({ client, update }) {
   ].filter(p => p.id === "self" || plans.some(pl => (pl.insured || "self") === p.id)), [client.dependents, client.name, clientAge, plans]);
 
   const setOverride = (personId, key, v) => update({ insuranceNeedsOverrides: { ...overrides, [personId]: { ...(overrides[personId] || {}), [key]: v } } });
+  const setTarget = (personId, key, v) => update({ insuranceNeedsTargets: { ...targets, [personId]: { ...(targets[personId] || {}), [key]: v } } });
   const setTableField = (personId, path, v) => update({ insuranceDetailTables: { ...detailTables, [personId]: setDeep(detailTables[personId], path, v) } });
 
   return (
     <div>
       {usesFx(plans) && <p className="text-xs text-slate-500 mb-2" style={{ fontStyle: "italic" }}>{FX_NOTE}</p>}
-      <p className="text-xs text-slate-500 mb-4">Summary of current in-force insurance plans as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
+      <p className="text-xs text-slate-500 mb-4">Cover held against what is needed, as of {todayLong()} — the three points of coverage: Life, Accident and Health. Totals are calculated automatically from Existing Insurance Plans but every figure can be edited directly. Current value from Investment plans is not included here.</p>
       <div className="space-y-8">
         {persons.map(person => (
           <div key={person.id} className={persons.length > 1 ? "pb-6 border-b border-slate-100 last:border-0 last:pb-0" : ""}>
             <div className="font-semibold text-sm text-purple-900 mb-1 text-center">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
-            <InsuranceNeedsTriangle person={person} plans={plans} overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)} />
+            <InsuranceNeedsGap person={person} plans={plans} incomeMonthly={irMonthly}
+              overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)}
+              targets={targets[person.id] || {}} setTarget={(k, v) => setTarget(person.id, k, v)} />
             <InsuranceNeedsDetailTables tables={detailTables[person.id]} setField={(path, v) => setTableField(person.id, path, v)} plans={plans} personId={person.id} />
           </div>
         ))}
