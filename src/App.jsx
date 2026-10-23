@@ -684,6 +684,9 @@ const defaultExpenses = () => Object.fromEntries(
 
 const blankClient = () => ({
   id: uid(),
+  // a partner is their own client record — own income, own policies, own gaps — so this
+  // holds the other record's id rather than a copy of anything
+  partnerClientId: "",
   name: "", partnerName: "", dob: "", occupation: "", occDetails: "", email: "", meetingDate: "", riskProfile: "",
   dependents: [],
   priorities: ["", "", "", "", ""],
@@ -5418,6 +5421,30 @@ export default function App() {
     setTimeout(() => setSaveState(""), 2000);
   };
 
+  // Links are mutual: setting one side sets the other, and moving a link clears whoever
+  // held it before, so two records can never disagree about who the partner is.
+  const linkPartner = async (otherId) => {
+    if (!client) return;
+    if (otherId === activeId) return; // a record cannot be its own partner
+    const at = Date.now();
+    let next = [];
+    setClients(prev => {
+      next = prev.map(c => {
+        if (c.id === activeId) return { ...c, partnerClientId: otherId || "", updated: at };
+        if (otherId && c.id === otherId) return { ...c, partnerClientId: activeId, updated: at };
+        // whoever used to point here no longer does
+        if (c.partnerClientId === activeId) return { ...c, partnerClientId: "", updated: at };
+        return c;
+      });
+      return next;
+    });
+    const touched = next.filter(c => c.updated === at);
+    const results = await Promise.all(touched.map(persistClient));
+    if (results.includes("queued")) { setOnline(false); refreshPending(); }
+    const other = next.find(c => c.id === otherId);
+    toast.success(otherId ? "Linked to " + displayName(other?.name, "that client") : "Partner link removed");
+  };
+
   const newClient = async () => {
     const c = blankClient();
     setClients(prev => [c, ...prev]);
@@ -5717,6 +5744,21 @@ export default function App() {
                     </span>
                   ))}
                 </div>
+                {(() => {
+                  // a couple planning together are two records; this is the way across
+                  const partner = clients.find(x => x.id === c.partnerClientId && x.id !== c.id);
+                  if (!partner) return null;
+                  return (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      Partner:{" "}
+                      <button onClick={() => { setActiveId(partner.id); setView("edit"); setStep(0); }}
+                        className="text-purple-700 font-semibold hover:underline"
+                        title="Open their own record — separate finances, policies and gaps">
+                        {displayName(partner.name, "Unnamed client")}
+                      </button>
+                    </div>
+                  );
+                })()}
                 {c._match?.kind === "dependent" && (
                   <div className="text-xs text-purple-700 mt-0.5">Matched {c._match.relationship ? c._match.relationship.toLowerCase() : "dependent"}: <b>{displayName(c._match.name, "Dependent")}</b></div>
                 )}
@@ -6657,6 +6699,31 @@ export default function App() {
                 <Input value={client.partnerName || ""} onChange={e => update({ partnerName: e.target.value })}
                   placeholder={(client.dependents || []).find(dep => /wife|husband|spouse|partner/i.test(dep.relationship || ""))?.name || ""} />
               </Field>
+              {(() => {
+                const partner = clients.find(c => c.id === client.partnerClientId && c.id !== client.id);
+                return (
+                  <Field label="Partner's own client record"
+                    hint={partner
+                      ? "Their finances and policies are kept separately — open their record to work on it."
+                      : "Link the partner's own record so you can move between the two. Each keeps its own income, policies and gaps."}>
+                    <div className="flex items-center gap-2">
+                      <select value={client.partnerClientId || ""} onChange={e => linkPartner(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+                        <option value="">Not linked</option>
+                        {clients.filter(c => c.id !== client.id).map(c => (
+                          <option key={c.id} value={c.id}>{displayName(c.name, "Unnamed client")}</option>
+                        ))}
+                      </select>
+                      {partner && (
+                        <button onClick={() => { persist(); setActiveId(partner.id); setStep(0); }}
+                          className="shrink-0 text-sm px-3 py-2 rounded-lg border border-purple-700 text-purple-800 hover:bg-purple-50">
+                          Open
+                        </button>
+                      )}
+                    </div>
+                  </Field>
+                );
+              })()}
               <Field label="Date of birth"><Input type="date" value={client.dob} onChange={e => update({ dob: e.target.value })} /></Field>
               <Field label="Age"><Input value={calcAge(client.dob)} readOnly className="bg-slate-50" /></Field>
               <Field label="Target retirement age" hint="drives the default planning horizons in the Objectives step"><NumInput value={client.retirementAge} onChange={e => update({ retirementAge: e.target.value })} /></Field>
