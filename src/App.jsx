@@ -2816,6 +2816,7 @@ const isSavingsPlanType = (t) => planTypeMeta(t)?.group === "savings";
 const PLAN_COVERAGE_CATEGORIES = [
   "Death", "Disability",
   "Health (Major Critical Illness)", "Health (Early-Major Critical Illness)", "Health (Hospitalisation & Surgery)",
+  "Hospitalisation (Any Cause)", "Day Surgery", "Get Well Benefit",
   "Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)", "Weekly Indemnity (Accident)", "Hospitalisation (Accident)",
   "Premium Waiver (Payor)", "Premium Waiver (Insured)",
   "Retirement", "Savings / Investments", "Child Savings", "Others",
@@ -2824,6 +2825,7 @@ const PLAN_COVERAGE_CATEGORIES = [
 // $50 a day, and reading it as a lump sum overstates the cover badly.
 const CATEGORY_UNIT = {
   "Hospitalisation (Accident)": "/day",
+  "Hospitalisation (Any Cause)": "/day",
   "Weekly Indemnity (Accident)": "/week",
   // an annuity's "amount" is the income it pays each month, not a sum assured
   "Retirement": "/mo",
@@ -2843,6 +2845,9 @@ const CATEGORY_BUCKET = {
   // hospitalisation plan pays whatever put you in the bed. Reading them off one row makes
   // an accident-only benefit look like full hospital cover.
   "Health (Hospitalisation & Surgery)": "Hospital Stay (Any Cause)",
+  "Hospitalisation (Any Cause)": "Hospital Stay (Any Cause)",
+  "Day Surgery": "Hospital Stay (Any Cause)",
+  "Get Well Benefit": "Hospital Stay (Any Cause)",
   "Death (Accident)": "Personal Accident", "Disability (Accident)": "Personal Accident", "Reimbursement (Accident)": "Personal Accident", "Weekly Indemnity (Accident)": "Personal Accident",
   "Hospitalisation (Accident)": "Hospital Stay (Accident)",
   // a waiver pays no sum assured — it keeps the policy alive, so it sits with "Others"
@@ -3953,6 +3958,12 @@ const NEEDS_GROUPS = [
     categories: ["Health (Early-Major Critical Illness)"] },
   { key: "hospital", label: "Hospitalisation & Surgery", guideline: "Annual limit — set a target",
     categories: ["Health (Hospitalisation & Surgery)"] },
+  { key: "hospAny", label: "Hospitalisation (Any Cause)", guideline: "Daily income — set a target",
+    categories: ["Hospitalisation (Any Cause)"] },
+  { key: "daySurgery", label: "Day Surgery", guideline: "Per procedure — set a target",
+    categories: ["Day Surgery"] },
+  { key: "getWell", label: "Get Well Benefit", guideline: "Paid on recovery — set a target",
+    categories: ["Get Well Benefit"] },
   { key: "accDeath", label: "Accidental Death", guideline: "Accident — set a target",
     categories: ["Death (Accident)"] },
   { key: "accDisability", label: "Accidental Disability", guideline: "Accident — set a target",
