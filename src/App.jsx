@@ -589,8 +589,12 @@ const newProduct = (key, insuredBy = "self") => {
     ...rest, id: uid(), insuredBy, include: true, planImages: [],
     coverages: (covers || []).map(([category, amount]) => ({ id: uid(), category, amount })),
     startAge: "", endAge: t.endAge || "", premiumEndsAge: "",
+    // set to another plan's id when this is a variant of it — a different term or sum
+    // assured on the same product, offered as a choice rather than as cover to add
+    alternativeTo: "",
   };
 };
+const isAlternativePlan = (p) => Boolean(p && p.alternativeTo);
 // how a plan's coverage reads in report tables and timeline tooltips
 const isWaiver = (cat) => String(cat || "").startsWith("Premium Waiver");
 const planCoverageRows = (p) => {
@@ -1476,18 +1480,29 @@ function compute(c) {
   const retLumpMonthly = retMonths > 0 ? retLumpTotal / retMonths : 0;
   const rtMonthlyAnnuity = retMonths > 0 ? rtProjected / retMonths : 0;
   // products
-  const selected = (c.products || []).filter(p => p.include);
+  const included = (c.products || []).filter(p => p.include);
+  // Only one of a set of alternatives is ever taken, so they do not count toward premiums
+  // or cover — everything that totals works from `selected`, which leaves them out.
+  const selected = included.filter(p => !isAlternativePlan(p));
   // one quotation table per insured person — client first, then each dependent that
   // actually has a plan quoted for them
   const insuredGroups = [
     { id: "self", name: c.name || "Client", relationship: "" },
     ...(c.dependents || []).map(dep => ({ id: dep.id, name: dep.name || "Dependent", relationship: dep.relationship || "" })),
   ].map(person => {
-    const items = selected
-      .filter(p => (p.insuredBy || "self") === person.id)
+    // the quotation shows alternatives beneath the plan they belong to; the totals do not
+    const mine = included.filter(p => (p.insuredBy || "self") === person.id);
+    const ordered = mine.filter(p => !isAlternativePlan(p)).flatMap(core => [
+      core,
+      ...mine.filter(alt => alt.alternativeTo === core.id),
+    ]);
+    // an alternative whose core plan is gone or unticked still deserves to be shown
+    const orphans = mine.filter(p => !ordered.includes(p));
+    const items = [...ordered, ...orphans]
       // pre-rendered strings so the DOCX exporter doesn't need the display helpers
-      .map(p => ({ ...p, coverageText: planCoverageText(p), termText: planTermText(p), projectionsText: planProjectionLines(p).join("\n") }));
-    return { ...person, items, monthly: items.reduce((s, p) => s + num(p.monthly), 0), annual: items.reduce((s, p) => s + num(p.annual), 0) };
+      .map(p => ({ ...p, isAlternative: isAlternativePlan(p), coverageText: planCoverageText(p), termText: planTermText(p), projectionsText: planProjectionLines(p).join("\n") }));
+    const counted = items.filter(p => !p.isAlternative);
+    return { ...person, items, monthly: counted.reduce((s, p) => s + num(p.monthly), 0), annual: counted.reduce((s, p) => s + num(p.annual), 0) };
   }).filter(g => g.items.length);
   const premMonthly = selected.reduce((s, p) => s + num(p.monthly), 0);
   const premAnnual = selected.reduce((s, p) => s + num(p.annual), 0);
@@ -2272,7 +2287,7 @@ const InvestedAssetRows = ({ rows, onChange }) => {
 // One quoted plan inside a person's plan-quotation table. Mirrors the Current Coverage
 // editor (coverage breakdown, coverage term, premium-ends age) so the recommended side of
 // the Overview timeline can be built from the same shape as the in-force side.
-const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, onMove, canMoveUp, canMoveDown }) => {
+const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, onMove, canMoveUp, canMoveDown, siblings = [] }) => {
   const setP = (patch) => onChange({ ...p, ...patch });
   // Products with an official rate table can price themselves from the insured's age (plus
   // occupation class / gender / smoking status where the table needs them), so the advisor
@@ -2332,6 +2347,16 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
             <option value="optional">Worth considering (outside budget)</option>
             <option value="future">Future option</option>
           </select>
+          {/* a variant of another quoted plan is a choice, not extra cover, so it is named
+              against the plan it would replace and kept out of every total */}
+          {siblings.length > 0 && (
+            <select value={p.alternativeTo || ""} onChange={e => setP({ alternativeTo: e.target.value })}
+              title="Mark this as an alternative to another quoted plan — it prints as an option and stays out of the totals"
+              className={"text-sm rounded-lg border px-2 py-1 " + (p.alternativeTo ? "border-amber-400 bg-amber-50 text-amber-900" : "border-slate-300 bg-white")}>
+              <option value="">Core plan</option>
+              {siblings.map(sb => <option key={sb.id} value={sb.id}>Option instead of: {sb.label}</option>)}
+            </select>
+          )}
           <span className="w-20"><CurrencySelect value={p.currency} onChange={e => setP({ currency: e.target.value })} /></span>
           <select value={p.insuredBy || "self"} onChange={e => setP({ insuredBy: e.target.value })} title="Move this plan to another person's table" className="text-sm rounded-lg border border-slate-300 px-2 py-1 bg-white">
             {insuredOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -2697,11 +2722,15 @@ const TableOfContents = ({ entries }) => (
 
 // Totals are taken from the plans themselves and kept per currency, so a US$ plan is never
 // added to a BND one. With a single currency the output is identical to a plain sum.
-const premiumTotals = (items) => ({
-  monthly: (items || []).reduce((s, p) => s + toBase(planCurrency(p), p.monthly), 0),
-  annual: (items || []).reduce((s, p) => s + toBase(planCurrency(p), p.annual), 0),
-  fx: usesFx(items),
-});
+const premiumTotals = (items) => {
+  // only one of a set of alternatives is ever bought, so none of them is in the total
+  const counted = (items || []).filter(p => !p.isAlternative);
+  return {
+    monthly: counted.reduce((s, p) => s + toBase(planCurrency(p), p.monthly), 0),
+    annual: counted.reduce((s, p) => s + toBase(planCurrency(p), p.annual), 0),
+    fx: usesFx(counted),
+  };
+};
 const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = false }) => (
   <>
     {groups.map(g => (
@@ -2722,7 +2751,14 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
                 const term = planTermText(p);
                 return (
                   <tr key={p.id}>
-                    <td>
+                    <td style={p.isAlternative ? { paddingLeft: 22 } : undefined}>
+                      {/* an alternative sits under the plan it varies, marked as a choice
+                          rather than as something else to buy */}
+                      {p.isAlternative && (
+                        <div className="text-[10px] uppercase tracking-wide" style={{ color: "#b45309", fontWeight: 700 }}>
+                          Option — instead of the plan above
+                        </div>
+                      )}
                       {p.key
                         ? <a href={"#" + planAnchor(p)} className="planlink" title="Jump to this plan's explanation"><b>{p.label}</b></a>
                         : <b>{p.label}</b>}
@@ -2761,6 +2797,12 @@ const QuotationTables = ({ groups, grandMonthly, grandAnnual, optionsMode = fals
             <td className="font-bold">Total of plans shown</td>
             <td className="tnum font-bold">{money(t.monthly, 2)} / month · {money(t.annual, 2)} / year</td>
           </tr></tbody></table>
+          {groups.some(g => (g.items || []).some(p => p.isAlternative)) && (
+            <p className="text-xs text-slate-500" style={{ fontStyle: "italic", marginTop: -4 }}>
+              Rows marked “Option” are alternatives to the plan above them — a different term or sum assured on the same
+              product. Only one of each set would be taken, so they are not added into the total.
+            </p>
+          )}
           {t.fx && <p className="text-xs text-slate-500" style={{ fontStyle: "italic", marginTop: -4 }}>{FX_NOTE}</p>}
         </>
       );
@@ -7068,6 +7110,7 @@ export default function App() {
                         <div key={p.id} id={"anc-reco-" + p.id} style={{ scrollMarginTop: 64 }}>
                         <RecommendedPlanCard
                           p={p}
+                          siblings={mine.filter(o => o.id !== p.id && !o.alternativeTo)}
                           clientId={client.id}
                           insuredOptions={quoteTargets}
                           canMoveUp={idx > 0}
