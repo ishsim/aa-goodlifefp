@@ -4447,6 +4447,23 @@ function CoverageTimelinePanel({ client, printMode = false }) {
           const age = h.atAge > 0 ? h.atAge : baseAge + h.years;
           return { ...h, age, year: new Date().getFullYear() + (age - baseAge) };
         });
+        // A holding has no maturity date, so the furthest projection is not a figure the
+        // client ever "gets" — it is simply the last year someone happened to enter. What
+        // the money is worth at retirement is the decision-relevant point, so the bar
+        // quotes that one where it exists, with the growth it represents.
+        const atRetirement = retireAge > 0
+          ? projections.filter(pr => pr.age <= retireAge).sort((a, b) => b.age - a.age)[0]
+          : null;
+        const quoted = atRetirement || headline;
+        const startValue = num(r.currentValue);
+        const roiPct = quoted && startValue > 0 ? (quoted.projected / startValue - 1) * 100 : 0;
+        const growthNote = quoted && quoted.projected > startValue
+          ? " → " + kfmt(quoted.projected, cur)
+            + (roiPct > 0 && num(quoted.years) > 0
+              ? " (ROI ~" + fmt(roiPct, 2) + "% over " + num(quoted.years) + " years"
+                + (num(quoted.rate) > 0 ? " at " + fmt(num(quoted.rate), num(quoted.rate) % 1 ? 2 : 0) + "% annual average returns" : "") + ")"
+              : "")
+          : "";
         return {
           id: r.id || "inv" + i,
           origin: "current",
@@ -4460,7 +4477,9 @@ function CoverageTimelinePanel({ client, printMode = false }) {
             ? [num(r.spkLumpSum) > 0 ? kfmt(num(r.spkLumpSum), cur) + " at " + SPK_PAYOUT_AGE : null,
                num(r.spkAnnuityMonthly) > 0 ? moneyIn(cur, num(r.spkAnnuityMonthly)) + "/mo after" : null]
                 .filter(Boolean).join(" · ") || kfmt(num(r.currentValue), cur)
-            : kfmt(num(r.currentValue), cur) + (headline && headline.projected > num(r.currentValue) ? " → " + kfmt(headline.projected, cur) : ""),
+            // a holding funded purely by contributions has nothing to grow *from*, so it
+            // states where it gets to rather than an arrow out of nowhere
+            : startValue > 0 ? kfmt(startValue, cur) + growthNote : (growthNote ? growthNote.replace(" → ", "") : ""),
           spkAnnuityMonthly: num(r.spkAnnuityMonthly),
           stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
           lumpSumAge: r.type === "SPK" && end > SPK_PAYOUT_AGE ? SPK_PAYOUT_AGE : null,
