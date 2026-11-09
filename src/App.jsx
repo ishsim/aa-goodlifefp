@@ -706,7 +706,7 @@ const blankClient = () => ({
   liabilities: [{ id: uid(), name: "Car loan", amount: "" }, { id: uid(), name: "Housing loan", amount: "" }, { id: uid(), name: "Credit card", amount: "" }],
   retirementAge: "60",
   incomeReplacement: { monthly: "", years: "", covDeath: "", covMCI: "", covECI: "", covAccident: "" },
-  retirement: { monthly: "5000", years: "20", yearsToRetire: "25", inflation: "2.5", spkProj: "", spkAnnuityMonthly: "", spkAnnuityYears: "15", pension: "", annuities: { current: "", contrib: "", rate: "", years: "" }, investments: { current: "", contrib: "", rate: "", years: "" } },
+  retirement: { monthly: "5000", years: "20", yearsToRetire: "25", inflation: "2.5", spkProj: "", spkAnnuityMonthly: "", pensionMonthly: "250", spkAnnuityYears: "15", pension: "", annuities: { current: "", contrib: "", rate: "", years: "" }, investments: { current: "", contrib: "", rate: "", years: "" } },
   otherObjectives: [],
   existingPlans: [],
   existingInvestments: [],
@@ -1130,7 +1130,7 @@ async function signedPlanImageUrl(path) {
 // judgement call — an endowment may be earmarked for a house — so nothing is counted until
 // it is ticked, except arrangements that are unambiguously retirement: an annuity, or a
 // holding already filed under the Retirement category.
-const retirementCandidates = (c, yearsToRet) => {
+const retirementCandidates = (c, yearsToRet, retirementYears = 0) => {
   const out = [];
   (c.existingPlans || []).forEach(pl => {
     if (statusIsDead(pl.status)) return;
@@ -1166,9 +1166,25 @@ const retirementCandidates = (c, yearsToRet) => {
     const current = num(iv.currentValue);
     if (!(current > 0) && !(contrib > 0)) return;
     const rate = num((iv.returnRates || [])[0]?.rate);
+    const capital = toBase(cur, projectFV({ current, contrib, rate, years: yearsToRet }, yearsToRet));
+    const divRate = num(iv.dividendRate);
+    if (divRate > 0 && retirementYears > 0) {
+      // Living off the distribution leaves the capital intact, so the capital is not also
+      // counted — adding both would spend the same money twice.
+      const annualIncome = capital * divRate / 100;
+      const perPayout = dividendPerPayout(annualIncome, iv.dividendFreq);
+      out.push({ id: "inv-" + iv.id, name: iv.description || iv.type || "Investment", kind: "Dividend income",
+        current: toBase(cur, current), contribMonthly: contrib, rate, years: yearsToRet,
+        detail: moneyIn(cur, perPayout) + " " + dividendFreqLabel(iv.dividendFreq).toLowerCase()
+          + " — " + fmt(divRate, divRate % 1 ? 2 : 0) + "% of " + moneyIn(cur, capital) + ", capital kept",
+        dividend: true, capital, annualIncome,
+        projected: annualIncome * retirementYears,
+        defaultOn: (iv.category || "") === "Retirement" });
+      return;
+    }
     out.push({ id: "inv-" + iv.id, name: iv.description || iv.type || "Investment", kind: iv.type || "Investment",
       current: toBase(cur, current), contribMonthly: contrib, rate, years: yearsToRet,
-      projected: toBase(cur, projectFV({ current, contrib, rate, years: yearsToRet }, yearsToRet)),
+      projected: capital,
       defaultOn: (iv.category || "") === "Retirement" });
   });
   return out;
@@ -1462,21 +1478,29 @@ function compute(c) {
   // both figures fall back to the SPK holding under Current Coverage when left blank here
   const spkMonthly = spkAnnuityMonthlyOf(c);
   const spkAnnuityTotal = spkMonthly > 0 ? spkMonthly * 12 * num(rt.spkAnnuityYears) : num(rt.spkAnnuityLegacy);
+  // the old age pension is a monthly entitlement, so it is stated as one and run across the
+  // retirement years — a typed lump sum still wins where one was entered the old way
+  const pensionMonthly = num(rt.pensionMonthly);
+  const pensionTotal = pensionMonthly > 0 ? pensionMonthly * 12 * num(rt.years) : num(rt.pension);
   const annTotal = projectFV(rt.annuities || {}, yearsToRet);
   const invTotal = projectFV(rt.investments || {}, yearsToRet);
   // plans and holdings on file that the advisor has earmarked for retirement
-  const retCandidates = retirementCandidates(c, yearsToRet).map(x => ({ ...x, included: retirementIncluded(c, x) }));
+  const retCandidates = retirementCandidates(c, yearsToRet, num(rt.years)).map(x => ({ ...x, included: retirementIncluded(c, x) }));
   const retPlansTotal = retCandidates.filter(x => x.included).reduce((a, x) => a + x.projected, 0);
-  const rtProjected = spkProjected(c) + spkAnnuityTotal + num(rt.pension) + annTotal + invTotal + retPlansTotal;
+  const rtProjected = spkProjected(c) + spkAnnuityTotal + pensionTotal + annTotal + invTotal + retPlansTotal;
   const rtShortfall = Math.max(0, rtAdjusted - rtProjected);
   // An income stream and a pot of money are different promises, so they are totalled
   // apart: annuities and the pension pay out monthly whatever happens, while a lump sum is
   // a balance the client may well spend on something else along the way.
-  const retAnnuityTotal = spkAnnuityTotal + num(rt.pension) + annTotal
+  const retAnnuityTotal = spkAnnuityTotal + pensionTotal + annTotal
     + retCandidates.filter(x => x.included && x.kind === "Annuity").reduce((a, x) => a + x.projected, 0);
-  const retLumpTotal = rtProjected - retAnnuityTotal;
+  // a distribution is an income stream, but not a guaranteed one, so it is counted apart
+  // from both the annuities and the capital
+  const retDividendTotal = retCandidates.filter(x => x.included && x.dividend).reduce((a, x) => a + x.projected, 0);
+  const retLumpTotal = rtProjected - retAnnuityTotal - retDividendTotal;
   const retMonths = num(rt.years) * 12;
   const retAnnuityMonthly = retMonths > 0 ? retAnnuityTotal / retMonths : 0;
+  const retDividendMonthly = retMonths > 0 ? retDividendTotal / retMonths : 0;
   const retLumpMonthly = retMonths > 0 ? retLumpTotal / retMonths : 0;
   const rtMonthlyAnnuity = retMonths > 0 ? rtProjected / retMonths : 0;
   // products
@@ -1536,8 +1560,8 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal,
-    retAnnuityTotal, retLumpTotal, retAnnuityMonthly, retLumpMonthly, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
+    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, pensionMonthly, pensionTotal, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal,
+    retAnnuityTotal, retLumpTotal, retAnnuityMonthly, retLumpMonthly, retDividendTotal, retDividendMonthly, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
 function buildClaudePrompt(c, d) {
@@ -1568,6 +1592,7 @@ function buildClaudePrompt(c, d) {
     `  • Projected: ${money(d.rtProjected, 0)}`,
     `  • Shortfall: ${money(Math.round(d.rtShortfall), 0)}`,
     `  • Guaranteed monthly income (annuities and pension): ${money(Math.round(d.retAnnuityMonthly), 0)}`,
+    ...(d.retDividendTotal > 0 ? [`  • Investment distributions (not guaranteed): ${money(Math.round(d.retDividendMonthly), 0)}/month`] : []),
     `  • Lump sums: ${money(Math.round(d.retLumpTotal), 0)} (a further ${money(Math.round(d.retLumpMonthly), 0)}/month if spread evenly)`,
     `- Recommended plans:`,
     ...d.selected.map(p => `  • ${p.label} — coverage: ${planCoverageText(p)}, monthly premium: ${money(p.monthly, 0)}`),
@@ -2916,6 +2941,11 @@ const LIABILITY_ROW = "Loans & Liabilities";
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)"];
 // the two critical-illness stage rows, kept together so gap logic can treat them as a pair
 const CI_ROWS = ["Major Critical Illness", "Early-Major Critical Illness"];
+// how often a distributing holding pays out — the annual income is the same either way,
+// but the client feels the difference, so the report says which
+const DIVIDEND_FREQS = [["monthly", "Monthly", 12], ["quarterly", "Quarterly", 4], ["semiannual", "Semi-annual", 2], ["annual", "Annual", 1]];
+const dividendFreqLabel = (f) => (DIVIDEND_FREQS.find(x => x[0] === f) || DIVIDEND_FREQS[0])[1];
+const dividendPerPayout = (annual, f) => annual / (DIVIDEND_FREQS.find(x => x[0] === f) || DIVIDEND_FREQS[0])[2];
 const INVESTMENT_TYPES = ["Unit Trust", "Mutual Funds", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
@@ -3232,6 +3262,20 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
         <div className="col-span-1">
           <label className="text-xs text-slate-500">Currency</label>
           <CurrencySelect value={row.currency} onChange={e => set("currency", e.target.value)} />
+        </div>
+        {/* A holding that distributes income can fund retirement without being sold: the
+            capital stays put and the distribution is what the client lives on. */}
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Dividend % p.a.</label>
+          <NumInput value={row.dividendRate || ""} onChange={e => set("dividendRate", e.target.value)} placeholder="e.g. 4" />
+          <div className="text-[11px] text-slate-400 mt-0.5">of capital at retirement</div>
+        </div>
+        <div className="col-span-2">
+          <label className="text-xs text-slate-500">Distribution</label>
+          <select value={row.dividendFreq || "monthly"} onChange={e => set("dividendFreq", e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            {DIVIDEND_FREQS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
         </div>
         <div className="col-span-2">
           <label className="text-xs text-slate-500">Current value $</label>
@@ -3724,9 +3768,9 @@ const RetirementSection = ({ client, d, heading, id }) => (
                 <td className="tnum">—</td>
               </tr>
               <tr>
-                <td>Old Age Pension</td>
+                <td>Old Age Pension{d.pensionMonthly > 0 ? " (" + money(d.pensionMonthly) + "/mo × " + client.retirement.years + " yrs)" : ""}</td>
                 <td className="tnum">—</td>
-                <td className="tnum">{money(num(client.retirement.pension))}</td>
+                <td className="tnum">{money(d.pensionTotal)}</td>
                 <td className="tnum">—</td>
               </tr>
               {d.retCandidates.filter(x => x.included).map(x => (
@@ -3763,6 +3807,13 @@ const RetirementSection = ({ client, d, heading, id }) => (
               the SPK employer annuity, Old Age Pension and any annuity plans — which over {client.retirement.years} years
               of retirement is about <b>{money(d.retAnnuityMonthly)} per month</b> you can count on.
             </p>
+            {d.retDividendTotal > 0 && (
+              <p style={{ marginBottom: 4 }}>
+                A further <b>{money(d.retDividendTotal)}</b> comes from distributions on investments you keep rather than
+                sell — about <b>{money(d.retDividendMonthly)} per month</b>. The capital behind it stays yours, but unlike
+                the income above, a distribution is not guaranteed: it moves with the funds.
+              </p>
+            )}
             <p style={{ marginBottom: 0 }}>
               The remaining <b>{money(d.retLumpTotal)}</b> is held as lump sums. Spread evenly across the same
               {" " + client.retirement.years} years that would add about <b>{money(d.retLumpMonthly)} per month</b>, bringing
@@ -6986,7 +7037,10 @@ export default function App() {
                 <NumInput value={client.retirement.spkProj} onChange={e => updateDeep("retirement", { spkProj: e.target.value })}
                   placeholder={spkFromHoldings(client)?.lumpSum > 0 ? String(spkFromHoldings(client).lumpSum) : ""} />
               </Field>
-              <Field label="Old age pension (total)"><NumInput value={client.retirement.pension} onChange={e => updateDeep("retirement", { pension: e.target.value })} /></Field>
+              <Field label="Old age pension ($/mo)" hint={"Paid across the " + (client.retirement.years || "—") + " retirement years" + (num(client.retirement.pensionMonthly) > 0 ? " — " + money(num(client.retirement.pensionMonthly) * 12 * num(client.retirement.years)) + " in total" : "")}>
+                <NumInput value={client.retirement.pensionMonthly} onChange={e => updateDeep("retirement", { pensionMonthly: e.target.value })} placeholder="250" />
+              </Field>
+              <Field label="Old age pension (total, if entered as a lump)"><NumInput value={client.retirement.pension} onChange={e => updateDeep("retirement", { pension: e.target.value })} /></Field>
             </div>
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">SPK Annuity (Employer) — total: <span className="text-purple-900">{money(d.spkAnnuityTotal)}</span></div>
@@ -7056,6 +7110,7 @@ export default function App() {
             </div>
             <div className="text-sm text-slate-600 mt-2">
               Guaranteed monthly income: <b>{money(d.retAnnuityMonthly)}</b>
+              {d.retDividendTotal > 0 && <span className="text-slate-400"> · distributions {money(d.retDividendMonthly)}</span>}
               <span className="text-slate-400"> · lump sums spread evenly add {money(d.retLumpMonthly)} ({money(d.rtMonthlyAnnuity)} in total)</span>
             </div>
           </SectionCard>
