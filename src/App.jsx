@@ -4337,7 +4337,15 @@ function SelectionCashFlow({ client, d, update }) {
   };
   const pct = (v) => annualIncome > 0 ? fmt(v * 12 / annualIncome * 100, 1) + "%" : "—";
 
-  const Money = ({ v, bold }) => <span className={"tabular-nums " + (bold ? "font-bold" : "")}>{money(v, 2)}</span>;
+  // every figure in this step is a yearly one with its monthly equivalent beneath, since
+  // the commitment being agreed to is an annual one
+  const Yearly = ({ v, small, bold, note }) => (
+    <span className="inline-block">
+      <span className={"tabular-nums " + (small ? "" : "text-lg ") + (bold || !small ? "font-bold" : "font-semibold")}>{money(v * 12, 2)}</span>
+      {note && <span className="tabular-nums"> · {note}</span>}
+      <span className="block text-xs text-slate-500 tabular-nums">{money(v, 2)} / month</span>
+    </span>
+  );
 
   return (
     <>
@@ -4398,7 +4406,7 @@ function SelectionCashFlow({ client, d, update }) {
       <SectionCard title="New commitment">
         <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
           <thead><tr>
-            {["Purpose", "New premiums", "Replaced", "Net / month", "Net / year"].map(h => (
+            {["Purpose", "New premiums / yr", "Replaced / yr", "Net / year", "Net / month"].map(h => (
               <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
             ))}
           </tr></thead>
@@ -4406,38 +4414,38 @@ function SelectionCashFlow({ client, d, update }) {
             {commitment.rows.map(r => (
               <tr key={r.key}>
                 <td className="py-1.5 px-2 border-b border-slate-100">{r.label}</td>
-                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(r.added, 2)}</td>
-                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-green-700">{r.replaced > 0 ? "−" + money(r.replaced, 2) : "—"}</td>
-                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums font-semibold">{money(r.net, 2)}</td>
-                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(r.net * 12, 2)}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(r.added * 12, 2)}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-green-700">{r.replaced > 0 ? "−" + money(r.replaced * 12, 2) : "—"}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums font-bold">{money(r.net * 12, 2)}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-slate-500">{money(r.net, 2)}</td>
               </tr>
             ))}
             <tr style={{ background: "#f5f0fa" }}>
               <td className="py-1.5 px-2 font-bold">Total</td>
-              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.added, 2)}</td>
-              <td className="py-1.5 px-2 tabular-nums font-bold text-green-700">{commitment.replaced > 0 ? "−" + money(commitment.replaced, 2) : "—"}</td>
-              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.net, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.added * 12, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold text-green-700">{commitment.replaced > 0 ? "−" + money(commitment.replaced * 12, 2) : "—"}</td>
               <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.net * 12, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold text-slate-500">{money(commitment.net, 2)}</td>
             </tr>
           </tbody>
         </table>
       </SectionCard>
 
-      <SectionCard title="Their month, with these plans in place">
+      <SectionCard title="Their year, with these plans in place">
         <div className="grid md:grid-cols-3 gap-3 mb-4">
-          <Stat label="Take-home income" value={money(d.net, 2)} />
-          <Stat label="Surplus now" value={money(surplusNow, 2)} />
-          <Stat label="Surplus after" value={money(surplusAfter, 2)} accent={surplusAfter < 0} gold={surplusAfter >= 0} />
+          <Stat label="Take-home income" value={<Yearly v={d.net} />} />
+          <Stat label="Surplus now" value={<Yearly v={surplusNow} />} />
+          <Stat label="Surplus after" value={<Yearly v={surplusAfter} />} accent={surplusAfter < 0} gold={surplusAfter >= 0} />
         </div>
         {surplusAfter < 0 && (
           <p className="text-sm text-red-700 mb-3">
-            This commits <b>{money(Math.abs(surplusAfter), 2)}</b> more each month than the income covers — worth trimming
-            before it is signed.
+            This commits <b>{money(Math.abs(surplusAfter) * 12, 2)}</b> a year — {money(Math.abs(surplusAfter), 2)} a month —
+            more than the income covers, worth trimming before it is signed.
           </p>
         )}
         <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
           <thead><tr>
-            {["Against the 4-3-2-1 guideline", "Guideline / mo", "Now", "With these plans"].map(h => (
+            {["Against the 4-3-2-1 guideline", "Guideline / year", "Now", "With these plans"].map(h => (
               <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
             ))}
           </tr></thead>
@@ -4449,20 +4457,20 @@ function SelectionCashFlow({ client, d, update }) {
               return (
                 <tr key={key}>
                   <td className="py-1.5 px-2 border-b border-slate-100">{label}</td>
-                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(guide, 2)}</td>
-                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-slate-500">{money(now, 2)} · {pct(now)}</td>
-                  <td className={"py-1.5 px-2 border-b border-slate-100 tabular-nums font-semibold " + (after > guide ? "text-red-700" : "text-purple-900")}>
-                    {money(after, 2)} · {pct(after)}
+                  <td className="py-1.5 px-2 border-b border-slate-100"><Yearly v={guide} small /></td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 text-slate-500"><Yearly v={now} small note={pct(now)} /></td>
+                  <td className={"py-1.5 px-2 border-b border-slate-100 " + (after > guide ? "text-red-700" : "text-purple-900")}>
+                    <Yearly v={after} small bold note={pct(after)} />
                   </td>
                 </tr>
               );
             })}
             <tr style={{ background: "#f5f0fa" }}>
               <td className="py-1.5 px-2 font-bold">Combined (30% of income)</td>
-              <td className="py-1.5 px-2 tabular-nums font-bold">{money(d.net * 0.30, 2)}</td>
-              <td className="py-1.5 px-2 tabular-nums font-bold text-slate-500">{money(split.total, 2)} · {pct(split.total)}</td>
-              <td className={"py-1.5 px-2 tabular-nums font-bold " + (afterOf("protection") + afterOf("savings") > d.net * 0.30 ? "text-red-700" : "text-purple-900")}>
-                {money(afterOf("protection") + afterOf("savings"), 2)} · {pct(afterOf("protection") + afterOf("savings"))}
+              <td className="py-1.5 px-2"><Yearly v={d.net * 0.30} small bold /></td>
+              <td className="py-1.5 px-2 text-slate-500"><Yearly v={split.total} small bold note={pct(split.total)} /></td>
+              <td className={"py-1.5 px-2 " + (afterOf("protection") + afterOf("savings") > d.net * 0.30 ? "text-red-700" : "text-purple-900")}>
+                <Yearly v={afterOf("protection") + afterOf("savings")} small bold note={pct(afterOf("protection") + afterOf("savings"))} />
               </td>
             </tr>
           </tbody>
