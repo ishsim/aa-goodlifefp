@@ -1667,6 +1667,16 @@ function buildReviewPrompt(c, d, notes) {
 }
 
 // ---------- small UI atoms ----------
+// Policies print in the order they are held, so the advisor decides what a client reads
+// first. Mirrors the control on a recommended plan card.
+const MoveButtons = ({ onMove, canMoveUp, canMoveDown }) => (
+  <span className="inline-flex flex-col leading-none mr-1">
+    <button onClick={() => onMove(-1)} disabled={!canMoveUp} title="Move up — this is the order the report prints"
+      className={"text-[10px] px-1 " + (canMoveUp ? "text-slate-500 hover:text-purple-800" : "text-slate-300 cursor-default")}>▲</button>
+    <button onClick={() => onMove(1)} disabled={!canMoveDown} title="Move down — this is the order the report prints"
+      className={"text-[10px] px-1 " + (canMoveDown ? "text-slate-500 hover:text-purple-800" : "text-slate-300 cursor-default")}>▼</button>
+  </span>
+);
 const CurrencySelect = ({ value, onChange, className = "" }) => (
   <select value={planCurrency({ currency: value })} onChange={onChange}
     title="Currency this plan is denominated in"
@@ -2993,7 +3003,7 @@ function Collapsible({ title, defaultOpen = true, right, children }) {
   );
 }
 
-function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob = "" }) {
+function ExistingPlanRow({ row, onChange, onRemove, onMove, canMoveUp, canMoveDown, dependents = [], clientDob = "" }) {
   const [adv, setAdv] = useState(false);
   const set = (k, v) => onChange({ ...row, [k]: v });
   // ages on this row are read off the policy dates, using whoever the plan insures
@@ -3047,6 +3057,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
           </select>
         </div>
         <div className="col-span-1 flex items-end justify-end">
+          {onMove && <MoveButtons onMove={onMove} canMoveUp={canMoveUp} canMoveDown={canMoveDown} />}
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
       </div>
@@ -3172,7 +3183,7 @@ function ExistingPlanRow({ row, onChange, onRemove, dependents = [], clientDob =
   );
 }
 
-function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clientAge = null, clientDob = "" }) {
+function ExistingInvestmentRow({ row, onChange, onRemove, onMove, canMoveUp, canMoveDown, dependents = [], clientAge = null, clientDob = "" }) {
   const set = (k, v) => onChange({ ...row, [k]: v });
   const rates = row.returnRates || [];
   const monthlyEquiv = freqMonthlyEquiv(row.allocation, row.allocationFreq);
@@ -3239,6 +3250,7 @@ function ExistingInvestmentRow({ row, onChange, onRemove, dependents = [], clien
           {ownerOptions("owner")}
         </div>
         <div className="col-span-1 flex items-end justify-end">
+          {onMove && <MoveButtons onMove={onMove} canMoveUp={canMoveUp} canMoveDown={canMoveDown} />}
           <button onClick={onRemove} className="text-red-500 text-sm">✕</button>
         </div>
         <div className="col-span-3">
@@ -3941,6 +3953,15 @@ function CurrentCoverageSection({ client, update }) {
               clientDob={client.dob}
               onChange={next => { const l = [...plans]; l[i] = next; update({ existingPlans: l }); }}
               onRemove={() => update({ existingPlans: plans.filter((_, j) => j !== i) })}
+              canMoveUp={i > 0}
+              canMoveDown={i < plans.length - 1}
+              onMove={dir => {
+                const j = i + dir;
+                if (j < 0 || j >= plans.length) return;
+                const l = [...plans];
+                [l[i], l[j]] = [l[j], l[i]];
+                update({ existingPlans: l });
+              }}
             />
             </div>
           ))}
@@ -3962,6 +3983,15 @@ function CurrentCoverageSection({ client, update }) {
               clientDob={client.dob}
               onChange={next => { const l = [...invs]; l[i] = next; update({ existingInvestments: l }); }}
               onRemove={() => update({ existingInvestments: invs.filter((_, j) => j !== i) })}
+              canMoveUp={i > 0}
+              canMoveDown={i < invs.length - 1}
+              onMove={dir => {
+                const j = i + dir;
+                if (j < 0 || j >= invs.length) return;
+                const l = [...invs];
+                [l[i], l[j]] = [l[j], l[i]];
+                update({ existingInvestments: l });
+              }}
             />
             </div>
           ))}
