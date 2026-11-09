@@ -2916,7 +2916,7 @@ const LIABILITY_ROW = "Loans & Liabilities";
 const DEPENDENT_GAP_CATEGORIES = ["Death & Disability", "Major Critical Illness", "Early-Major Critical Illness", "Personal Accident", "Hospital Stay (Accident)", "Hospital Stay (Any Cause)"];
 // the two critical-illness stage rows, kept together so gap logic can treat them as a pair
 const CI_ROWS = ["Major Critical Illness", "Early-Major Critical Illness"];
-const INVESTMENT_TYPES = ["Unit Trust", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
+const INVESTMENT_TYPES = ["Unit Trust", "Mutual Funds", "SPK", "Stocks/Shares", "Fixed Deposit", "Savings Account", "Property", "Cash", "Other"];
 // SPK pays a statutory lump sum at 60, then a fixed annuity scaled to the member's average
 // serviced salary — much smaller than the lump sum, so the bar narrows past this age.
 const SPK_PAYOUT_AGE = 60;
