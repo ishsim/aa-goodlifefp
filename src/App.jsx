@@ -5,7 +5,7 @@ import { generateDocx } from "@/lib/generateDocx";
 import { quotePremium, RATED_PRODUCTS, PLAN_RIDERS, benefitsFor } from "@/lib/premiumRates";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { User, Wallet, Scale, Target, Shield, ClipboardList, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2, RefreshCw } from "lucide-react";
+import { User, Wallet, Scale, Target, Shield, ClipboardList, CheckSquare, LayoutDashboard, FileText, Save, Eye, Download, ChevronLeft, ChevronRight, Share2, RefreshCw } from "lucide-react";
 
 const LOGO = logoAsset.url;
 
@@ -592,6 +592,12 @@ const newProduct = (key, insuredBy = "self") => {
     // set to another plan's id when this is a variant of it — a different term or sum
     // assured on the same product, offered as a choice rather than as cover to add
     alternativeTo: "",
+    // the client has agreed to this one — separate from whether it prints, and from how
+    // strongly it is recommended
+    taken: false,
+    // an existing policy this would replace, so the commitment is the difference rather
+    // than the sum
+    replacesPlanId: "",
   };
 };
 const isAlternativePlan = (p) => Boolean(p && p.alternativeTo);
@@ -1192,6 +1198,40 @@ const retirementCandidates = (c, yearsToRet, retirementYears = 0) => {
 const retirementIncluded = (c, cand) => {
   const m = (c.retirement || {}).includedPlans || {};
   return m[cand.id] === undefined ? cand.defaultOn : !!m[cand.id];
+};
+
+// What the client has actually agreed to, and what it costs them net. A plan that replaces
+// an existing policy only costs the difference, so the premium coming off is netted out
+// rather than counted as new money.
+const PLAN_PURPOSES = [
+  { key: "protection", label: "Protection", categories: ["Risk Management"], guidePct: 0.10 },
+  { key: "savings", label: "Savings & investments", categories: ["Goal Planning"], guidePct: 0.20 },
+  { key: "retirement", label: "Retirement", categories: ["Retirement Planning"], guidePct: 0 },
+];
+const purposeOf = (p) => (PLAN_PURPOSES.find(g => g.categories.includes(p.category)) || PLAN_PURPOSES[1]).key;
+
+const takenPlans = (c) => (c.products || []).filter(p => p.taken && !isAlternativePlan(p));
+// the monthly premium of the policy a plan displaces, if it names one
+const replacedMonthly = (c, p) => {
+  const old = (c.existingPlans || []).find(x => x.id === p.replacesPlanId);
+  if (!old || !statusPaysPremium(old.status)) return 0;
+  return toBase(planCurrency(old), freqMonthlyEquiv(old.allocation ?? old.monthly, old.allocationFreq));
+};
+const commitmentFromSelection = (c) => {
+  const rows = PLAN_PURPOSES.map(g => ({ ...g, added: 0, replaced: 0 }));
+  const byKey = Object.fromEntries(rows.map(r => [r.key, r]));
+  takenPlans(c).forEach(p => {
+    const row = byKey[purposeOf(p)];
+    row.added += toBase(planCurrency(p), num(p.monthly));
+    row.replaced += replacedMonthly(c, p);
+  });
+  rows.forEach(r => { r.net = r.added - r.replaced; });
+  return {
+    rows,
+    added: rows.reduce((a, r) => a + r.added, 0),
+    replaced: rows.reduce((a, r) => a + r.replaced, 0),
+    net: rows.reduce((a, r) => a + r.net, 0),
+  };
 };
 
 // ---------- goal planning ----------
@@ -4270,6 +4310,172 @@ function InsuranceNeedsDetailTables({ tables, setField, plans, personId }) {
   );
 }
 
+// The close: what the client is taking, what it costs net, and what their month looks
+// like once it is in place. Ticking a plan moves every figure on the page at once, so the
+// trade-off can be shown rather than described.
+function SelectionCashFlow({ client, d, update }) {
+  const people = [
+    { id: "self", name: client.name || "Client" },
+    ...(client.dependents || []).map((dep, i) => ({ id: dep.id, name: dep.name || "Dependent " + (i + 1) })),
+  ];
+  const quotable = (client.products || []).filter(p => p.include);
+  const setPlan = (id, patch) => update({ products: (client.products || []).map(p => p.id === id ? { ...p, ...patch } : p) });
+  const commitment = commitmentFromSelection(client);
+  const payingPolicies = (client.existingPlans || []).filter(x => statusPaysPremium(x.status));
+
+  const surplusNow = d.surplus;
+  const surplusAfter = surplusNow - commitment.net;
+  const annualIncome = d.net * 12;
+  const split = currentPremiumSplit(client);
+  const afterOf = (key) => {
+    const row = commitment.rows.find(r => r.key === key);
+    // retirement premiums are savings as far as the 4-3-2-1 split is concerned
+    const extra = key === "savings"
+      ? (row?.net || 0) + (commitment.rows.find(r => r.key === "retirement")?.net || 0)
+      : (row?.net || 0);
+    return (key === "protection" ? split.protection : split.savings) + extra;
+  };
+  const pct = (v) => annualIncome > 0 ? fmt(v * 12 / annualIncome * 100, 1) + "%" : "—";
+
+  const Money = ({ v, bold }) => <span className={"tabular-nums " + (bold ? "font-bold" : "")}>{money(v, 2)}</span>;
+
+  return (
+    <>
+      <SectionCard title="What the client is taking">
+        <p className="text-xs text-slate-500 mb-3">
+          Tick what has been agreed. Every figure below moves as you tick, so the effect on their month can be shown
+          rather than described. Nothing here changes the report — it still lists what you recommended.
+        </p>
+        {quotable.length === 0 && <div className="text-sm text-slate-400">No plans quoted yet — add them in the Recommended Plans step.</div>}
+        {people.map(person => {
+          const mine = quotable.filter(p => (p.insuredBy || "self") === person.id);
+          if (!mine.length) return null;
+          const cores = mine.filter(p => !isAlternativePlan(p));
+          const ordered = cores.flatMap(core => [core, ...mine.filter(a => a.alternativeTo === core.id)]);
+          return (
+            <div key={person.id} className="mb-4 last:mb-0">
+              <div className="text-sm font-semibold text-purple-900 mb-1">{person.name}</div>
+              <div className="space-y-1.5">
+                {ordered.map(p => {
+                  const alt = isAlternativePlan(p);
+                  const replaced = replacedMonthly(client, p);
+                  return (
+                    <div key={p.id} className={"rounded-lg border p-2 " + (p.taken ? "border-purple-300 bg-purple-50/50" : "border-slate-200")}
+                      style={alt ? { marginLeft: 20 } : undefined}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                          <input type="checkbox" checked={!!p.taken} className="w-4 h-4 accent-purple-700"
+                            onChange={e => setPlan(p.id, { taken: e.target.checked })} />
+                          {alt && <span className="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Option</span>}
+                          {p.label}
+                        </label>
+                        <span className="text-xs text-slate-500 ml-auto tabular-nums">
+                          {moneyIn(planCurrency(p), num(p.monthly), 2)}/mo · {moneyIn(planCurrency(p), num(p.annual), 2)}/yr
+                        </span>
+                      </div>
+                      {p.taken && (
+                        <div className="flex items-center gap-2 mt-1.5 pl-6">
+                          <span className="text-xs text-slate-500 shrink-0">Replaces</span>
+                          <select value={p.replacesPlanId || ""} onChange={e => setPlan(p.id, { replacesPlanId: e.target.value })}
+                            className="text-xs rounded border border-slate-300 px-2 py-1 bg-white">
+                            <option value="">nothing — this is new cover</option>
+                            {payingPolicies.map(x => (
+                              <option key={x.id} value={x.id}>{x.planName || x.planType || "Existing policy"}</option>
+                            ))}
+                          </select>
+                          {replaced > 0 && <span className="text-xs text-green-700">−{money(replaced, 2)}/mo comes off</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </SectionCard>
+
+      <SectionCard title="New commitment">
+        <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+          <thead><tr>
+            {["Purpose", "New premiums", "Replaced", "Net / month", "Net / year"].map(h => (
+              <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {commitment.rows.map(r => (
+              <tr key={r.key}>
+                <td className="py-1.5 px-2 border-b border-slate-100">{r.label}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(r.added, 2)}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-green-700">{r.replaced > 0 ? "−" + money(r.replaced, 2) : "—"}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums font-semibold">{money(r.net, 2)}</td>
+                <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(r.net * 12, 2)}</td>
+              </tr>
+            ))}
+            <tr style={{ background: "#f5f0fa" }}>
+              <td className="py-1.5 px-2 font-bold">Total</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.added, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold text-green-700">{commitment.replaced > 0 ? "−" + money(commitment.replaced, 2) : "—"}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.net, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold">{money(commitment.net * 12, 2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </SectionCard>
+
+      <SectionCard title="Their month, with these plans in place">
+        <div className="grid md:grid-cols-3 gap-3 mb-4">
+          <Stat label="Take-home income" value={money(d.net, 2)} />
+          <Stat label="Surplus now" value={money(surplusNow, 2)} />
+          <Stat label="Surplus after" value={money(surplusAfter, 2)} accent={surplusAfter < 0} gold={surplusAfter >= 0} />
+        </div>
+        {surplusAfter < 0 && (
+          <p className="text-sm text-red-700 mb-3">
+            This commits <b>{money(Math.abs(surplusAfter), 2)}</b> more each month than the income covers — worth trimming
+            before it is signed.
+          </p>
+        )}
+        <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+          <thead><tr>
+            {["Against the 4-3-2-1 guideline", "Guideline / mo", "Now", "With these plans"].map(h => (
+              <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {[["protection", "Protection (10% of income)", 0.10], ["savings", "Savings & investments (20% of income)", 0.20]].map(([key, label, g]) => {
+              const now = key === "protection" ? split.protection : split.savings;
+              const after = afterOf(key);
+              const guide = d.net * g;
+              return (
+                <tr key={key}>
+                  <td className="py-1.5 px-2 border-b border-slate-100">{label}</td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{money(guide, 2)}</td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-slate-500">{money(now, 2)} · {pct(now)}</td>
+                  <td className={"py-1.5 px-2 border-b border-slate-100 tabular-nums font-semibold " + (after > guide ? "text-red-700" : "text-purple-900")}>
+                    {money(after, 2)} · {pct(after)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr style={{ background: "#f5f0fa" }}>
+              <td className="py-1.5 px-2 font-bold">Combined (30% of income)</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold">{money(d.net * 0.30, 2)}</td>
+              <td className="py-1.5 px-2 tabular-nums font-bold text-slate-500">{money(split.total, 2)} · {pct(split.total)}</td>
+              <td className={"py-1.5 px-2 tabular-nums font-bold " + (afterOf("protection") + afterOf("savings") > d.net * 0.30 ? "text-red-700" : "text-purple-900")}>
+                {money(afterOf("protection") + afterOf("savings"), 2)} · {pct(afterOf("protection") + afterOf("savings"))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="text-xs text-slate-400 mt-2">
+          Current commitment comes from the policies already on file; SPK and one-time payments are excluded, as everywhere
+          else. A plan marked as replacing a policy counts only the difference.
+        </p>
+      </SectionCard>
+    </>
+  );
+}
+
 function InsuranceNeedsSummary({ client, update }) {
   // Lapsed and surrendered policies pay out nothing, so they must not close a coverage gap.
   // APL and ETI policies are still in force — their cover counts even though no premium is
@@ -5419,6 +5625,7 @@ const STEPS = [
   { label: "Objectives", icon: Target },
   { label: "Current Coverage", icon: Shield },
   { label: "Recommended Plans", icon: ClipboardList },
+  { label: "Selection & Cash Flow", icon: CheckSquare },
   { label: "Overview", icon: LayoutDashboard },
   { label: "Narrative", icon: FileText },
 ];
@@ -7243,6 +7450,10 @@ export default function App() {
         </>)}
 
         {step === 6 && (<>
+          <SelectionCashFlow client={client} d={d} update={update} />
+        </>)}
+
+        {step === 7 && (<>
           <SectionCard title="Overview">
             <CoverageTimelinePanel client={client} />
           </SectionCard>
@@ -7259,7 +7470,7 @@ export default function App() {
           </SectionCard>
         </>)}
 
-        {step === 7 && (<>
+        {step === 8 && (<>
           <SectionCard title="Narrative">
             <div className="mb-4">
               <button onClick={draftWithAI} disabled={drafting} className="bg-purple-700 hover:bg-purple-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-md transition-colors">
