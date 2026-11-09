@@ -4138,14 +4138,18 @@ const NEEDS_GROUPS = [
     categories: ["Reimbursement (Accident)"] },
 ];
 
+// Cover held by one person across a set of coverage categories. Sums assured are brought
+// to base currency before being added, so a US$ policy contributes what it is worth here
+// rather than at face value. Existing policies name their insured in `insured`, recommended
+// plans in `insuredBy`, so the field is a parameter.
+const coverTotal = (plans, personId, categories, whoKey = "insured") => (plans || [])
+  .filter(p => (p[whoKey] || "self") === personId)
+  .flatMap(p => (p.coverages || []).map(c => ({ ...c, currency: planCurrency(p) })))
+  .filter(c => categories.includes(c.category))
+  .reduce((s, c) => s + toBase(c.currency, c.amount), 0);
+
 function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, setTarget, incomeMonthly }) {
-  const autoTotal = (categories) => plans
-    .filter(p => (p.insured || "self") === person.id)
-    // sums assured are brought to base currency before being added, so a US$ policy
-    // contributes what it is worth here rather than being counted at face value
-    .flatMap(p => (p.coverages || []).map(c => ({ ...c, currency: planCurrency(p) })))
-    .filter(c => categories.includes(c.category))
-    .reduce((s, c) => s + toBase(c.currency, c.amount), 0);
+  const autoTotal = (categories) => coverTotal(plans, person.id, categories);
 
   const rows = NEEDS_GROUPS.map(g => {
     const auto = autoTotal(g.categories);
@@ -4313,6 +4317,18 @@ function InsuranceNeedsDetailTables({ tables, setField, plans, personId }) {
 // The close: what the client is taking, what it costs net, and what their month looks
 // like once it is in place. Ticking a plan moves every figure on the page at once, so the
 // trade-off can be shown rather than described.
+// Each concern raised in the Objectives step, and the coverage categories a recommended
+// plan would have to carry to answer it. Death and disability (and an accident's death,
+// disability and reimbursement benefits) trigger on different events, so a plan brings the
+// largest of them to the row, never their sum.
+const CONCERN_CATEGORIES = {
+  "Death / TPD (10 years)": ["Death", "Disability"],
+  "Death / TPD (20 years)": ["Death", "Disability"],
+  "Major Critical Illness": ["Health (Major Critical Illness)"],
+  "Early Critical Illness": ["Health (Early-Major Critical Illness)"],
+  "Accident": ["Death (Accident)", "Disability (Accident)", "Reimbursement (Accident)"],
+};
+
 function SelectionCashFlow({ client, d, update }) {
   const people = [
     { id: "self", name: client.name || "Client" },
@@ -4337,6 +4353,24 @@ function SelectionCashFlow({ client, d, update }) {
   };
   const pct = (v) => annualIncome > 0 ? fmt(v * 12 / annualIncome * 100, 1) + "%" : "—";
 
+  // what the ticked plans put on each concern from the Objectives step. Only the client's
+  // own concerns are listed, since the income-replacement benchmarks are theirs; a
+  // dependent's cover still shows in the overview below.
+  const taken = takenPlans(client);
+  const addedFor = (cats) => Math.max(0, ...cats.map(cat => coverTotal(taken, "self", [cat], "insuredBy")));
+  const concernRows = d.irRows.filter(r => CONCERN_CATEGORIES[r.name]).map(r => {
+    const added = addedFor(CONCERN_CATEGORIES[r.name]);
+    const closed = Math.min(added, r.shortfall);
+    return { ...r, added, remaining: Math.max(0, r.shortfall - added), pct: r.shortfall > 0 ? closed / r.shortfall * 100 : 0 };
+  });
+  // savings and retirement premiums both answer a future need rather than a risk
+  const savingsNew = (commitment.rows.find(r => r.key === "savings")?.net || 0)
+    + (commitment.rows.find(r => r.key === "retirement")?.net || 0);
+  const goalRows = (client.otherObjectives || []).filter(o => num(o.target) > 0 && num(o.years) > 0).map(o => ({
+    name: o.name || "Goal", target: num(o.target), years: num(o.years),
+    need: vehicleSaving(o, goalVehicles(o)[0]),
+  }));
+
   // every figure in this step is a yearly one with its monthly equivalent beneath, since
   // the commitment being agreed to is an annual one
   const Yearly = ({ v, small, bold, note }) => (
@@ -4349,10 +4383,11 @@ function SelectionCashFlow({ client, d, update }) {
 
   return (
     <>
-      <SectionCard title="What the client is taking">
+      <SectionCard title="Plans Selected to Onboard">
         <p className="text-xs text-slate-500 mb-3">
-          Tick what has been agreed. Every figure below moves as you tick, so the effect on their month can be shown
-          rather than described. Nothing here changes the report — it still lists what you recommended.
+          Tick each plan being taken up. Everything below — the yearly commitment, the cash flow, the coverage
+          overview and the objectives still outstanding — moves with these ticks, so the effect can be shown rather
+          than described. The report itself is unchanged: it still lists what was recommended.
         </p>
         {quotable.length === 0 && <div className="text-sm text-slate-400">No plans quoted yet — add them in the Recommended Plans step.</div>}
         {people.map(person => {
@@ -4480,6 +4515,81 @@ function SelectionCashFlow({ client, d, update }) {
           else. A plan marked as replacing a policy counts only the difference.
         </p>
       </SectionCard>
+
+      <SectionCard title="What this answers, of what they were worried about">
+        <p className="text-xs text-slate-500 mb-3">
+          The concerns and shortfalls from the Objectives step, against what the ticked plans put on each one — so the
+          decision can be weighed on what it fixes, not only on what it costs.
+        </p>
+        {concernRows.length === 0 ? (
+          <div className="text-sm text-slate-400">Fill in the Objectives step to see which shortfalls these plans close.</div>
+        ) : (
+          <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+            <thead><tr>
+              {["Concern", "Benchmark", "Short today", "These plans add", "Still short", "Closed"].map(h => (
+                <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-2 bg-slate-50 border-b border-slate-200">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {concernRows.map(r => (
+                <tr key={r.name}>
+                  <td className="py-1.5 px-2 border-b border-slate-100">{r.name}</td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-slate-500">{money(r.bench, 0)}</td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums">{r.shortfall > 0 ? money(r.shortfall, 0) : "— covered"}</td>
+                  <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums font-bold text-purple-900">{r.added > 0 ? "+" + money(r.added, 0) : "—"}</td>
+                  <td className={"py-1.5 px-2 border-b border-slate-100 tabular-nums " + (r.remaining > 0 ? "text-red-700" : "text-green-700 font-semibold")}>
+                    {r.remaining > 0 ? money(r.remaining, 0) : "nothing"}
+                  </td>
+                  <td className="py-1.5 px-2 border-b border-slate-100">
+                    {r.shortfall > 0 ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block rounded-full bg-slate-200 overflow-hidden" style={{ width: 54, height: 7 }}>
+                          <span className="block h-full rounded-full" style={{ width: Math.min(100, r.pct) + "%", background: "#7c3aed" }} />
+                        </span>
+                        <span className="text-xs tabular-nums text-slate-600">{fmt(Math.min(100, r.pct), 0)}%</span>
+                      </span>
+                    ) : <span className="text-xs text-slate-400">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {(d.rtShortfall > 0 || goalRows.length > 0) && (
+          <div className="mt-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">Money being put aside</div>
+            <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
+              <tbody>
+                {d.rtShortfall > 0 && (
+                  <tr>
+                    <td className="py-1.5 px-2 border-b border-slate-100">Retirement — short {money(d.rtShortfall, 0)} at age {num(client.retirementAge) || "retirement"}</td>
+                    <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums font-bold text-purple-900 text-right">{money(savingsNew * 12, 2)} / yr</td>
+                  </tr>
+                )}
+                {goalRows.map((g, gi) => (
+                  <tr key={gi}>
+                    <td className="py-1.5 px-2 border-b border-slate-100">{g.name} — {money(g.target, 0)} in {g.years} years, needs {money(g.need, 0)} / yr</td>
+                    <td className="py-1.5 px-2 border-b border-slate-100 tabular-nums text-slate-500 text-right">{money(g.need / 12, 2)} / month</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-slate-400 mt-2">
+              The ticked savings and retirement plans put <b>{money(savingsNew * 12, 2)}</b> a year aside. Whether that is
+              enough for the retirement shortfall depends on the projections in those plans, so it is shown as the amount
+              committed rather than as a gap closed.
+            </p>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Their coverage, with these plans onboarded">
+        <p className="text-xs text-slate-500 mb-3">
+          The same overview as the Overview step, drawn as cover would stand once the ticked plans are in force — any
+          policy a new plan replaces drops away. Switch to Current or Recommended to compare.
+        </p>
+        <CoverageTimelinePanel client={client} initialMode="selected" />
+      </SectionCard>
     </>
   );
 }
@@ -4539,10 +4649,10 @@ const printedWindow = (age, ret) => {
   const a1 = Math.min(TIMELINE_MAX_AGE, Math.max(age + 30, ret > 0 ? ret + 8 : 0, a0 + 25));
   return { a0, a1 };
 };
-function CoverageTimelinePanel({ client, printMode = false }) {
+function CoverageTimelinePanel({ client, printMode = false, initialMode = "current" }) {
   const clientAge = num(calcAge(client.dob));
   const retireAge = num(client.retirementAge); // from Profile (KYC) step
-  const [mode, setMode] = useState("current");
+  const [mode, setMode] = useState(initialMode);
   const [win, setWin] = useState(() => printMode ? printedWindow(clientAge, retireAge) : { a0: 0, a1: TIMELINE_MAX_AGE }); // visible client-age window (zoom)
   const [hover, setHover] = useState(null);       // { item, left, top }
   const [selected, setSelected] = useState(null); // pinned item for the detail card
@@ -4575,7 +4685,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     // up into, so the plan shows one bar per bucket (Death & Disability, Critical
     // Illness, …), each labelled with that bucket's representative coverage amount.
     // Reused in Recommended mode too, so current coverage can be compared against proposals.
-    const buildPlanItems = () => (client.existingPlans || []).flatMap((p, i) => {
+    const buildPlanItems = (skipIds) => (client.existingPlans || []).filter(p => !(skipIds && skipIds.has(p.id))).flatMap((p, i) => {
         const dob = insuredById(p.insured || "self").dob;
         const start = Math.max(0, Math.min(policyStartAge(p, dob), TIMELINE_MAX_AGE));
         const rawEnd = num(p.endAge ?? p.toAge);
@@ -4800,7 +4910,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
     // already in force, category row by category row
     // Recommended plans are bucketed by their coverage breakdown exactly like in-force
     // plans, so a proposal lands on the same row as the cover it is meant to top up.
-    const recommended = (client.products || []).filter(p => p.include).flatMap((p, i) => {
+    const buildProductItems = (list) => (list || []).flatMap((p, i) => {
       const who = insuredById(p.insuredBy || "self");
       const baseAge = who.age != null ? who.age : clientAge;
       const start = Math.max(0, Math.min(num(p.startAge) > 0 ? num(p.startAge) : baseAge, TIMELINE_MAX_AGE));
@@ -4860,7 +4970,14 @@ function CoverageTimelinePanel({ client, printMode = false }) {
         };
       });
     });
-    return [...buildPlanItems(), ...recommended, ...buildLiabilityItems()];
+    // "with selected" mode: how cover would stand once the ticked plans are onboarded —
+    // anything a new plan replaces drops off the chart, and the rest is drawn as live cover
+    if (mode === "selected") {
+      const taken = takenPlans(client).filter(p => p.include);
+      const replacedIds = new Set(taken.map(p => p.replacesPlanId).filter(Boolean));
+      return [...buildPlanItems(replacedIds), ...buildProductItems(taken), ...buildLiabilityItems()];
+    }
+    return [...buildPlanItems(), ...buildProductItems((client.products || []).filter(p => p.include)), ...buildLiabilityItems()];
   }, [mode, client.existingPlans, client.existingInvestments, client.products, client.liabilities, client.dob, clientAge, insuredList]);
 
   // one section per insured person (client first), each with its own category rows;
@@ -5274,20 +5391,22 @@ function CoverageTimelinePanel({ client, printMode = false }) {
               {zoomed && <button onClick={() => setWin({ a0: 0, a1: TIMELINE_MAX_AGE })} className="px-3 py-1.5 bg-white text-purple-800 hover:bg-purple-50 border-l border-slate-200">Reset ({Math.round(win.a0)}–{Math.round(win.a1)})</button>}
             </div>
             <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-              {[["current", "Current"], ["recommended", "Recommended"]].map(([k, label]) => (
+              {[["current", "Current"], ["recommended", "Recommended"], ["selected", "With selected"]].map(([k, label]) => (
                 <button key={k} onClick={() => { setMode(k); setSelected(null); setHover(null); }} className={"px-4 py-1.5 font-medium transition-colors " + (mode === k ? "bg-purple-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>{label}</button>
               ))}
             </div>
           </div>
         )}
       </div>
-      {items.length === 0 && mode === "recommended" ? (
-        <div className="p-8 text-center text-slate-400 text-sm">No recommended plans selected yet — tick plans to include in the Recommended Plans step.</div>
+      {items.length === 0 && mode !== "current" ? (
+        <div className="p-8 text-center text-slate-400 text-sm">{mode === "selected"
+          ? "Nothing ticked yet — tick the plans the client is taking in the Selection & Cash Flow step."
+          : "No recommended plans selected yet — tick plans to include in the Recommended Plans step."}</div>
       ) : sections.length === 0 ? (
         <div className="p-8 text-center text-slate-400 text-sm">No existing plans added yet — add them in the Current Coverage step.</div>
       ) : (
         <>
-        <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : "Recommended"} coverage timeline`}>
+        <svg ref={svgRef} viewBox={`0 0 ${LABEL_W + PLOT_W + PAD_R} ${totalH}`} className="w-full" role="img" aria-label={`${mode === "current" ? "Current" : mode === "selected" ? "With selected plans" : "Recommended"} coverage timeline`}>
           <defs>{savingsDefs}{liabilityDefs}</defs>
           <text x={LABEL_W} y={11} fontSize="10" fill="#64748b" fontWeight="600">CLIENT'S AGE</text>
           {ticks.map(t => (
@@ -5533,6 +5652,12 @@ function CoverageTimelinePanel({ client, printMode = false }) {
               not covered yet
             </span>
           )}
+          {mode === "selected" && (
+            <span className="inline-flex items-center gap-1.5">
+              <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="#cbd5e1" stroke="#64748b" opacity="0.8" /></svg>
+              cover as it would stand with the ticked plans in force · policies they replace are not shown
+            </span>
+          )}
           {mode === "recommended" && items.some(it => it.origin === "current") && (
             <span className="inline-flex items-center gap-1.5">
               <svg width="20" height="12"><rect x="1" y="1.5" width="18" height="9" rx="3" fill="#cbd5e1" stroke="#64748b" strokeDasharray="3 2" opacity="0.7" /></svg>
@@ -5617,7 +5742,7 @@ function CoverageTimelinePanel({ client, printMode = false }) {
       {!printMode && sections.some(sec => sec.rows.some(r => rowLayout(r, sec.person.id).agg)) && (
         <p className="text-xs text-slate-400 mt-2">A row holding more than one policy shows the total cover, stepping as policies start, reduce and end — click the row to see the policies behind it.</p>
       )}
-      {mode === "recommended" && items.length > 0 && (
+      {mode !== "current" && items.length > 0 && (
         <p className="text-xs text-slate-400 mt-2">Bars use each plan's own start/end ages where set; otherwise they run from the insured person's current age to the plan's coverage end (e.g. whole life to 100, term options to their stated age).</p>
       )}
     </div>
