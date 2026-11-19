@@ -3615,7 +3615,7 @@ const ProgressCharts = ({ history }) => {
           {[0, 0.5, 1].map(f => (
             <g key={f}>
               <line x1={L} y1={T + ih - f * ih} x2={W - R} y2={T + ih - f * ih} stroke="#e2e8f0" strokeWidth="1" />
-              <text x={L - 5} y={T + ih - f * ih + 3} textAnchor="end" fontSize="7.5" fill="#94a3b8">{kfmt(top * f)}</text>
+              <text x={L - 5} y={T + ih - f * ih + 3} textAnchor="end" fontSize="7.5" fill="#94a3b8">{kfmtBase(top * f)}</text>
             </g>
           ))}
           {opts.bars
