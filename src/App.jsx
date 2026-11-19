@@ -951,6 +951,8 @@ async function deleteClientRow(id) {
 // Every record is written to the browser's own database first and to Supabase second, so
 // the app keeps working with no connection and nothing typed is lost. Records that could
 // not be sent sit in an outbox until the connection returns.
+// remembers whether client names are masked on this device, across reloads
+const PRIV_KEY = "goodlife-privacy";
 const DB_NAME = "goodlife-offline", DB_VERSION = 1, STORE = "clients", OUTBOX = "outbox";
 const idbReady = () => typeof indexedDB !== "undefined";
 const openDb = () => new Promise((resolve, reject) => {
