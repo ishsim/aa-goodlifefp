@@ -403,7 +403,14 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
     d.selected.filter(p => !seen.has(p.key) && seen.add(p.key)).forEach((p, i) => {
       const meta = planLibrary?.[p.key];
       children.push(H2((i + 1) + ". " + (meta ? meta.name : p.label)));
-      if (meta) children.push(...renderPlanBody(meta.body));
+      if (meta) {
+        children.push(...renderPlanBody(meta.body));
+        // an optional benefit the advisor ticked brings its own explanation with it
+        const on = (p.rating || {}).riders || {};
+        Object.entries(meta.riderBodies || {}).filter(([k]) => on[k]).forEach(([, rb]) => {
+          children.push(H2(rb.title), ...renderPlanBody(rb.body));
+        });
+      }
     });
   }
 
