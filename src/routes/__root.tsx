@@ -12,6 +12,7 @@ import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { registerServiceWorker } from "../lib/registerSW";
 
 function NotFoundComponent() {
   return (
@@ -77,7 +78,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      // Installed to the home screen the app gets its own window — and, on iOS, storage
+      // that is treated as an app's rather than a bookmark's and evicted far less eagerly.
+      { name: "theme-color", content: "#51037c" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "GoodLife" },
       { title: "GoodLife FHR Generator" },
       { name: "description", content: "Blank Canvas React provides a clean React project setup with Tailwind CSS and recharts." },
       { name: "author", content: "Lovable" },
@@ -92,10 +100,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/8d2cc549-2ca2-4bb0-98d7-9eb17bd34837/id-preview-313d26cd--1c817a2a-d2fd-4862-bff2-6093ba5074a8.lovable.app-1781185839951.png" },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
+      { rel: "stylesheet", href: appCss },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icon-180.png", sizes: "180x180" },
+      { rel: "icon", href: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
   }),
   shellComponent: RootShell,
@@ -120,6 +128,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Caches the app shell so a cold start works with no connection; prompts before
+  // switching to a newly deployed version rather than reloading underneath the user.
+  useEffect(() => { registerServiceWorker(); }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
