@@ -5843,38 +5843,90 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const refreshPending = async () => setPendingCount((await localAll(OUTBOX)).length);
 
+  // Folds a fresh server list into what is on screen without ever walking over a newer
+  // local edit — a record being typed into right now is newer than anything that can
+  // come back, so it stays exactly as it is.
+  // A record missing from the server list has been deleted somewhere else, and the list
+  // is what says so — except for one just made here, which may simply not have finished
+  // saving yet. Anything touched in the last minute is given that benefit of the doubt.
+  const JUST_MADE_MS = 60000;
+  const applyServerList = (list) => {
+    let changed = 0;
+    setClients(prev => {
+      const byId = new Map(list.map(c => [c.id, c]));
+      const now = Date.now();
+      prev.forEach(local => {
+        const incoming = byId.get(local.id);
+        if (!incoming) {
+          if (now - num(local.updated) < JUST_MADE_MS) byId.set(local.id, local);
+          else changed++;                       // deleted on another device
+          return;
+        }
+        if (num(local.updated) > num(incoming.updated)) { byId.set(local.id, local); return; }
+        if (num(incoming.updated) > num(local.updated)) changed++;
+      });
+      if (byId.size > prev.length) changed++;   // a client added elsewhere
+      return [...byId.values()].sort((a, b) => num(b.updated) - num(a.updated));
+    });
+    return changed;
+  };
+
   // Anything written while offline goes out as soon as the connection returns, and again
   // whenever the app is reopened, so a queue cannot sit forgotten.
+  //
+  // The server is also re-read on a timer, and whenever the app comes back to the
+  // foreground. It used to be read only after this device had sent something of its own,
+  // which meant a device with nothing to push never learned about anything — edit a
+  // client on the Mac and the iPad would sit there showing yesterday's copy until the
+  // page was fully reloaded. iOS restores a home-screen app from a frozen state rather
+  // than reloading it, so that reload often never came.
   useEffect(() => {
     let stop = false;
-    const sync = async () => {
+    let pulling = false;
+    const pull = async (announce) => {
+      if (stop || pulling) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      pulling = true;
+      try {
+        const { list, online: ok } = await loadClientsOffline();
+        if (stop || !ok) return;
+        setOnline(true);
+        const changed = applyServerList(list);
+        if (changed > 0 && announce) {
+          toast(changed === 1 ? "1 client updated from another device" : changed + " clients updated from another device");
+        }
+      } catch { /* keep what is on screen */ } finally { pulling = false; }
+    };
+    const sync = async (announce) => {
       if (stop || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
       const { sent, left } = await flushOutbox();
       if (stop) return;
       setPendingCount(left);
-      if (sent > 0) {
-        toast.success(sent === 1 ? "1 change synced" : sent + " changes synced");
-        try {
-          const { list, online: ok } = await loadClientsOffline();
-          if (!stop && ok) { setClients(list); setOnline(true); }
-        } catch { /* keep what is on screen */ }
-      }
+      if (sent > 0) toast.success(sent === 1 ? "1 change synced" : sent + " changes synced");
+      await pull(announce);
     };
-    const goOnline = () => { setOnline(true); sync(); };
+    const goOnline = () => { setOnline(true); sync(true); };
     const goOffline = () => setOnline(false);
+    // Coming back to the app is the moment a stale screen is most likely, and the moment
+    // the user is most likely to act on what it says.
+    const onVisible = () => { if (document.visibilityState === "visible") sync(true); };
     if (typeof window !== "undefined") {
       setOnline(navigator.onLine !== false);
       window.addEventListener("online", goOnline);
       window.addEventListener("offline", goOffline);
+      window.addEventListener("focus", onVisible);
+      document.addEventListener("visibilitychange", onVisible);
     }
     refreshPending();
-    sync();
-    const iv = setInterval(sync, 60000);
+    sync(false);
+    const iv = setInterval(() => sync(true), 60000);
     return () => {
       stop = true; clearInterval(iv);
       if (typeof window !== "undefined") {
         window.removeEventListener("online", goOnline);
         window.removeEventListener("offline", goOffline);
+        window.removeEventListener("focus", onVisible);
+        document.removeEventListener("visibilitychange", onVisible);
       }
     };
   }, []);
