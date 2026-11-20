@@ -407,7 +407,10 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
         children.push(...renderPlanBody(meta.body));
         // an optional benefit the advisor ticked brings its own explanation with it
         const on = (p.rating || {}).riders || {};
-        Object.entries(meta.riderBodies || {}).filter(([k]) => on[k]).forEach(([, rb]) => {
+        const insuresDependent = (p.insuredBy || "self") !== "self";
+        Object.entries(meta.riderBodies || {})
+          .filter(([k]) => on[k] && (k !== "pw" || insuresDependent))
+          .forEach(([, rb]) => {
           children.push(H2(rb.title), ...renderPlanBody(rb.body));
         });
       }

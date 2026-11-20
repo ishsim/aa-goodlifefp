@@ -382,8 +382,10 @@ export const PLAN_RIDERS = {
   STP: [{ key: "ci", label: "Critical Illness supplementary benefit" }],
   // On a unit-trust plan written for a child the payor is the one funding it, so the
   // waiver is the benefit that keeps the investment horizon intact if they are lost.
-  ILP: [{ key: "pw", label: "Premium waiver (payor benefit)" }],
-  VIP: [{ key: "pw", label: "Premium waiver (payor benefit)" }],
+  // dependentOnly: the waiver answers the case where a parent funds a plan written on a
+  // child, so it is offered only when the plan insures a dependent rather than the client.
+  ILP: [{ key: "pw", label: "Premium waiver (payor benefit)", dependentOnly: true }],
+  VIP: [{ key: "pw", label: "Premium waiver (payor benefit)", dependentOnly: true }],
 };
 
 // Which rating inputs each product actually needs — drives what the editor asks for.

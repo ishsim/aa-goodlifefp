@@ -655,12 +655,19 @@ const planCoverageText = (p) => {
   if (!rows.length) return p.coverage || "";
   return rows.map(c => c.category + ": " + c.display).join(" · ");
 };
+const riderIsDependentOnly = (planKey, riderKey) =>
+  Boolean((PLAN_RIDERS[planKey] || []).find(r => r.key === riderKey)?.dependentOnly);
 // The same product can be quoted for several people, but its explanation page only needs
 // to appear once — collapse to one entry per product, gathering every instance's images.
 const uniqueExplanations = (selected) => {
   const byKey = new Map();
   (selected || []).forEach(p => {
-    const on = Object.entries((p.rating || {}).riders || {}).filter(([, v]) => v).map(([k]) => k);
+    // A plan moved back onto the client keeps whatever was ticked while it insured a
+    // dependent, so the juvenile-only benefits are filtered out here too — otherwise the
+    // report would carry an explanation of something the plan no longer is.
+    const on = Object.entries((p.rating || {}).riders || {})
+      .filter(([k, v]) => v && (!riderIsDependentOnly(p.key, k) || (p.insuredBy || "self") !== "self"))
+      .map(([k]) => k);
     const seen = byKey.get(p.key);
     if (seen) {
       seen.planImages = [...seen.planImages, ...(p.planImages || [])];
@@ -2380,6 +2387,11 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
   const rateMeta = RATED_PRODUCTS[p.key] || null;
   const rating = p.rating || {};
   const insuredAge = insuredOptions.find(o => o.id === (p.insuredBy || "self"))?.age;
+  // A benefit written for a juvenile life assured is only offered on a plan that insures
+  // one; ticking it on the client's own plan would attach an explanation that does not
+  // describe what they bought.
+  const insuresDependent = (p.insuredBy || "self") !== "self";
+  const offeredRiders = (PLAN_RIDERS[p.key] || []).filter(r => !r.dependentOnly || insuresDependent);
   // illustrated values, in the same rate-then-age shape the investment portfolio uses
   const projRates = p.returnRates || [];
   const setProjRates = (next) => setP({ returnRates: next });
@@ -2475,11 +2487,11 @@ const RecommendedPlanCard = ({ p, onChange, onRemove, insuredOptions, clientId, 
         </>)}
       </div>
 
-      {!rateMeta && PLAN_RIDERS[p.key] && (
+      {!rateMeta && offeredRiders.length > 0 && (
         <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/60 p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-purple-800 mb-2">Optional benefits</div>
           <div className="flex flex-wrap gap-4">
-            {PLAN_RIDERS[p.key].map(r => (
+            {offeredRiders.map(r => (
               <label key={r.key} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={!!(rating.riders || {})[r.key]}
                   onChange={e => setP({ rating: { ...rating, riders: { ...(rating.riders || {}), [r.key]: e.target.checked } } })}
