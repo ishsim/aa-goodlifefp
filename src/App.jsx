@@ -1533,7 +1533,9 @@ function compute(c) {
     covDeath: Math.max(held(["Death"]), held(["Disability"])),
     covMCI: held(["Health (Major Critical Illness)"]),
     covECI: held(["Health (Early-Major Critical Illness)"]),
-    covAccident: Math.max(held(["Death (Accident)"]), held(["Disability (Accident)"])),
+    // accidental death alone: disability, outpatient and reimbursement benefits all
+    // answer this row too, but rolling them together makes a figure nobody can read back
+    covAccident: held(["Death (Accident)"]),
   };
   const irHeld = (k) => (ir[k] != null && ir[k] !== "" ? num(ir[k]) : irAuto[k]);
   const irRows = [
@@ -1541,7 +1543,7 @@ function compute(c) {
     { name: "Death / TPD (20 years)", guideline: "20 years of income", bench: irMonthly * 12 * 20, current: irHeld("covDeath") },
     { name: "Major Critical Illness", guideline: "5 years of income", bench: irMonthly * 12 * 5, current: irHeld("covMCI") },
     { name: "Early Critical Illness", guideline: "3 years of income", bench: irMonthly * 12 * 3, current: irHeld("covECI") },
-    { name: "Accident", guideline: "Accidental death or disability", bench: 100000, current: irHeld("covAccident") },
+    { name: "Accident", guideline: "Accidental death", bench: 100000, current: irHeld("covAccident") },
   ].map(r => ({ ...r, shortfall: Math.max(0, r.bench - r.current) }));
   // retirement
   const rt = c.retirement;
@@ -3683,9 +3685,12 @@ const ProgressCharts = ({ history }) => {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, margin: "10px 0 6px" }}>
       {chart("Take-home income per month", [{ label: "Net income", color: "#51037c", values: rows.map(r => num(r.net)) }])}
+      {/* Deliberately not red/green: those carry a verdict in the ratio chart just above,
+          and a liability is not a failure. Brand purple against amber reads as two halves
+          of one picture rather than good against bad. */}
       {chart("Assets vs liabilities", [
-        { label: "Total assets", color: "#059669", values: rows.map(r => num(r.totalAssets)) },
-        { label: "Total liabilities", color: "#dc2626", values: rows.map(r => num(r.totalLiab)) },
+        { label: "Total assets", color: "#51037c", values: rows.map(r => num(r.totalAssets)) },
+        { label: "Total liabilities", color: "#d97706", values: rows.map(r => num(r.totalLiab)) },
       ], { bars: true })}
     </div>
   );
@@ -3696,6 +3701,12 @@ const ProgressCharts = ({ history }) => {
 const ProgressTable = ({ history, report = false }) => {
   const rows = [...history].filter(r => r.date).sort(byDate);
   if (!rows.length) return null;
+  // A review is remembered by its year, not its date — unless two of them share a year,
+  // in which case the month is what tells them apart.
+  const years = rows.map(histYear);
+  const reviewLabel = (r) => years.filter(y => y === histYear(r)).length > 1
+    ? new Date(r.date).toLocaleDateString("en-GB", { month: "short", year: "numeric" })
+    : histYear(r);
   const delta = (cur, prev) => {
     if (prev == null) return "—";
     const diff = num(cur) - num(prev);
@@ -3717,7 +3728,7 @@ const ProgressTable = ({ history, report = false }) => {
       <tbody>
         {rows.map((r, i) => (
           <tr key={r.id || i}>
-            <td className={td}><b>{fmtDate(r.date) || r.date}</b>{r.note ? <div className="text-xs text-slate-500">{r.note}</div> : null}</td>
+            <td className={td}><b>{reviewLabel(r)}</b>{r.note ? <div className="text-xs text-slate-500">{r.note}</div> : null}</td>
             <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.net))}</td>
             <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.totalAssets))}</td>
             <td className={td} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(num(r.totalLiab))}</td>
