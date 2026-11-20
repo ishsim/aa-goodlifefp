@@ -422,7 +422,7 @@ const PLAN_LIBRARY = {
   ILP: {
     // shown in the report only when the premium-waiver option is ticked on the plan
     riderBodies: { pw: { title: "Premium Waiver (Payor Benefit) — where the life assured is a child",
-      body: "Where the plan is taken out on a child, the parent or guardian pays the premiums but it is the child who is insured. The premium waiver answers the gap that arrangement creates: if something happens to the person funding the plan, this is the one commitment that should not stop.\n\n• Who is covered — the waiver is underwritten on the payor (the parent or guardian paying the premiums), not on the child. The child remains the life assured throughout.\n• What triggers it — the death or total and permanent disability of the payor, and, where the benefit selected includes it, a critical illness diagnosis.\n• What happens then — AIA pays the regular premium in the payor's place. The policy stays in force, the units already bought stay invested, and the monthly investment contribution carries on as though nothing had changed.\n• How long it runs — premiums are waived until the child reaches the age stated in the benefit, by which point the plan has been funded to the point it was meant to reach.\n• Why it matters on an investment-linked plan — these plans depend on their premiums being paid across the full horizon; a plan abandoned in its third year returns very little. The waiver protects the time horizon the projections are built on, which is the part of the plan the client cannot buy back later.\n\nPlan Limitations:\n∴ The waiver applies to the regular premium only — top-ups and ad-hoc contributions are not waived.\n∴ The payor is separately underwritten and must fall within the benefit's entry-age limits; an existing medical condition may be excluded or the benefit declined.\n∴ A waiver claim pays no cash to the family — it keeps the plan running, nothing more.\n∴ The benefit carries its own charge, deducted with the plan's other charges, so slightly fewer units are bought each month." } },
+      body: "Where the plan is taken out on a child, the parent or guardian pays the premiums but it is the child who is insured. The premium waiver answers the gap that arrangement creates: if something happens to the person funding the plan, this is the one commitment that should not stop.\n\n• Who is covered — the waiver is underwritten on the payor (the parent or guardian paying the premiums), not on the child. The child remains the life assured throughout.\n• What triggers it — the death or total and permanent disability of the payor, and, where the benefit selected includes it, a critical illness diagnosis.\n• What happens then — AIA pays the regular premium in the payor's place. The policy stays in force, the units already bought stay invested, and the monthly investment contribution carries on as though nothing had changed.\n• How long it runs — this is a juvenile benefit, written on a child's policy. Future premiums on the basic policy are waived if the payor suffers any of the above before the policy anniversary following the child's 25th birthday, by which point the plan has been funded to the point it was meant to reach.\n• Why it matters on an investment-linked plan — these plans depend on their premiums being paid across the full horizon; a plan abandoned in its third year returns very little. The waiver protects the time horizon the projections are built on, which is the part of the plan the client cannot buy back later.\n\nPlan Limitations:\n∴ A waiver claim pays no cash to the family — it keeps the plan running, nothing more.\n∴ The benefit carries its own charge, deducted with the plan's other charges, so slightly fewer units are bought each month." } },
     name: "Investment with Unit Trusts — Optimizer", body: "Optimizer is a flexible investment-linked life insurance plan combining protection and investment to enhance returns for your goals while keeping income protection in place. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Sum assured is flexible — increase or decrease within limits to match your protection needs.\n• Premiums convert to units invested in a choice of Asia Equity and Global Bond unit trusts.\n• Top-up available anytime (minimum $1,000) to increase portfolio returns.\n• Total payable upon death or permanent disability is the Sum Assured plus the present policy cash value.\n• Fixed minimum of 8 paying years — acts as a forced savings system; thereafter you may continue or stop payment depending on your needs.\n\nPlan Limitations:\n∴ Insurance charges increase with age, which may reduce future returns.\n∴ Regular premium is locked for 8 years — no withdrawal or surrender during this period.\n∴ Penalty charges apply for late premiums, early surrender or partial withdrawal before completing 8 paying years.\n∴ Returns are not guaranteed and vary directly with the investment climate.\n∴ A Full Surrender Charge applies: the Regular Premium policy value is multiplied by a surrender factor based on the number of full annual premiums paid, starting at 95% after one year and tapering to 0% once eight have been paid — see the table below.\n∴ A Partial Surrender Charge is deducted from the remaining policy value, calculated as number of Regular Premium units withdrawn x bid price x A / (1 - A), where A is the same surrender factor.", tables: [
     { caption: "Surrender Charge — Surrender Factor by premiums paid",
       sub: "Applies to both the Full and Partial Surrender Charge.",
@@ -435,7 +435,7 @@ const PLAN_LIBRARY = {
   VIP: {
     // shown in the report only when the premium-waiver option is ticked on the plan
     riderBodies: { pw: { title: "Premium Waiver (Payor Benefit) — where the life assured is a child",
-      body: "Where the plan is taken out on a child, the parent or guardian pays the premiums but it is the child who is insured. The premium waiver answers the gap that arrangement creates: if something happens to the person funding the plan, this is the one commitment that should not stop.\n\n• Who is covered — the waiver is underwritten on the payor (the parent or guardian paying the premiums), not on the child. The child remains the life assured throughout.\n• What triggers it — the death or total and permanent disability of the payor, and, where the benefit selected includes it, a critical illness diagnosis.\n• What happens then — AIA pays the regular premium in the payor's place. The policy stays in force, the units already bought stay invested, and the monthly investment contribution carries on as though nothing had changed.\n• How long it runs — premiums are waived until the child reaches the age stated in the benefit, by which point the plan has been funded to the point it was meant to reach.\n• Why it matters on an investment-linked plan — these plans depend on their premiums being paid across the full horizon; a plan abandoned in its third year returns very little. The waiver protects the time horizon the projections are built on, which is the part of the plan the client cannot buy back later.\n\nPlan Limitations:\n∴ The waiver applies to the regular premium only — top-ups and ad-hoc contributions are not waived.\n∴ The payor is separately underwritten and must fall within the benefit's entry-age limits; an existing medical condition may be excluded or the benefit declined.\n∴ A waiver claim pays no cash to the family — it keeps the plan running, nothing more.\n∴ The benefit carries its own charge, deducted with the plan's other charges, so slightly fewer units are bought each month." } },
+      body: "Where the plan is taken out on a child, the parent or guardian pays the premiums but it is the child who is insured. The premium waiver answers the gap that arrangement creates: if something happens to the person funding the plan, this is the one commitment that should not stop.\n\n• Who is covered — the waiver is underwritten on the payor (the parent or guardian paying the premiums), not on the child. The child remains the life assured throughout.\n• What triggers it — the death or total and permanent disability of the payor, and, where the benefit selected includes it, a critical illness diagnosis.\n• What happens then — AIA pays the regular premium in the payor's place. The policy stays in force, the units already bought stay invested, and the monthly investment contribution carries on as though nothing had changed.\n• How long it runs — this is a juvenile benefit, written on a child's policy. Future premiums on the basic policy are waived if the payor suffers any of the above before the policy anniversary following the child's 25th birthday, by which point the plan has been funded to the point it was meant to reach.\n• Why it matters on an investment-linked plan — these plans depend on their premiums being paid across the full horizon; a plan abandoned in its third year returns very little. The waiver protects the time horizon the projections are built on, which is the part of the plan the client cannot buy back later.\n\nPlan Limitations:\n∴ A waiver claim pays no cash to the family — it keeps the plan running, nothing more.\n∴ The benefit carries its own charge, deducted with the plan's other charges, so slightly fewer units are bought each month." } },
    "name": "Investment with Unit Trusts — Variable Investment Protector (VIP)", "body": "Variable Investment Protector (VIP) is a regular-premium investment-linked life insurance plan combining protection and investment, letting you vary the mix between the two without changing what you pay. Returns are not guaranteed, as they depend on market performance — a longer time horizon allows you to withstand investment fluctuations.\n\n• Vary your protection and investment mix without changing your premium.\n• Death Benefit — we pay the sum assured plus the policy value.\n• Premiums buy units in a choice of three funds: AIA Brunei Growth (Asia ex-Japan equities), AIA Brunei Balanced (60% equities / 40% bonds) and AIA Brunei Conservative. Each carries a Fund Management Charge of 1.50% p.a.\n• Optional benefits — Total & Permanent Disability, Critical Illness and Payor Benefit may be added, each carrying its own monthly Benefit Charge.\n• Top-up at any time from B$1,000, and 100% of a top-up premium goes into units — unlike the regular premium, a top-up carries no allocation charge.\n• Partial withdrawal from the end of the first policy year: minimum B$1,000, provided at least B$1,000 of units remain. Full surrender is allowed from the same point and pays the full policy value — there is no surrender charge.\n• Premium Holiday — you may stop paying at any time, for as long as the units in the policy cover the monthly charges.\n• Minimum regular premium is B$100 monthly or B$1,200 annually (B$250 and B$3,000 where the insured is aged 51–55 and TPD or Critical Illness is selected).\n\nPlan Limitations:\n∴ The allocation charge is heavy in the early years: only 20% of the first year's premium buys units, 35% in the second and 55% in the third. Nothing above 100% is allocated until the fourth year — see the table below.\n∴ Units are bought at offer price and sold at bid price, and the bid price is approximately 95% of the offer price — about a 5% spread on the way in.\n∴ A Policy Fee is cancelled from units monthly: B$4 a month on annual premiums, B$5 a month on monthly premiums.\n∴ The monthly Benefit Charge is based on the sum assured and rises with the insured's attained age, so holding the same cover cancels more units each year.\n∴ Charges are not guaranteed and may be adjusted based on future experience.\n∴ The policy lapses if its value is depleted by charges, and terminates whenever the policy value is zero or negative.\n∴ Returns are not guaranteed and vary directly with the investment climate.", "tables": [{"caption": "Premium Allocation Rate — how much of each premium buys units", "sub": "The front-end charge: anything below 100% is the share not invested that year.", "head": ["Policy year", "Premium allocated to units"], "widths": ["62%", "38%"], "align": ["left", "center"], "rows": [["1st year", "20%"], ["2nd year", "35%"], ["3rd year", "55%"], ["4th – 6th year", "102%"], ["7th – 9th year", "105%"], ["10th year & above", "108%"]]}], "tablesNote": "Allocation is the share of each regular premium used to buy units at offer price. Top-up premiums are always allocated at 100%. Rates are from the product summary PS-VIP (B) ver 6.0."} ,
   ASCC: { name: "Comprehensive Critical Illness + Special Conditions — Absolute Critical Cover", body: "Absolute Critical Cover is a standalone regular premium, non-participating critical illness plan providing coverage against death, critical illnesses of different severities including Pre-Early conditions, and Special Conditions.\n\n• 187 total conditions covered — going beyond standard critical illness plans.\n• 150 Multi-Stage Critical Illnesses across Early Stage (42), Intermediate Stage (35) and Major Stage (73).\n• Pre-Early Benefit — 12 Pre-Early conditions (including severe hypertension, thyroid disorders, macular degeneration) trigger a payout of 10% of the insured amount or Maximum Claim Limit, up to the policy anniversary on or following age 85.\n• Special Conditions Benefit — 25 covered special conditions (including ADHD, ASD, diabetic complications, Kawasaki disease, osteoporosis, COPD, severe gout) pay 20% of the insured amount per condition. Maximum 10 claims; each condition claimable once; payments do not reduce the insured amount.\n• Safety Net Benefit — if admitted to ICU for at least 4 days, a one-time additional 20% of coverage amount is paid, covering all illnesses, injuries and conditions including future unknown diseases.\n• Power Reset — if the policy is in force 12 months after a claimed diagnosis, the Current Insured Amount is restored to 100%.\n• Power Relapse Benefit — if diagnosed with a Power Relapse Critical Illness (recurred heart attack, recurred stroke, re-diagnosed major cancer, repeated heart valve surgery, repeated major organ/bone marrow transplantation), 100% of the Current Insured Amount is paid out (200% total). 2-year waiting period applies.\n• Early Critical Protector Waiver of Premium — premiums are waived if diagnosed with a covered critical illness while the supplementary benefit is in force.\n• Payor Benefit (juvenile/child policy) — if the payor is diagnosed with Early, Intermediate or Major CI, dies, or becomes totally and permanently disabled, all future premiums are waived until end of premium term or insured's age 25, whichever is earlier.\n• Death Benefit — 5% of the Insured Amount paid upon death while policy is in force.\n• Surrender Benefit (Life Plan only) — after the 60th policy anniversary or insured's 75th birthday (whichever is earlier): 75% of insured amount less any CI benefits paid, plus an additional 1% per policy anniversary after the insured's 76th birthday.\n\nCoverage options: Value Plan to Age 65, Value Plan to Age 75, or Life Plan to Age 100.\n\nPlan Limitations:\n∴ No benefits for any CI stage or conditions within 90 days from date of issue or reinstatement.\n∴ Power Reset only applies after 1 year following claimed diagnosis.\n∴ Power Relapse Benefit has a 2-year waiting period.\n∴ Pre-Early Benefit covers only until policy anniversary on or immediately following insured's 85th birthday.\n∴ No surrender returns until 60th policy anniversary or 75th birthday.\n∴ No surrender returns if any CI benefit has been paid.\n∴ Child premium discount only until policy anniversary on or immediately following insured's 21st birthday.", tables: [
     { caption: "150 Multi-Stage Critical Illnesses — conditions covered",
@@ -655,6 +655,13 @@ const planCoverageText = (p) => {
   if (!rows.length) return p.coverage || "";
   return rows.map(c => c.category + ": " + c.display).join(" · ");
 };
+// A plan body carries its limitations inline, after a "Plan Limitations:" line. Split
+// them off so an optional benefit's limitations can be shown in the plan's own box
+// rather than opening a second red box of its own directly underneath the first.
+const LIMITS_MARK = "Plan Limitations:";
+const bodyMain = (body) => { const i = (body || "").indexOf(LIMITS_MARK); return i === -1 ? (body || "") : body.slice(0, i).trimEnd(); };
+const bodyLimits = (body) => { const i = (body || "").indexOf(LIMITS_MARK); return i === -1 ? "" : body.slice(i + LIMITS_MARK.length).trim(); };
+
 const riderIsDependentOnly = (planKey, riderKey) =>
   Boolean((PLAN_RIDERS[planKey] || []).find(r => r.key === riderKey)?.dependentOnly);
 // The same product can be quoted for several people, but its explanation page only needs
@@ -6735,22 +6742,23 @@ export default function App() {
 
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2 id="sec-explanations">5. Explanation of Plan Options</h2>
             {uniqueExplanations(d.selected).map((p, i) => {
-              const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
+              const meta = PLAN_LIBRARY[p.key];
+              const extras = Object.entries(meta?.riderBodies || {}).filter(([k]) => p.riders[k]).map(([k, rb]) => rb);
+              const parts = meta ? renderPlanBody(bodyMain(meta.body)) : { main: null, limitations: null };
+              // every limitation, the plan's and each selected benefit's, in a single box
+              const allLimits = [bodyLimits(meta?.body), ...extras.map(rb => bodyLimits(rb.body))].filter(Boolean).join("\n");
+              const limitations = allLimits ? renderPlanBody(LIMITS_MARK + "\n" + allLimits).limitations : null;
               return (
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3 id={planAnchor(p)}>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
-                  {Object.entries(PLAN_LIBRARY[p.key]?.riderBodies || {}).filter(([k]) => p.riders[k]).map(([k, rb]) => {
-                    const rp = renderPlanBody(rb.body);
-                    return (
-                      <div key={k} style={{ breakInside: "avoid" }}>
-                        <h3 style={{ fontSize: 13.5 }}>{rb.title}</h3>
-                        {rp.main}
-                        {rp.limitations}
-                      </div>
-                    );
-                  })}
+                  {extras.map(rb => (
+                    <div key={rb.title} style={{ breakInside: "avoid" }}>
+                      <h3 style={{ fontSize: 13.5 }}>{rb.title}</h3>
+                      {renderPlanBody(bodyMain(rb.body)).main}
+                    </div>
+                  ))}
                   {(p.planImages||[]).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
@@ -6761,7 +6769,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {parts.limitations}
+                  {limitations}
                 </div>
               );
             })}</>)}
@@ -7105,22 +7113,23 @@ export default function App() {
           {/* 7. Explanation of Recommendations */}
           {d.selected.length > 0 && (<><div className="pagebreak" /><h2 id="rv-explanations">Explanation of Recommendations</h2>
             {uniqueExplanations(d.selected).map((p, i) => {
-              const parts = PLAN_LIBRARY[p.key] ? renderPlanBody(PLAN_LIBRARY[p.key].body) : { main: null, limitations: null };
+              const meta = PLAN_LIBRARY[p.key];
+              const extras = Object.entries(meta?.riderBodies || {}).filter(([k]) => p.riders[k]).map(([k, rb]) => rb);
+              const parts = meta ? renderPlanBody(bodyMain(meta.body)) : { main: null, limitations: null };
+              // every limitation, the plan's and each selected benefit's, in a single box
+              const allLimits = [bodyLimits(meta?.body), ...extras.map(rb => bodyLimits(rb.body))].filter(Boolean).join("\n");
+              const limitations = allLimits ? renderPlanBody(LIMITS_MARK + "\n" + allLimits).limitations : null;
               return (
                 <div key={p.key} style={{ breakBefore: i > 0 ? "page" : "auto" }}>
                   <h3 id={planAnchor(p)}>{i + 1}. {PLAN_LIBRARY[p.key] ? PLAN_LIBRARY[p.key].name : p.label}</h3>
                   {parts.main}
                   {PLAN_LIBRARY[p.key]?.tables && <PlanBodyTables tables={PLAN_LIBRARY[p.key].tables} note={PLAN_LIBRARY[p.key].tablesNote} riders={p.riders} />}
-                  {Object.entries(PLAN_LIBRARY[p.key]?.riderBodies || {}).filter(([k]) => p.riders[k]).map(([k, rb]) => {
-                    const rp = renderPlanBody(rb.body);
-                    return (
-                      <div key={k} style={{ breakInside: "avoid" }}>
-                        <h3 style={{ fontSize: 13.5 }}>{rb.title}</h3>
-                        {rp.main}
-                        {rp.limitations}
-                      </div>
-                    );
-                  })}
+                  {extras.map(rb => (
+                    <div key={rb.title} style={{ breakInside: "avoid" }}>
+                      <h3 style={{ fontSize: 13.5 }}>{rb.title}</h3>
+                      {renderPlanBody(bodyMain(rb.body)).main}
+                    </div>
+                  ))}
                   {(p.planImages || []).length > 0 && (
                     <div style={{ marginTop: 12 }}>
                       {p.planImages.map(img => (
@@ -7131,7 +7140,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  {parts.limitations}
+                  {limitations}
                 </div>
               );
             })}</>)}

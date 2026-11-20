@@ -105,6 +105,12 @@ const buildTable = (headers, rows, widths) => {
 };
 
 // ---- plan body renderer (bullets, limitations, paras) ----
+// A plan body carries its limitations inline, after a "Plan Limitations:" line; these
+// split them off so a selected benefit's limitations can join the plan's own block.
+const LIMITS_MARK = "Plan Limitations:";
+const bodyMain = (body) => { const i = (body || "").indexOf(LIMITS_MARK); return i === -1 ? (body || "") : body.slice(0, i).trimEnd(); };
+const bodyLimits = (body) => { const i = (body || "").indexOf(LIMITS_MARK); return i === -1 ? "" : body.slice(i + LIMITS_MARK.length).trim(); };
+
 function renderPlanBody(body) {
   const out = [];
   if (!body) return out;
@@ -404,15 +410,17 @@ export async function generateDocx({ client, d, planLibrary, tierMeta, logoUrl, 
       const meta = planLibrary?.[p.key];
       children.push(H2((i + 1) + ". " + (meta ? meta.name : p.label)));
       if (meta) {
-        children.push(...renderPlanBody(meta.body));
-        // an optional benefit the advisor ticked brings its own explanation with it
+        // an optional benefit the advisor ticked brings its own explanation with it, and
+        // its limitations join the plan's in one block rather than opening a second
         const on = (p.rating || {}).riders || {};
         const insuresDependent = (p.insuredBy || "self") !== "self";
-        Object.entries(meta.riderBodies || {})
+        const extras = Object.entries(meta.riderBodies || {})
           .filter(([k]) => on[k] && (k !== "pw" || insuresDependent))
-          .forEach(([, rb]) => {
-          children.push(H2(rb.title), ...renderPlanBody(rb.body));
-        });
+          .map(([, rb]) => rb);
+        children.push(...renderPlanBody(bodyMain(meta.body)));
+        extras.forEach(rb => children.push(H2(rb.title), ...renderPlanBody(bodyMain(rb.body))));
+        const allLimits = [bodyLimits(meta.body), ...extras.map(rb => bodyLimits(rb.body))].filter(Boolean).join("\n");
+        if (allLimits) children.push(...renderPlanBody(LIMITS_MARK + "\n" + allLimits));
       }
     });
   }
