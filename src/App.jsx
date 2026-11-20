@@ -1521,12 +1521,27 @@ function compute(c) {
   const irMonthly = num(ir.monthly) > 0 ? num(ir.monthly) : net;
   const irYears = num(ir.years) > 0 ? num(ir.years) : yearsToRet;
   const potentialIncome = irMonthly * 12 * irYears;
+  // What the client already holds, read off the policies on file rather than typed in
+  // again. Lapsed and surrendered policies pay nothing, so they are left out. Death and
+  // disability (and an accident's death and disability benefits) trigger on different
+  // events — a policy paying $80,000 on either pays $80,000, not $160,000 — so a pair is
+  // taken at its larger side; separate policies do add up, and that is what coverTotal
+  // does. A typed figure always wins, for the cover that lives outside this app.
+  const livePolicies = (c.existingPlans || []).filter(p => !statusIsDead(p.status));
+  const held = (cats) => coverTotal(livePolicies, "self", cats);
+  const irAuto = {
+    covDeath: Math.max(held(["Death"]), held(["Disability"])),
+    covMCI: held(["Health (Major Critical Illness)"]),
+    covECI: held(["Health (Early-Major Critical Illness)"]),
+    covAccident: Math.max(held(["Death (Accident)"]), held(["Disability (Accident)"])),
+  };
+  const irHeld = (k) => (ir[k] != null && ir[k] !== "" ? num(ir[k]) : irAuto[k]);
   const irRows = [
-    { name: "Death / TPD (10 years)", guideline: "10 years of income", bench: irMonthly * 12 * 10, current: num(ir.covDeath) },
-    { name: "Death / TPD (20 years)", guideline: "20 years of income", bench: irMonthly * 12 * 20, current: num(ir.covDeath) },
-    { name: "Major Critical Illness", guideline: "5 years of income", bench: irMonthly * 12 * 5, current: num(ir.covMCI) },
-    { name: "Early Critical Illness", guideline: "3 years of income", bench: irMonthly * 12 * 3, current: num(ir.covECI) },
-    { name: "Accident", guideline: "Inpatient & outpatient, reimbursement", bench: 100000, current: num(ir.covAccident) },
+    { name: "Death / TPD (10 years)", guideline: "10 years of income", bench: irMonthly * 12 * 10, current: irHeld("covDeath") },
+    { name: "Death / TPD (20 years)", guideline: "20 years of income", bench: irMonthly * 12 * 20, current: irHeld("covDeath") },
+    { name: "Major Critical Illness", guideline: "5 years of income", bench: irMonthly * 12 * 5, current: irHeld("covMCI") },
+    { name: "Early Critical Illness", guideline: "3 years of income", bench: irMonthly * 12 * 3, current: irHeld("covECI") },
+    { name: "Accident", guideline: "Accidental death or disability", bench: 100000, current: irHeld("covAccident") },
   ].map(r => ({ ...r, shortfall: Math.max(0, r.bench - r.current) }));
   // retirement
   const rt = c.retirement;
@@ -1617,7 +1632,7 @@ function compute(c) {
   ].filter(x => x.value > 0);
   return { gross, spk, net, groupTotals, totalExpenses, surplus, invested, investedFuture, cash, personal,
     totalAssets, totalLiab, netWorth, monthlyDebt, ratios, alloc, ef3, ef6, pie, assetPie, ratioBars,
-    potentialIncome, irRows, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, pensionMonthly, pensionTotal, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal,
+    potentialIncome, irRows, irAuto, irMonthly, irYears, age, retAge, yearsToRet, rtRequired, rtAdjusted, rtProjected, rtShortfall, rtMonthlyAnnuity, spkAnnuityTotal, spkMonthly, pensionMonthly, pensionTotal, spkLumpSum: spkProjected(c), retCandidates, retPlansTotal,
     retAnnuityTotal, retLumpTotal, retAnnuityMonthly, retLumpMonthly, retDividendTotal, retDividendMonthly, annTotal, invTotal, selected, insuredGroups, premMonthly, premAnnual, planPremiums };
 }
 
@@ -7469,11 +7484,26 @@ export default function App() {
               <Field label="For how many years" hint={num(client.incomeReplacement.years) > 0 ? "" : "until target retirement age: " + d.yearsToRet + " years"}><NumInput value={client.incomeReplacement.years} onChange={e => updateDeep("incomeReplacement", { years: e.target.value })} placeholder={String(d.yearsToRet)} /></Field>
             </div>
             <div className="grid md:grid-cols-4 gap-4">
-              <Field label="Current Death/TPD cover"><NumInput value={client.incomeReplacement.covDeath} onChange={e => updateDeep("incomeReplacement", { covDeath: e.target.value })} /></Field>
-              <Field label="Current Major CI cover"><NumInput value={client.incomeReplacement.covMCI} onChange={e => updateDeep("incomeReplacement", { covMCI: e.target.value })} /></Field>
-              <Field label="Current Early CI cover"><NumInput value={client.incomeReplacement.covECI} onChange={e => updateDeep("incomeReplacement", { covECI: e.target.value })} /></Field>
-              <Field label="Current Accident cover"><NumInput value={client.incomeReplacement.covAccident} onChange={e => updateDeep("incomeReplacement", { covAccident: e.target.value })} /></Field>
+              {[["covDeath", "Current Death/TPD cover"], ["covMCI", "Current Major CI cover"],
+                ["covECI", "Current Early CI cover"], ["covAccident", "Current Accident cover"]].map(([key, label]) => {
+                const typed = client.incomeReplacement[key];
+                const overridden = typed != null && typed !== "";
+                return (
+                  <Field key={key} label={label}
+                    hint={overridden
+                      ? (d.irAuto[key] > 0 ? "typed in — policies on file total " + money(d.irAuto[key], 0) : "typed in")
+                      : (d.irAuto[key] > 0 ? "from the policies on file" : "no cover of this kind on file")}>
+                    <NumInput value={typed} placeholder={d.irAuto[key] > 0 ? String(Math.round(d.irAuto[key])) : "0"}
+                      onChange={e => updateDeep("incomeReplacement", { [key]: e.target.value })} />
+                  </Field>
+                );
+              })}
             </div>
+            <p className="text-xs text-slate-400 mt-2">
+              These totals come from the policies in the Current Coverage step, counting only this client's own cover and
+              leaving out anything lapsed or surrendered. Death and disability pay on different events, so a policy
+              covering both counts once at its larger side. Type a figure to override — for cover held elsewhere.
+            </p>
             <table className="w-full text-sm mt-4">
               <thead><tr className="text-left text-slate-500"><th className="py-1">Need</th><th className="text-right">Benchmark</th><th className="text-right">Current</th><th className="text-right">Shortfall</th></tr></thead>
               <tbody>{d.irRows.map(r => (
