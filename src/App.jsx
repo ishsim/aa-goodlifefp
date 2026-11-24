@@ -7384,13 +7384,23 @@ export default function App() {
           <SectionCard title="Dependents / People under client's care" right={
               <button onClick={() => update({ dependents: [...(client.dependents||[]), { id: uid(), name: "", relationship: "", dob: "" }] })} className="text-sm text-purple-800 hover:underline">+ Add dependent</button>}>
             {(client.dependents||[]).length === 0 && <div className="text-sm text-slate-400">No dependents added yet.</div>}
+            {(client.dependents||[]).length > 1 && <p className="text-xs text-slate-400 mb-2">Use ▲ ▼ to set the order the family appears in — the overview, the plan quotations and the needs summary all follow it.</p>}
             <div className="space-y-2">
               {(client.dependents||[]).map((dep, i) => (
                 <div key={dep.id||i} className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-5"><Field label={i===0?"Name":""}><Input value={dep.name} onChange={e => { const l=[...client.dependents]; l[i]={...dep,name:e.target.value}; update({dependents:l}); }} placeholder="e.g. Nur Aisyah" /></Field></div>
                   <div className="col-span-3"><Field label={i===0?"Relationship":""}><Input value={dep.relationship} onChange={e => { const l=[...client.dependents]; l[i]={...dep,relationship:e.target.value}; update({dependents:l}); }} placeholder="e.g. Daughter" /></Field></div>
                   <div className="col-span-3"><Field label={i===0?"Date of birth":""}><Input type="date" value={dep.dob} onChange={e => { const l=[...client.dependents]; l[i]={...dep,dob:e.target.value}; update({dependents:l}); }} /></Field></div>
-                  <div className="col-span-1 flex items-end pb-1"><button onClick={() => update({dependents:client.dependents.filter((_,j)=>j!==i)})} className="text-red-500 text-sm">✕</button></div>
+                  <div className="col-span-1 flex items-end justify-end pb-1 gap-1">
+                    {/* this order is the order every section follows: the overview's rows,
+                        the quotation tables, the needs summary — so a spouse can be put
+                        before a child wherever the family appears */}
+                    <MoveButtons canMoveUp={i > 0} canMoveDown={i < client.dependents.length - 1}
+                      onMove={dir => { const l=[...client.dependents]; const j=i+dir;
+                        if (j < 0 || j >= l.length) return;
+                        [l[i], l[j]] = [l[j], l[i]]; update({dependents:l}); }} />
+                    <button onClick={() => update({dependents:client.dependents.filter((_,j)=>j!==i)})} className="text-red-500 text-sm">✕</button>
+                  </div>
                 </div>
               ))}
             </div>
