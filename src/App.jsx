@@ -4916,13 +4916,28 @@ function CoverageTimelinePanel({ client, printMode = false, initialMode = "curre
           : null;
         const quoted = atRetirement || headline;
         const startValue = num(r.currentValue);
-        const roiPct = quoted && startValue > 0 ? (quoted.projected / startValue - 1) * 100 : 0;
-        const growthNote = quoted && quoted.projected > startValue
-          ? " → " + kfmt(quoted.projected, cur)
-            + (roiPct > 0 && num(quoted.years) > 0
-              ? " (ROI ~" + fmt(roiPct, 2) + "% over " + num(quoted.years) + " years"
-                + (num(quoted.rate) > 0 ? " at " + fmt(num(quoted.rate), num(quoted.rate) % 1 ? 2 : 0) + "% annual average returns" : "") + ")"
-              : "")
+        // Premiums still to come are the client's own money, not the plan's return. They
+        // used to be left out of the comparison entirely, so a plan was credited with
+        // growth on money it never grew: $6.8k today against a $30.9k projection read as
+        // +354% even where $28.5k of that was premiums paid in along the way. The
+        // comparison is now against everything that goes in — today's value plus the
+        // premiums payable between now and the age quoted, stopping at the policy's
+        // premium end age where one is set, so a paid-up policy is not charged for
+        // premiums it never takes.
+        const quotedAge = quoted ? num(quoted.age) : 0;
+        const contribEndAge = payUntil > 0 ? Math.min(payUntil, quotedAge) : quotedAge;
+        const contribYears = Math.max(0, contribEndAge - baseAge);
+        const paidIn = startValue + monthlyEquiv * 12 * contribYears;
+        const years = quoted ? num(quoted.years) : 0;
+        // No percentage is quoted. A projection taken from a benefit illustration is
+        // already net of the plan's charges, so any rate derived from it reads as the
+        // plan's return when it is really the return after costs the client never sees
+        // broken out — a number that invites the wrong question in a meeting. The two
+        // cash figures say what matters on their own: this much goes in, this much is
+        // illustrated to come out, and the reader can weigh them without arithmetic.
+        const growthNote = quoted && quoted.projected > 0 && paidIn > 0
+          ? " paid in → " + kfmt(quoted.projected, cur)
+            + (quotedAge > 0 ? " at " + Math.round(quotedAge) : years > 0 ? " in " + years + " years" : "")
           : "";
         return {
           id: r.id || "inv" + i,
@@ -4939,7 +4954,8 @@ function CoverageTimelinePanel({ client, printMode = false, initialMode = "curre
                 .filter(Boolean).join(" · ") || kfmt(num(r.currentValue), cur)
             // a holding funded purely by contributions has nothing to grow *from*, so it
             // states where it gets to rather than an arrow out of nowhere
-            : startValue > 0 ? kfmt(startValue, cur) + growthNote : (growthNote ? growthNote.replace(" → ", "") : ""),
+            : growthNote ? kfmt(paidIn, cur) + growthNote
+              : startValue > 0 ? kfmt(startValue, cur) : "",
           spkAnnuityMonthly: num(r.spkAnnuityMonthly),
           stepAge: null, stepAmt: null, status: "active", savings: true, payoutStart: null,
           lumpSumAge: r.type === "SPK" && end > SPK_PAYOUT_AGE ? SPK_PAYOUT_AGE : null,
@@ -4951,6 +4967,12 @@ function CoverageTimelinePanel({ client, printMode = false, initialMode = "curre
             ["Coverage ages", start + " – " + end],
             ["Current value", num(r.currentValue) > 0 ? money(num(r.currentValue)) : ""],
             ["Allocation", num(r.allocation) > 0 ? money(num(r.allocation), 2) + " / " + freqLabel(r.allocationFreq).toLowerCase() : ""],
+            ["Projection source", quoted && num(quoted.rate) > 0
+              ? "Benefit illustration at " + fmt(num(quoted.rate), num(quoted.rate) % 1 ? 2 : 0) + "% — already net of the plan's charges" : ""],
+            ["Total paid in by then", paidIn > 0 && quoted
+              ? money(paidIn) + " = " + money(startValue) + " today"
+                + (contribYears > 0 ? " + " + money(monthlyEquiv * 12) + "/yr for " + fmt(contribYears, contribYears % 1 ? 1 : 0) + " years" : "")
+              : ""],
             ["Pay until", payUntil > 0 ? "age " + payUntil + (r.policyExpiry ? " (" + fmtDate(r.policyExpiry) + ")" : "") : ""],
             ["Notes", r.notes],
           ].filter(([, v]) => v),
