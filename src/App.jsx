@@ -4203,7 +4203,12 @@ const coverTotal = (plans, personId, categories, whoKey = "insured") => (plans |
   .filter(c => categories.includes(c.category))
   .reduce((s, c) => s + toBase(c.currency, c.amount), 0);
 
-function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, setTarget, incomeMonthly }) {
+// The four benefits a debt can be cleared with. Hospitalisation and the accident
+// benefits reimburse a cost rather than pay a sum the family can put against a loan, so
+// they are not part of this reading.
+const DEBT_GROUPS = ["death", "disability", "majorCI", "earlyCI"];
+
+function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, setTarget, incomeMonthly, debts = 0, liabilities = [] }) {
   const autoTotal = (categories) => coverTotal(plans, person.id, categories);
 
   const rows = NEEDS_GROUPS.map(g => {
@@ -4263,6 +4268,46 @@ function InsuranceNeedsGap({ person, plans, overrides, setOverride, targets, set
           );
         })}
       </svg>
+      {debts > 0 && (
+        <div className="mt-4 rounded-lg border border-slate-200 overflow-hidden">
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">If the aim is only to clear what they owe</div>
+            {/* Ten years of income is an abstraction to a lot of people; a housing loan is
+                not. Same cover, measured against the debt instead of the income — a floor
+                to agree on when the income-based figure feels unreachable. */}
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Ten years of income is an abstraction for some clients; what they owe is not. The same cover, measured
+              against the <b>{money(debts, 0)}</b> outstanding today{liabilities.length
+                ? " — " + liabilities.map(l => (l.name || "Loan") + " " + money(num(l.amount), 0)).join(", ") : ""}.
+            </p>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr>
+              {["Benefit", "Cover held", "Debts outstanding", "Short by"].map((h, i) => (
+                <th key={h} className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-1 px-3 border-b border-slate-200"
+                  style={{ textAlign: i === 0 ? "left" : "right" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {DEBT_GROUPS.map(key => {
+                const g = NEEDS_GROUPS.find(x => x.key === key);
+                const row = rows.find(x => x.key === key);
+                const cover = row ? row.cover : coverTotal(plans, person.id, g.categories);
+                const short = Math.max(0, debts - cover);
+                return (
+                  <tr key={key}>
+                    <td className="py-1.5 px-3 border-b border-slate-100">{g.label}</td>
+                    <td className="py-1.5 px-3 border-b border-slate-100 tabular-nums" style={{ textAlign: "right" }}>{money(cover, 0)}</td>
+                    <td className="py-1.5 px-3 border-b border-slate-100 tabular-nums text-slate-500" style={{ textAlign: "right" }}>{money(debts, 0)}</td>
+                    <td className={"py-1.5 px-3 border-b border-slate-100 tabular-nums font-semibold " + (short > 0 ? "text-red-700" : "text-green-700")}
+                      style={{ textAlign: "right" }}>{short > 0 ? money(short, 0) : "covered"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
         {rows.map(r => (
           <div key={r.key} className="rounded-lg border border-slate-200 p-2">
@@ -4657,6 +4702,9 @@ function InsuranceNeedsSummary({ client, update }) {
   const clientAge = num(calcAge(client.dob));
   const overrides = client.insuranceNeedsOverrides || {};
   const targets = client.insuranceNeedsTargets || {};
+  // what is owed today, from the Assets & Liabilities step
+  const debts = useMemo(() => (client.liabilities || []).reduce((s, l) => s + num(l.amount), 0), [client.liabilities]);
+  const namedLiabilities = useMemo(() => (client.liabilities || []).filter(l => num(l.amount) > 0), [client.liabilities]);
   // the same monthly figure the Income Replacement step works from: what the client said
   // they need to replace, else their take-home pay
   const irMonthly = useMemo(() => num(client.incomeReplacement?.monthly) > 0
@@ -4684,6 +4732,7 @@ function InsuranceNeedsSummary({ client, update }) {
           <div key={person.id} className={persons.length > 1 ? "pb-6 border-b border-slate-100 last:border-0 last:pb-0" : ""}>
             <div className="font-semibold text-sm text-purple-900 mb-1 text-center">{person.name}{person.age != null ? " — age " + person.age : ""}</div>
             <InsuranceNeedsGap person={person} plans={plans} incomeMonthly={irMonthly}
+              debts={person.id === "self" ? debts : 0} liabilities={person.id === "self" ? namedLiabilities : []}
               overrides={overrides[person.id] || {}} setOverride={(k, v) => setOverride(person.id, k, v)}
               targets={targets[person.id] || {}} setTarget={(k, v) => setTarget(person.id, k, v)} />
             <InsuranceNeedsDetailTables tables={detailTables[person.id]} setField={(path, v) => setTableField(person.id, path, v)} plans={plans} personId={person.id} />
