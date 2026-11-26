@@ -3836,6 +3836,53 @@ const IncomeReplacementSection = ({ client, d, heading, id }) => (
   </>
 );
 
+// A second way of sizing the same cover, for the client who cannot picture ten years of
+// income but knows exactly what is left on the mortgage. It is a floor, not a target, and
+// says so: clearing the debt leaves the family with no income replaced. Only the lump-sum
+// benefits appear — hospitalisation and the accident benefits reimburse a cost rather than
+// pay a sum anyone can put against a loan.
+const LoanCancellationSection = ({ client, heading, id }) => {
+  const debts = (client.liabilities || []).reduce((s, l) => s + num(l.amount), 0);
+  if (!(debts > 0)) return null;
+  const named = (client.liabilities || []).filter(l => num(l.amount) > 0);
+  const live = (client.existingPlans || []).filter(pl => !statusIsDead(pl.status));
+  const ov = (client.insuranceNeedsOverrides || {}).self || {};
+  const rows = DEBT_GROUPS.map(key => {
+    const g = NEEDS_GROUPS.find(x => x.key === key);
+    const raw = ov[key];
+    // the same figure the needs summary shows, typed override included
+    const cover = raw != null && raw !== "" ? num(raw) : coverTotal(live, "self", g.categories);
+    return { key, label: g.label, cover, short: Math.max(0, debts - cover) };
+  });
+  return (
+    <>
+      <h3 id={id}>{heading}</h3>
+      <p className="mb-2">
+        If something happened tomorrow, this is what it would take to clear what you owe outright — {money(debts)} as
+        things stand today{named.length ? ": " + named.map(l => (l.name || "loan").toLowerCase() + " " + money(num(l.amount))).join(", ") : ""}.
+      </p>
+      <table>
+        <thead><tr><th>Benefit</th><th className="tnum">Debts to clear</th><th className="tnum">Cover in force</th><th className="tnum">Shortfall</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.key}>
+            <td>{r.label}</td>
+            <td className="tnum">{money(debts)}</td>
+            <td className="tnum">{money(r.cover)}</td>
+            <td className="tnum" style={{ color: r.short > 0 ? "#b91c1c" : "#15803d", fontWeight: 600 }}>
+              {r.short > 0 ? money(r.short) : "covered"}
+            </td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <p className="text-xs text-slate-500 mb-4">
+        Clearing what you owe is a smaller aim than replacing your income, and a floor rather than a target: it leaves
+        the family the house and the car, but no income in place of yours. Balances reduce as loans are repaid, so this
+        is measured against what is outstanding today.
+      </p>
+    </>
+  );
+};
+
 const RetirementSection = ({ client, d, heading, id }) => (
   <>
           <h3 id={id}>{heading}</h3>
@@ -6446,6 +6493,10 @@ export default function App() {
   // ----- report view -----
   if (view === "report") {
     const n = client.narrative;
+    // whether there is anything to cancel — drives the Loan Cancellation section and the
+    // numbering of everything after it
+    const hasDebts = (client.liabilities || []).reduce((t, l) => t + num(l.amount), 0) > 0;
+
     // a browsing client gets a menu of plans, not a costed proposal: no tiers,
     // no subtotals, no budget guideline — see reportMode on the client record
     const optionsMode = client.reportMode === "options";
@@ -6642,8 +6693,10 @@ export default function App() {
                 ...(client.sections.ratios ? [{ label: "2.2 Financial Ratio Analysis", id: "sec-ratios" }] : []),
               ] },
               { num: "3.", title: "Your Concerns & Objectives", id: "sec-objectives", sub: [
-                { label: "3.1 Income Replacement", id: "sec-income-replacement" }, { label: "3.2 Retirement Planning", id: "sec-retirement" },
-                ...(hasOther ? [{ label: "3.3 Other Objectives", id: "sec-other-objectives" }] : []),
+                { label: "3.1 Income Replacement", id: "sec-income-replacement" },
+                ...(hasDebts ? [{ label: "3.2 Loan Cancellation", id: "sec-loan-cancellation" }] : []),
+                { label: (hasDebts ? "3.3" : "3.2") + " Retirement Planning", id: "sec-retirement" },
+                ...(hasOther ? [{ label: (hasDebts ? "3.4" : "3.3") + " Other Objectives", id: "sec-other-objectives" }] : []),
               ] },
               { num: "4.", title: "Recommendation", id: "sec-recommendation", sub: [
                 ...(n.actionPlan ? [{ label: "Action Plan", id: "sec-action-plan" }] : []),
@@ -6731,10 +6784,11 @@ export default function App() {
             </div>
           )}
           <IncomeReplacementSection client={client} d={d} id="sec-income-replacement" heading="3.1 Income Replacement" />
-          <RetirementSection client={client} d={d} id="sec-retirement" heading="3.2 Retirement Planning" />
+          <LoanCancellationSection client={client} id="sec-loan-cancellation" heading={(hasDebts ? "3.2 " : "") + "Loan Cancellation"} />
+          <RetirementSection client={client} d={d} id="sec-retirement" heading={(hasDebts ? "3.3" : "3.2") + " Retirement Planning"} />
 
           {(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).length > 0 && (<>
-            <h3 id="sec-other-objectives">3.3 Other Objectives</h3>
+            <h3 id="sec-other-objectives">{hasDebts ? "3.4" : "3.3"} Other Objectives</h3>
             <table>
               <thead><tr><th>Objective</th><th>Remarks</th><th className="tnum">Target</th><th className="tnum">Horizon</th><th className="tnum">Indicative saving</th></tr></thead>
               <tbody>{(client.otherObjectives || []).filter(o => o.name || num(o.target) > 0).map(o => (
@@ -6871,6 +6925,10 @@ export default function App() {
     // a browsing client gets a menu of plans, not a costed proposal: no tiers,
     // no subtotals, no budget guideline — see reportMode on the client record
     const optionsMode = client.reportMode === "options";
+    // whether there is anything to cancel — drives the Loan Cancellation section and the
+    // numbering of everything after it
+    const hasDebts = (client.liabilities || []).reduce((t, l) => t + num(l.amount), 0) > 0;
+
     const rv = client.review || { exec: "", keyPoints: "", financialHealthDone: false, contingencyNote: "", whatsNext: "" };
     const skipContingency = contingencySkipped(rv);
     const para = (t) => (t || "").split(/\n\n+/).filter(Boolean).map((p, i) => <p key={i} style={{ textAlign: "justify", lineHeight: 1.65, marginBottom: 12, whiteSpace: "pre-line" }}>{p}</p>);
@@ -7064,6 +7122,7 @@ export default function App() {
                 sub: (client.history || []).filter(h => h.date).length >= 2 ? [{ label: "Your Progress Since Previous Reviews", id: "rv-progress" }] : [] },
               { title: "Protection & Retirement", id: "rv-needs", sub: [
                 { label: "Income Replacement", id: "rv-income-replacement" },
+                ...(hasDebts ? [{ label: "Loan Cancellation", id: "rv-loan-cancellation" }] : []),
                 { label: "Retirement Planning", id: "rv-retirement" },
               ] },
               { title: "Overview of Plans", id: "rv-overview", sub: [] },
@@ -7150,6 +7209,7 @@ export default function App() {
           <div className="pagebreak" />
           <h2 id="rv-needs">Protection &amp; Retirement</h2>
           <IncomeReplacementSection client={client} d={d} id="rv-income-replacement" heading="Income Replacement" />
+          <LoanCancellationSection client={client} id="rv-loan-cancellation" heading="Loan Cancellation" />
           <RetirementSection client={client} d={d} id="rv-retirement" heading="Retirement Planning" />
 
           {/* 5. Overview of Plans */}
